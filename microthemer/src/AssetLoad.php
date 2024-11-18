@@ -153,7 +153,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				$this->isFrontend = false;
 				$this->isAdminArea = true;
 				$this->hooks = array(
-					'head' => 'admin_head',
+					'head' => 'admin_enqueue_scripts', // 'admin_head',
 					'footer' => 'admin_footer',
 					'enqueue_scripts' => 'admin_enqueue_scripts'
 				);
@@ -298,7 +298,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 			// if Auth, we add a placeholder to update conditional styles on synced other tabs
 			$this->addMTPlaceholder();
 
-			// Global CSS is just for the frontend
+			// Global CSS is just for the frontend and block editor pages
 			if ($this->isFrontend
 			    || ($this->isBlockEditorScreen && !empty($p['admin_asset_loading']))
 			){
@@ -317,6 +317,9 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 			// insert MT interface CSS here if AssetAuth child class is running
 			$this->addMTCSS();
+			/*if ($this->isFrontend || $this->supportAdminAssets()){
+
+			}*/
 
 			// restore the default do_concat setting
 			// (which may have been changed if using enqueue_block_assets hook)
@@ -609,8 +612,11 @@ if (!class_exists('\Microthemer\AssetLoad')){
 					}
 				}
 
-				$wp_styles->do_item($handle);
-				$wp_styles->done[] = $handle;
+				/*if (empty($config['doNotDoItem'])){
+					$wp_styles->do_item($handle);
+					$wp_styles->done[] = $handle;
+				}*/
+
 			}
 
 			// or enqueue normally

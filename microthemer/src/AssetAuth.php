@@ -56,6 +56,7 @@ class AssetAuth extends AssetLoad {
 	        $this->hookRedirect();
 	        $this->hookNonLoggedIn();
 	        $this->hookAdminBarLink();
+			$this->hookDequeue();
         }
 
         // hookJS doesn't run in the admin area so just hook MT JavaScript
@@ -90,6 +91,17 @@ class AssetAuth extends AssetLoad {
 		    add_action( 'admin_bar_menu', array(&$this, 'adminBarLink'), $this->defaultActionHookOrder);
 	    }
     }
+
+	function hookDequeue(){
+		add_action( 'wp_print_scripts', array(&$this, 'dequeueScripts'), $this->defaultActionHookOrder );
+	}
+
+	// Dequeue scripts that conflict with MT - this only happens for logged in admins
+	function dequeueScripts(){
+
+		// Swiper.js loaded by Woo Essential plugin makes mousewheel scroll very slow
+		wp_dequeue_script( 'dnwoo_swiper_frontend' );
+	}
 
 	// add_action( 'save_post', 'set_private_categories' );
 	function hookPostSaved(){
@@ -129,13 +141,16 @@ class AssetAuth extends AssetLoad {
         // this interferes with the logic test by echoing output, and isn't needed then
         if (!isset($_GET['test_logic'])){
 
+			//wp_die('basty_current_filter: ' .  current_filter());
+
             $this->enqueueOrAdd(
 		        true,
 		        'mt-placeholder', // id must not start with 'microthemer' or it will be removed on browser tab sync
 		        '',
 		        array(
 			        'inline' => true,
-			        'code' => $this->supportAdminAssets() ? '.wp-block {}' : ''
+			        'code' => $this->supportAdminAssets() ? '.wp-block {}' : '',
+			        //'doNotDoItem' => true
 		        )
 	        );
         }
@@ -442,8 +457,6 @@ class AssetAuth extends AssetLoad {
         }
 
         $min = !TVR_DEV_MODE ? '-min' : '/page';
-
-
 
 	    return array(
 		    'post_id' => $post_id,

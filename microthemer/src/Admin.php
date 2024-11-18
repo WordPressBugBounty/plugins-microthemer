@@ -7102,12 +7102,15 @@ class Admin {
 					$input_id = !empty($arr2['input_id']) ? 'id="'.$arr2['input_id'].'"' : '';
 					$input_name = !empty($arr2['input_name']) ? $arr2['input_name'] : '';
 					$input_placeholder = !empty($arr2['input_placeholder']) ? $arr2['input_placeholder'] : '';
+
+                    // data-appto="#style-components"
+
 					$areas_html.= '
 								<div class="combobox-wrap tvr-input-wrap">
 		
 									<input type="text" name="'.$input_name.'" 
-									placeholder="'.$input_placeholder.'"
-									data-appto="#style-components"
+									placeholder="'.$input_placeholder.'" 
+									    data-appto="#combo-markup-do-not-clear"
 									'.$input_id.' class="combobox has-arrows"
 									rel="'.$arr2['combo_data'].'"
 									value="'.$arr2['input'].'" />

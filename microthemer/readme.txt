@@ -4,7 +4,7 @@ Contributors: bastywebb, joseluiscruz, ahrale
 Donate link: http://themeover.com/microthemer/
 Tags: css, customize, visual editor, google fonts, responsive
 Requires at least: 6.0
-Tested up to: 6.6
+Tested up to: 6.7
 Requires PHP: 5.6
 Stable tag: trunk
 License: GPLv2 or later
@@ -78,6 +78,20 @@ I've been happily developing Microthemer and supporting users of varying technic
 5. Start customizing the appearance of your site.
 
 == Changelog ==
+
+= 7.3.1.9 (Nov 18th, 2024) =
+
+# Bugs fixed
+* The page navigation menu could occasionally do nothing when selecting a new page to visit.
+* Compatibility issue with the legacy site Customizer whereby Customizer options were overly spaced apart.
+* Fixed issue with MT targeting turning off when switching to Gutenberg block editor (even when "Support admin area style loading" is enabled).
+* Element selection was still happening in the block editor even with "Support admin area style loading" disabled.
+* Styles for the homepage did not always render in the Full Site Editor, if the home page was being displayed as a fallback screen.
+
+= 7.3.1.8 (Oct 15th, 2024) =
+
+# Bugs fixed
+* Compatibility issue with swiper.js in Woo Essential plugin that made the mousewheel scroll very slow.
 
 = 7.3.1.7 (Sept 9th, 2024) =
 

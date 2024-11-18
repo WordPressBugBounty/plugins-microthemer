@@ -1291,6 +1291,7 @@ require_once('common-inline-assets.php');
             </div>
 
             <div id="style-components"></div>
+            <div id="combo-markup-do-not-clear"></div>
 
             <div id="mt-slider-set">
 

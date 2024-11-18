@@ -45,6 +45,8 @@ class Helper {
 		$postId = null;
 		$isBlockAdmin = false;
 
+		//$regular = $pagenow === 'post.php';
+
 		if (!is_admin()){
 			return false;
 		}
@@ -55,8 +57,12 @@ class Helper {
 		} elseif ($pagenow === 'post.php' && isset($_GET['post'])){
 			$postId = $_GET['post'];
 			$isBlockAdmin = true;
-		} elseif ($pagenow === 'site-editor.php' && isset($_GET['postId'])){
-			$postId = $_GET['postId'];
+		} elseif ($pagenow === 'site-editor.php'){
+			if (isset($_GET['postId'])){
+				$postId = $_GET['postId'];
+			} else {
+				$postId = Helper::homePageData()['id'];
+			}
 			$isBlockAdmin = true;
 		}
 

@@ -612,10 +612,10 @@ if (!class_exists('\Microthemer\AssetLoad')){
 					}
 				}
 
-				/*if (empty($config['doNotDoItem'])){
+				if (empty($config['doNotDoItem'])){
 					$wp_styles->do_item($handle);
 					$wp_styles->done[] = $handle;
-				}*/
+				}
 
 			}
 

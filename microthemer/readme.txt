@@ -79,6 +79,17 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.3.2.2 (Nov 19th, 2024) =
+
+# Bugs fixed
+* Rolled back some previous code that was changed in the last update, as it caused styles to not load under certain circumstances.
+* Gutenberg integration issues with WordPress 6.7. There may be more fixes to follow here.
+
+= 7.3.2.0 (Nov 19th, 2024) =
+
+# Bugs fixed
+* Rolled back some previous code that was changed in the last update, as it caused styles to not load under certain circumstances.
+
 = 7.3.1.9 (Nov 18th, 2024) =
 
 # Bugs fixed

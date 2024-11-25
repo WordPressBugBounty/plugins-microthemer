@@ -378,17 +378,20 @@ if (!class_exists('\Microthemer\AssetLoad')){
 						}
 
 						// load the CSS file
-						$this->enqueueOrAdd(
-							($add || $inline || $async),
-							'microthemer-'.$slug, //.'-css',
-							$url . $cssFileName . '?' . $this->cacheParam,
-							array(
-								'inline' => $inline,
-								'async' => $async,
-								'code' => $inline ? file_get_contents($cssFile) : false,
-								'deps' => array('microthemer-css')
-							)
-						);
+						if (!isset($_GET['get_front_data'])){
+							$this->enqueueOrAdd(
+								($add || $inline || $async),
+								'microthemer-'.$slug, //.'-css',
+								$url . $cssFileName . '?' . $this->cacheParam,
+								array(
+									'inline' => $inline,
+									'async' => $async,
+									'code' => $inline ? file_get_contents($cssFile) : false,
+									'deps' => array('microthemer-css')
+								)
+							);
+						}
+
 					}
 				}
 
@@ -397,7 +400,9 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				$foldersDone[$folder['slug']] = 1;
 			}
 
-			//wp_die('<pre>loading: '.print_r($this->folderLoading, true).'</pre>');
+			/*wp_die('<pre>loading: '.print_r([
+					has_template("wp_template_part", "twentytwentyfive//header", "Template part - Header"),
+				$this->folderLoading], true).'</pre>');*/
 
 		}
 
@@ -421,7 +426,9 @@ if (!class_exists('\Microthemer\AssetLoad')){
 			return $html;
 		}
 
-		function conditionalAssets($folders, $forceAll = false){
+		function conditionalAssets($folders, $forceAll = false, $doingLogicTest = false){
+
+			//echo 'condAssets ';
 
 			if (!class_exists('Microthemer\Logic')){
 				require_once dirname(__FILE__) . '/Logic.php';
@@ -431,7 +438,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 			$logic = new Logic($this->logicSettings);
 
-			if ($this->supportLogicTest() || $forceAll){
+			if (!$doingLogicTest && ($this->supportLogicTest() || $forceAll)){
 				$this->doLogicTest($folders, $logic, $forceAll);
 			}
 
@@ -612,7 +619,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 					}
 				}
 
-				if (empty($config['doNotDoItem'])){
+				if (empty($config['doNotDoItem']) && !isset($_GET['get_front_data'])){
 					$wp_styles->do_item($handle);
 					$wp_styles->done[] = $handle;
 				}

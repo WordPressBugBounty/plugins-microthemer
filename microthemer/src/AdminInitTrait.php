@@ -80,7 +80,6 @@ trait AdminInitTrait {
 			'script' => __('Enqueued Script', 'microthemer')
 		);
 
-
 		// check if integratable plugins are active
 		add_action( 'admin_init', array(&$this, 'check_integrations'));
 

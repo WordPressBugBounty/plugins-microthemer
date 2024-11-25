@@ -115,15 +115,53 @@ class Logic {
 		);
 	}
 
-	// replace is_page(2) with is_page^^2^^ so that parenthesis in function doesn't create a new group
-	protected function addCarets($string){
+	protected $quotedStringPlaceholders = array();
 
-		return preg_replace(
-			"/(".$this->patterns['functionName'].")\((.*?)\)/s",
-			'$1^^$3^^',
+	// brackets inside quotes cause issues for regex, so we can temp remove quoted strings to simplify
+	protected function removeQuotedStrings($string) {
+
+		// Clear existing placeholders
+		$this->quotedStringPlaceholders = array();
+
+		$placeholderPrefix = 'QSP_';
+
+		return preg_replace_callback(
+			//'/"[^"]*"/',
+		   //'([\'"])[^\'"]*\1',
+			"/(['\"])(?:\\\\.|[^\\\\])*?\\1/",
+			function ($matches) use ($placeholderPrefix) {
+				$key = $placeholderPrefix . count($this->quotedStringPlaceholders);
+				$this->quotedStringPlaceholders[$key] = $matches[0];
+				return $key;
+			},
 			$string
 		);
 	}
+
+	protected function restoreQuotedStrings($string, $quotedStringPlaceholders = false) {
+		if (!$quotedStringPlaceholders){
+			$quotedStringPlaceholders = $this->quotedStringPlaceholders;
+		}
+		return str_replace(array_keys($quotedStringPlaceholders), array_values($quotedStringPlaceholders), $string);
+	}
+
+
+	protected function addCarets($string) {
+
+		// Step 1: Replace quoted strings with placeholders
+		$modifiedString = $this->removeQuotedStrings($string);
+
+		// Step 2: Replace brackets with carets
+		$modifiedString = preg_replace(
+			"/(".$this->patterns['functionName'].")\((.*?)\)/s",
+			'$1^^$3^^',
+			$modifiedString
+		);
+
+		// Step 3: Put the quoted strings back
+		return $this->restoreQuotedStrings($modifiedString);
+	}
+
 
 	protected function removeCarets($string){
 
@@ -184,10 +222,13 @@ class Logic {
 
 				$result = $this->traverseStatements($value, $callback, (++$level));
 
-				Helper::debug('Group result ', array(
-					'result' => $result,
-					'group' => $value
-				));
+				if (Helper::$doDebug){
+					Helper::debug('Group result ', array(
+						'result' => $result,
+						'group' => $value
+					));
+				}
+
 			}
 
 			// get the result of the individual statement
@@ -207,7 +248,10 @@ class Logic {
 				// now that we have processed the logical statement, add some debug info
 				$array[$index].= ' ['.$resultString.']';
 
-				Helper::debug('Statement result ('.$value.'): '.$result);
+				if (Helper::$doDebug){
+					Helper::debug('Statement result ('.$value.'): '.$result);
+				}
+
 			}
 
 			// look for the following and/or and possibly return early
@@ -228,38 +272,17 @@ class Logic {
 				return $result;
 			}
 
-			// true result
-			/*if ($result){
-
-				// if the next statement is an 'or',
-				// we can safely return the TRUE result
-				if ($nextStatement === 'or' || $nextStatement === 'OR'){
-					Helper::debug('Return early as true and next is OR ' . json_encode($value));
-					// now that we have processed the logical statement, add some debug info
-					$array[$index].= '[result]';
-					return $result;
-				}
-
-			}
-
-			// false result
-			else {
-
-				// if the next statement is an 'and',
-				// we can safely return the FALSE result
-				if ($nextStatement === 'and' || $nextStatement === 'AND'){
-					Helper::debug('Return early as false and next is AND ' . json_encode($value));
-					$array[$index].= '[result]';
-					return $result;
-				}
-			}*/
-
 		}
 
 		return $result;
 	}
 
-	protected function parseStatement($string){
+	protected function parseStatement($string, $doReplacement = false){
+
+		// temp remove quoted strings
+		if ($doReplacement){
+			$string = $this->removeQuotedStrings($string);
+		}
 
 		preg_match(
 			"/" . implode('|', $this->patterns['expressions']) . "/s",
@@ -268,12 +291,29 @@ class Logic {
 			//PREG_PATTERN_ORDER
 		);
 
+		/*if (Helper::$doDebug){
+			Helper::debug('Parse Statement pattern / string', array(
+				'pattern' => $pattern,
+				'string' => $string,
+				'$matches' => $matches
+			));
+		}*/
+
+		// restore quoted strings
+		if ($doReplacement && !empty($matches['parameter'])) {
+			$matches[0] = $this->restoreQuotedStrings($matches[0]);
+			$matches[3] = $matches['parameter'] = $this->restoreQuotedStrings($matches['parameter']);
+		}
+
 		return $matches;
 	}
 
 	protected function statementResult($parsedStatement){
 
-		Helper::debug('Statement parsed in callback', $parsedStatement);
+		if (Helper::$doDebug){
+			Helper::debug('Statement parsed in callback', $parsedStatement);
+		}
+
 		
 		$result = false;
 
@@ -306,11 +346,14 @@ class Logic {
 				!in_array($functionName, $this->allowedFunctions) || !function_exists($functionName)
 			    //(!function_exists($functionName) && !function_exists( 'Microthemer\\' .$functionName))
 			){
-				Helper::debug('Disallowed or does not exist:', [
-					'$functionName' => $functionName,
-					'not allowed' => !in_array($functionName, $this->allowedFunctions),
-					'does not exist' => !function_exists($functionName)
-				]);
+				if (Helper::$doDebug){
+					Helper::debug('Disallowed or does not exist:', [
+						'$functionName' => $functionName,
+						'not allowed' => !in_array($functionName, $this->allowedFunctions),
+						'does not exist' => !function_exists($functionName)
+					]);
+				}
+
 				return null;
 			}
 
@@ -319,7 +362,9 @@ class Logic {
 				? preg_split("/\s*,\s*/", $parameter)
 				: array();
 
-			Helper::debug('Parameter Strings', $parameters);
+			if (Helper::$doDebug){
+				Helper::debug('Parameter Strings', $parameters);
+			}
 
 			// native PHP functions cannot be called with call_user_func_array (as not user function)
 			if ($functionName === 'isset'){
@@ -365,10 +410,13 @@ class Logic {
 
 					$result = Logic::$cache['functions'][$cacheKey];
 
-					Helper::debug('Pulling function result from cache:', array(
-						'function' => $cacheKey,
-						'result' => $result,
-					));
+					if (Helper::$doDebug){
+						Helper::debug('Pulling function result from cache:', array(
+							'function' => $cacheKey,
+							'result' => $result,
+						));
+					}
+
 				}
 
 				else {
@@ -379,13 +427,17 @@ class Logic {
 						$parsedParameter = $this->parseStatement($parameterString);
 
 						if (!$parsedParameter){
-							Helper::debug('Cannot parse $parameterString: ' . $parameterString);
+							if (Helper::$doDebug){
+								Helper::debug('Cannot parse $parameterString: ' . $parameterString);
+							}
 						} else {
 							$parameters[$i] = $this->statementResult($parsedParameter);
 						}
 					}
 
-					Helper::debug('Parameters converted', $parameters);
+					if (Helper::$doDebug){
+						Helper::debug('Parameters converted', $parameters);
+					}
 
 					$result = call_user_func_array(
 						$functionName,
@@ -439,7 +491,9 @@ class Logic {
 
 		$comparison = false;
 
-		Helper::debug('Split on any comparison', $results);
+		if (Helper::$doDebug){
+			Helper::debug('Split on any comparison', $results);
+		}
 
 		foreach ($results as $index => $part){
 
@@ -455,21 +509,30 @@ class Logic {
 
 					$results[$index] = Logic::$cache['statements'][$part];
 
-					Helper::debug('Pulling statement result from cache:', array(
-						'statement' => $part,
-						'result' => $results[$index],
-					));
+					if (Helper::$doDebug){
+						Helper::debug('Pulling statement result from cache:', array(
+							'statement' => $part,
+							'result' => $results[$index],
+						));
+					}
+
 				}
 
 				// statement needs to be run
 				else {
-					$parsedStatement = $this->parseStatement($part);
+					$parsedStatement = $this->parseStatement($part, true);
 
 					if (!$parsedStatement) {
-						Helper::debug( 'Cannot parse statement: ' . $part);
+						if (Helper::$doDebug){
+							Helper::debug( 'Cannot parse statement: ' . $part);
+						}
+
 						$results[$index] = null;
 					} else {
-						Helper::debug( 'Could parse statement: ' . $part, $parsedStatement);
+						if (Helper::$doDebug){
+							Helper::debug( 'Could parse statement: ' . $part, $parsedStatement);
+						}
+
 						$results[$index] = $this->statementResult($parsedStatement);
 					}
 
@@ -480,7 +543,9 @@ class Logic {
 			}
 		}
 
-		Helper::debug('Processed statement results:', $results);
+		if (Helper::$doDebug){
+			Helper::debug('Processed statement results:', $results);
+		}
 
 		// return comparison if defined and we have two values
 		if ($comparison && count($results) > 2){
@@ -539,6 +604,10 @@ class Logic {
 		$this->string = $string;
 		$this->length = strlen($this->string);
 
+		if (Helper::$doDebug){
+			Helper::debug('About to parse string', array('string' => $this->string, 'length' => $this->length));
+		}
+
 		// look at each character
 		for ($this->position=0; $this->position < $this->length; $this->position++) {
 
@@ -569,6 +638,10 @@ class Logic {
 							$this->current[] = $t;
 							break;
 						}
+					}
+
+					if (Helper::$doDebug){
+						Helper::debug('It is )', array('$isInsideQuotes' => $isInsideQuotes, '$char' => $char, '$this->position', $this->position, '$this->current', $this->current));
 					}
 
 					break;
@@ -609,14 +682,17 @@ class Logic {
 
 		$result = $this->traverseStatements($statementsArray, 'evaluateStatement');
 
-		Helper::debug('Debug', array(
-			'result' => $result,
-			'load' => $result ? 'Yes' : 'No',
-			'logic' => $string,
-			'num_statements' => count($statementsArray, COUNT_RECURSIVE),
-			'analysis' => '<pre>'.print_r($statementsArray, 1).'</pre>',
-			//'cache' => Logic::$cache
-		), false);
+		if (Helper::$doDebug){
+			Helper::debug('Debug', array(
+				'result' => $result,
+				'load' => $result ? 'Yes' : 'No',
+				'logic' => $string,
+				'num_statements' => count($statementsArray, COUNT_RECURSIVE),
+				'analysis' => '<pre>'.print_r($statementsArray, 1).'</pre>',
+				//'cache' => Logic::$cache
+			), false);
+		}
+
 
 		return !$test
 			? $result
@@ -680,21 +756,30 @@ class Logic {
 
 	public function result($string, $test = false, $fileExists = null){
 
-		Helper::debug('String received: ' . $string);
+		if (Helper::$doDebug){
+			Helper::debug('String received: ' . $string);
+		}
 
 		$result = null;
 		$error = false;
 		$statementsArray = $this->parseStatements($string);
+
+		if (Helper::$doDebug){
+			Helper::debug('statementsArray', $statementsArray);
+		}
 
 		// draw from full conditional statements string cache if available
 		if (isset(Logic::$cache['conditions'][$string])){
 
 			$result = Logic::$cache['conditions'][$string];
 
-			Helper::debug('Pulling condition result from cache:', array(
-				'condition' => $string,
-				'result' => $result,
-			));
+			if (Helper::$doDebug){
+				Helper::debug('Pulling condition result from cache:', array(
+					'condition' => $string,
+					'result' => $result,
+				));
+			}
+
 		}
 
 		else {
@@ -788,7 +873,7 @@ class Logic {
 
 	}
 
-	public static function getGutenbergTemplateIds($source, &$id, &$template_ids){
+	public static function getGutenbergTemplateIds($source, &$id, &$template_ids) {
 
 		global $post, $pagenow;
 
@@ -798,13 +883,13 @@ class Logic {
 		$themeSlug = get_stylesheet();
 		$id = Helper::removeRedundantThemePrefix($id, $themeSlug);
 		$currentTemplate = '';
+		$urlParams = Helper::extractUrlParams($themeSlug);
 
 		// Get parameters in case we are in the FSE view
-		extract(Helper::extractUrlParams($themeSlug));
+		extract($urlParams);
 
-		// Get the current template from GET or captured from hook on frontend
-		if ($isFSE){
-
+		// Determine the starting points and their trails
+		if ($isFSE) {
 			// FSE falls back to the home page if no $postId is set (for overview pages)
 			// So we need to grab the post for the single page if set
 			$homePageFallback = false;
@@ -826,8 +911,19 @@ class Logic {
 
 			}
 
+			/*if (Helper::$doDebug){
+				Helper::debug('The url params to compare', array(
+					'$urlParams' => $urlParams,
+					'source' => $source,
+					'$id' => $id,
+					'$template_ids' => $template_ids,
+				));
+			}*/
+
 			// single template and page views
-			if ($fseType === 'wp_template'){
+			if ($fseType === $source && $postId == $id){ // wp_navigation, wp_template_part, wp_pattern
+				$template_ids[$id] = 'blocksOnly';
+			} if ($fseType === 'wp_template'){
 				$currentTemplate = $postId;
 			} elseif($fseType === 'page' || ($postId && $homePageFallback)){
 				if (!$homePageFallback){
@@ -836,8 +932,11 @@ class Logic {
 				$currentTemplate = Helper::getTemplateFromPostId($postId, $post);
 				Helper::debug('FSE page template: '.$currentTemplate);
 			}
-		} else {
 
+		}
+
+		// non FSE
+		else {
 			// regular Gutenberg editor
 			if ($pagenow === 'post.php' && isset($_GET['post'])){
 				$postId = $_GET['post'];
@@ -852,32 +951,33 @@ class Logic {
 
 		}
 
-
-		Helper::debug('Check '.($isFSE ? 'FSE' : 'front/other').' for '.$source.' with id: '.$id . ' (current template: '.$currentTemplate.')');
-
-		// the check for a template is simple in FSE or frontend - there is just one value to compare
-		if ($source === 'wp_template'){
+		if ($source === 'wp_template') {
 			if ($currentTemplate == $id){ // loose, so user can use quotes e.g. "404"
-				Helper::debug('Found wp_template: ' . $id);
+				if (Helper::$doDebug){
+					Helper::debug('Found wp_template: ' . $id);
+				}
 				$template_ids[$id] = 'blocksOnly';
 			}
-		}
-
-		// for parts, patterns, and navigation
-		else {
-			
+		} else {
 			// we need to check the cached map
 			$map = Helper::getTemplateMap($themeSlug, Logic::$cache);
-			
+
+			// use URL param as starting point for FSE nav/template/part/etc
+			if ($isFSE && $map && $fseType && $postId
+			    && isset($map[$fseType]) && isset($map[$fseType][$postId]) ){
+				$startingPoints[] = [
+					'dataArray' => $map[$fseType][$postId],
+					'trail' => $fseType . '.' . $postId
+				];
+			}
+
 			// we should extract any synced pattern references from the post content,
 			// so they can be checked in the map too
-			if ($post instanceof \WP_Post){
-
+			if ($post instanceof \WP_Post) {
 				$content = $post->post_content;
 
 				// allow for the live post override
-				if (Helper::isLiveContentTest()){
-					Helper::debug('Live post override');
+				if (Helper::isLiveContentTest()) {
 					$content = Common::$live_post_content;
 				}
 
@@ -885,21 +985,18 @@ class Logic {
 				$types = $matches[1];
 				$syncedPatternIds = $matches[2];
 
-				if (count($syncedPatternIds)){
-
-					Helper::debug('Found synced patterns in post content: ' . implode(', ', $syncedPatternIds));
-
-					foreach ($syncedPatternIds as $i => $syncedPatternId){
-
+				if ($syncedPatternIds && count($syncedPatternIds)){
+					foreach ($syncedPatternIds as $i => $syncedPatternId) {
 						$type = $types[$i];
 						$key = $type === 'block' ? 'wp_pattern' : 'wp_' . $type;
 
-						if (isset($map[$key][$syncedPatternId])){
+						if (isset($map[$key][$syncedPatternId])) {
+							$startingPoints[] = [
+								'dataArray' => $map[$key][$syncedPatternId],
+								'trail' => $key . '.' . $syncedPatternId
+							];
 
-							$startingPoints[] = $map[$key][$syncedPatternId];
-
-							// log if we found the pattern we're looking for
-							if ($source === $key && $id == $syncedPatternId){
+							if ($source === $key && $id == $syncedPatternId) {
 								$template_ids[$syncedPatternId] = 'blocksOnly';
 							}
 						}
@@ -908,123 +1005,97 @@ class Logic {
 
 			}
 
-			else {
-				Helper::debug('Post not available', $post);
-			}
-
-			// with FSE, we still want to check the map recursively
-			// determine the starting point based on the GET parameters
-			if ($isFSE && $fseType !== 'page'){
-
-				Helper::debug('$fseType is '.$fseType.' ('.$categoryType.'): '.$postType);
-
-				// if we have a match of logic parameters and get parameters
-				if ($fseType === $source && $postId == $id){ // loose, so user can use quotes e.g. "404"
-					Helper::debug('Top level FSE GET parameters match ('.$source.'): '.$id);
-					$template_ids[$id] = 'blocksOnly';
-				}
-
-				// otherwise search map from current type starting point
-				elseif (isset($map[$fseType][$postId])){
-					$startingPoints[] = $map[$fseType][$postId];
-				}
-
-			}
-
-			// if any page other than FSE template/part/pattern (so FSE page is included here),
-			// we scan the map from the current template starting point
-			else {
-				if ($currentTemplate){
-					if (isset($map['wp_template'][$currentTemplate])){
-						$startingPoints[] = $map['wp_template'][$currentTemplate];
-					}
+			if ($currentTemplate) {
+				if (isset($map['wp_template'][$currentTemplate])) {
+					$startingPoints[] = [
+						'dataArray' => $map['wp_template'][$currentTemplate],
+						'trail' => 'wp_template.' . $currentTemplate,
+					];
 				}
 			}
 
-			// if we have a valid starting point, search for the item in the map recursively
-			if (count($startingPoints) && empty($template_ids[$id])){
-
-				$numStartingPoint = count($startingPoints);
-
-				foreach ($startingPoints as $i => $startingPoint){
-
-					Logic::checkGutenbergMap(
-						$startingPoint, $map, $id, $template_ids, $source
-					);
-
-					// stop searching any further if we've found something
-					if (!empty($template_ids[$id])){
-						Helper::debug('Stop searching at point '.($i+1).'/'.$numStartingPoint.' ('.$source.'): ' . $id);
-						break;
-					}
-				}
-
+			if (Helper::$doDebug){
+				Helper::debug('$startingPoints', array(
+					'id' => $id,
+					'postId' => $postId,
+					'$startingPoints' => $startingPoints,
+					'currentTemplate' => $currentTemplate,
+					'urlParams' => $urlParams
+				));
 			}
 
+			foreach ($startingPoints as $startingPoint) {
+				$visited = array();
+				Logic::checkGutenbergMap(
+					$startingPoint['dataArray'], $map, $id, $template_ids, $source, $visited, 0, 50, $startingPoint['trail']
+				);
 
+				if (!empty($template_ids[$id])) {
+					break;
+				}
+			}
 		}
-
-		if (Helper::$debug){
-			/*if ('twentytwentyfour//page-with-sidebar' == $id){
-				wp_die('<pre>'.print_r([
-						'source' => $source,
-						'$currentTemplate' => $currentTemplate,
-						'$currentTemplate Type' => gettype($currentTemplate),
-						'theme' => $themeSlug,
-						'id' => $id,
-						'id Type' => gettype($id),
-						'template_ids' => $template_ids,
-						'$startingPoints' =>$startingPoints,
-						'map' => $map,
-					], true).'</pre>');
-			}*/
-
-
-
-
-		}
-
-
 	}
 
-	// Check Gutenberg parts / patterns
-	public static function checkGutenbergMap($array, $map, $id, &$template_ids, $source){
+	public static function checkGutenbergMap(
+		$array, $map, $id, &$template_ids, $source, &$visited = array(), $depth = 0, $maxDepth = 50, $trail = ''
+	) {
+		Helper::debug("Run checkGutenbergMap (" . $depth . "): " . $id . " Trail: " . $trail);
 
-		// bail if we've already checked the item and its sub-items
-		if (isset($template_ids[$id])){
-			Helper::debug('Bail as id is set ('.$source.'): ' . $id);
+		// Stop if maximum recursion depth is reached
+		if ($depth > $maxDepth) {
+			if (Helper::$doDebug) {
+				Helper::debug("Maximum recursion depth reached in checkGutenbergMap");
+			}
 			return;
 		}
 
-		// parts can't have sub-parts, but they can have sub-patterns (nav is a type of pattern)
-		// patterns can have both sub-patterns and sub-parts
-		// So we need to recursively check both types
-		$sources = array('wp_template_part', 'wp_pattern', 'wp_navigation');
+		// Use trail as the unique identifier for the current node
+		if (isset($visited[$trail])) {
+			if (Helper::$doDebug) {
+				Helper::debug("Already visited node: " . $trail, $array);
+			}
+			return;
+		}
 
-		foreach ($sources as $itemSource){
+		// Mark the current node as visited
+		$visited[$trail] = true;
+		if (Helper::$doDebug) {
+			Helper::debug("Mark as visited: " . $trail, $array);
+		}
 
-			if (!empty($array[$itemSource])){
+		// Sources to process
+		$sources = ['wp_template_part', 'wp_pattern', 'wp_navigation'];
 
+		foreach ($sources as $itemSource) {
+			if (!empty($array[$itemSource])) {
 				$subArray = $array[$itemSource];
 
-				if (is_array($subArray)){
+				if (is_array($subArray)) {
+					foreach ($subArray as $itemId => $enabled) {
+						$newTrail = $trail . ($trail ? '.' : '') . $itemSource . '.' . $itemId;
 
-					foreach($subArray as $itemId => $enabled){
-
-						/*echo '<br /><br />$itemSource: '.$itemSource .
-						     '<br />$source: '.$source .
-						     '<br />$itemId: '.$itemId .
-						     '<br />$id: '.$id;*/
-
-						if ($itemSource === $source && Helper::maybeMakeNumber($itemId) == $id){ // loose, so user can use quotes e.g. "404"
-							$template_ids[$id] = 'blocksOnly';
-							Helper::debug('Match found ('.$itemSource.'): ' . $id);
+						if (Helper::$doDebug) {
+							Helper::debug("Check: " . Helper::maybeMakeNumber($itemId) . ' = ' . $id, $itemSource);
 						}
 
-						elseif (!empty($map[$itemSource][$itemId])){
-							Helper::debug('Recursive check ('.$itemSource.'): ' . $itemId);
-							Logic::checkGutenbergMap(
-								$map[$itemSource][$itemId], $map, $id, $template_ids, $source
+						// Match the current source and ID
+						if ($itemSource === $source && Helper::maybeMakeNumber($itemId) == $id) {
+							$template_ids[$id] = 'blocksOnly';
+						}
+
+						// Recursively check nested structures
+						elseif (!empty($map[$itemSource][$itemId])) {
+							self::checkGutenbergMap(
+								$map[$itemSource][$itemId],
+								$map,
+								$id,
+								$template_ids,
+								$source,
+								$visited,
+								$depth + 1,
+								$maxDepth,
+								$newTrail
 							);
 						}
 					}
@@ -1032,6 +1103,8 @@ class Logic {
 			}
 		}
 	}
+
+
 
 }
 
@@ -1136,17 +1209,20 @@ function has_template($source = null, $id = null, $label = null){
 
 	global $post;
 
-	$cache = !empty(Logic::$cache[$source]['template_ids'])
+	// todo maybe this would work if Logic::$cache[$source][$id]['template_ids'] - try later
+	/*$cache = !empty(Logic::$cache[$source]['template_ids'])
 		? Logic::$cache[$source]['template_ids']
-		: false;
-	$template_ids = $cache ?: array();
+		: false;*/
+	$template_ids = array(); // $cache ?: array();
 	$returnType = true;
+
+	//echo 'gotherebastyxxx-' . $source . $id . ' - <pre>'.print_r($cache, 1).'</pre><br/>';
 
 	if (!$source || !$id){
 		return false;
-	} if ($cache){
+	} /*if ($cache){
 		return !empty($cache[$id]) ? $cache[$id] : false;
-	}
+	}*/
 
 	// gather template_ids
 	switch ($source) {
@@ -1166,12 +1242,13 @@ function has_template($source = null, $id = null, $label = null){
 		case 'wp_pattern':
 		case 'wp_navigation':
 			$returnType = 'blocksOnly';
+			//echo 'gotherebasty-' . $source . $id . '<br/>';
 			Logic::getGutenbergTemplateIds($source, $id,$template_ids);
 			break;
 	}
 
-	// cache template analysis for the source
-	Logic::$cache[$source]['template_ids'] = $template_ids;
+	// cache template analysis for the source - no this does not work.
+	//Logic::$cache[$source]['template_ids'] = $template_ids;
 
 	return !empty($template_ids[$id]) ? $returnType : false;
 }

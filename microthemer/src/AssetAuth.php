@@ -54,7 +54,8 @@ class AssetAuth extends AssetLoad {
 
         if ($this->isFrontend){
 	        $this->hookRedirect();
-	        $this->hookNonLoggedIn();
+			$this->nonLoggedInMode(); // we are already on init hook, so function can be run immediately
+	        //$this->hookNonLoggedIn();
 	        $this->hookAdminBarLink();
 			$this->hookDequeue();
         }
@@ -237,7 +238,8 @@ class AssetAuth extends AssetLoad {
 			// ensure that folderLoading config has been set
 			// it won't be if stylesheet_order has a value
 			if (!$this->folderLoadingChecked && isset($asset_loading['logic']) && count($asset_loading['logic'])){
-				$this->conditionalAssets($asset_loading['logic'], true);
+				//echo 'getCondAssets ';
+				$this->conditionalAssets($asset_loading['logic'], false, true);
 			}
 
             // Get the folder loading status of any draft folder too
@@ -334,6 +336,7 @@ class AssetAuth extends AssetLoad {
         $title = null;
         $type = null;
         $id = null;
+	    $post_status = '';
         $post_id = 0;
 	    $isFSE = $pagenow === 'site-editor.php';
 	    $permalink = home_url(); // default to the home page
@@ -356,6 +359,7 @@ class AssetAuth extends AssetLoad {
 		    $type = $wp_query->is_page ? 'page' : 'single';
 		    $blockPrefix = esc_html__('Blocks - ', 'microthemer');
 		    $post_title = $title = ($this->isAdminArea ? $adminPrefix : '') .  $post->post_title;
+		    $post_status = $post->post_status;
 
             // general page logic
             $pageLogic = $isAdminPostPageEdit
@@ -462,7 +466,8 @@ class AssetAuth extends AssetLoad {
 		    'post_id' => $post_id,
 		    'post_title' => $post_title,
             'id' => $id,
-            'slug' => $slug,
+		    'post_status' => $post_status,
+		    'slug' => $slug,
             'title' => $title,
             'logic' => $logic,
             'alt_logic' => $alt,
@@ -584,8 +589,10 @@ class AssetAuth extends AssetLoad {
 			$nonce = !empty($_GET['_wpnonce']) ? $_GET['_wpnonce'] : false;
 
             if (current_user_can("administrator") and wp_verify_nonce( $nonce, 'mt_nonlog_check' ) ) {
-				wp_set_current_user(-1);
-			} else {
+	            wp_set_current_user(-1);
+			}
+
+			else {
 				die('Permission denied');
 			}
 		}

@@ -10,12 +10,12 @@ namespace Microthemer;
 
 class Helper {
 
-	public static $debug = false;
+	public static $doDebug = false;
 	public static $debugOutput = '';
 
 	public static function debug($message, $data = false, $die = false){
 
-		if (Helper::$debug){
+		if (Helper::$doDebug){
 
 			$output = $message;
 
@@ -24,14 +24,15 @@ class Helper {
 			}
 
 			if (!$data){
-				$output.= '<br /><br />';
+				$output.= "\n\n";
 			}
 
 			if ($die){
 				wp_die($output);
 			} else {
-				if (Helper::$debug !== 'silent'){
-					echo $output;
+				if (Helper::$doDebug !== 'silent'){
+					//echo $output;
+					error_log($output . "\n\n");
 				}
 				//Helper::$debugOutput.= $output;
 			}
@@ -243,7 +244,7 @@ class Helper {
 
 		return isset($matches[2])
 			? $matches
-			: array();
+			: array('', '');
 
 	}
 

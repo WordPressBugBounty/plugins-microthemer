@@ -400,7 +400,9 @@ class Common {
 		Common::$live_post_content = stripslashes($_POST['live_post_content']);
 		Common::$live_template = stripslashes($_POST['live_template']);
 
-		Helper::debug('updateLiveTemplateData');
+		if (Helper::$doDebug){
+			Helper::debug('updateLiveTemplateData');
+		}
 
 		// update the live map
 		Common::maybeUpdateTemplateCache($micro_root_dir, null, true);
@@ -427,7 +429,10 @@ class Common {
 		extract(Helper::extractUrlParams($themeSlug));
 		if (Helper::isLiveContentTest() && $fseType === $type && $postId == $slug){
 			$content = Common::$live_post_content;
-			Helper::debug('Live content used to update the live map ('.$fseType.'): ' . $postId);
+			if (Helper::$doDebug){
+				Helper::debug('Live content used to update the live map ('.$fseType.'): ' . $postId);
+			}
+
 		}
 
 		$store = array(
@@ -452,8 +457,8 @@ class Common {
 		}
 
 		// debug
-		//$entry['content'] = esc_html($item->content);
-		//$entry['blocks'] = $blocks;
+		/*$entry['content'] = esc_html($item->content);
+		$entry['blocks'] = $blocks;*/
 
 		$map[$type][$slug] = count($entry) ? $entry : 1;
 

@@ -209,7 +209,11 @@ class Admin {
 	);
 
 	function __construct(){
-		$this->init();
+
+        // Since WP 6.7, we must run the whole init method after the init hook so that translations come after that.
+        // Any call to a translation functions e.g. __('DISABLED', 'microthemer') will trigger a warning otherwise
+		// $this->init();
+		add_action('init', array(&$this, 'init'));
 	}
 
 	function check_table_exists($table_name, $also_populated = false){
@@ -230,15 +234,6 @@ class Admin {
 
 		return $exists && $wpdb->num_rows > 0;
 	}
-
-
-
-
-
-
-
-
-
 
 
 	function log_subscription_check(){
@@ -1410,39 +1405,6 @@ class Admin {
 				wp_enqueue_script( $arr['h'], '', $dep, $v, !empty($arr['footer']));
 			}
 		}
-
-
-		/*// for article
-				$jqueryUIScripts = array(
-					'core',
-					'widget',
-					'mouse',
-					'sortable',
-					'menu',
-					'autocomplete',
-				);
-
-				$prevScript = false;
-
-				foreach ($jqueryUIScripts as $scriptName){
-
-					$jqueryUIDeps = array('jquery', 'jquery-migrate');
-
-					if (!empty($prevScript)){
-						$jqueryUIDeps[] = 'jquery-ui-core';
-						$jqueryUIDeps[] = 'jquery-ui-'.$prevScript;
-					}
-
-					wp_scripts()->remove( $scriptName );
-
-					wp_enqueue_script(
-						$scriptName, '/wp-content/themes/my-theme/js/temp-fix/'.$scriptName.'.js',
-						$jqueryUIDeps
-					);
-
-					$prevScript = $scriptName;
-				}*/
-
 
 		// load js strings for translation
 		include_once $this->thisplugindir . 'includes/js-i18n.inc.php';

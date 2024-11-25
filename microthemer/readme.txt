@@ -79,6 +79,14 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.3.2.3 (Nov 25th, 2024) =
+
+# Bugs fixed
+* The preference option "Support admin area point and click editing" did not work on block editor admin pages.
+* Fixed an issue with folders names having a _2 suffix even when the name didn't clash with an existing folder.
+* A text translations warning could flash up briefly when loading the Microthemer interface.
+* More Gutenberg integration fixes for WordPress 6.7.
+
 = 7.3.2.2 (Nov 19th, 2024) =
 
 # Bugs fixed

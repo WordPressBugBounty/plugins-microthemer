@@ -313,7 +313,7 @@ class Admin {
 		          .'&mt_version='.$this->version;
 
 		 //Get local URL
-        //$this->show_me = 'https://tvrdev.themeover.com/wp-content/tvr-auto-update/validate.php'.'?'.$params;
+        //$this->show_me = $base_url . '?' . $params;
         //return 'https://tvrdev.themeover.com/wp-content/tvr-auto-update/validate.php'.'?'.$params;
 
 		return $base_url.'?'.$params;

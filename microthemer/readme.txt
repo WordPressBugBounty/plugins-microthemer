@@ -79,6 +79,15 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.3.2.4 (Dec 9th, 2024) =
+
+# Bugs fixed
+* The order CSS styles are loaded on the page could be different when editing with Microthemer compared to the regular frontend. This meant selectors could have an effect in Microthemer but not the frontend.
+
+# Enhancement
+* Microthemer displays a "Drag here" box on empty folders to help drag selectors between folders.
+* The font-size for the code editor can be customised via the preferences.
+
 = 7.3.2.3 (Nov 25th, 2024) =
 
 # Bugs fixed

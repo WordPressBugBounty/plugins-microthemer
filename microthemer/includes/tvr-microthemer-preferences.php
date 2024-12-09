@@ -205,6 +205,12 @@ $this->display_log();
 			            'label' => __('Auto-focus the code editor cursor on element select', 'microthemer'),
 			            'explain' =>__('This saves time clicking on the code editor after selecting an element, but can also lead to accidental typing in the editor', 'microthemer')
 		            ),
+		            'code_font_size' => array(
+                        'is_text' => 1,
+                        'one_line' => 1,
+			            'label' => __('Set the font-size for the code editor', 'microthemer'),
+			            'explain' => ''
+		            ),
 
 		            /*'tooltip_delay' => array(
 			            'label' => __('Tooltip delay time (in milliseconds)', 'microthemer'),

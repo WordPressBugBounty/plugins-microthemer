@@ -1219,7 +1219,19 @@ require_once('common-inline-assets.php');
 
 		                    'wrap' => 1,
 			                'actions' => array(
+				                /*'fontsize' => array(
+					                'custom' =>
+						                '<div class="code-font-size"><span>'
+						                .esc_html__('Set code font-size', 'microthemer')
+						                .'</span>'
+						                .$this->toggle('code_manual_resize', array(
+							                'toggle' => $this->preferences['code_manual_resize'],
+							                'toggle_id' => 'code_manual_resize',
+							                'data-pos' => esc_attr__('Enable drag resize', 'microthemer'),
+							                'data-neg' => esc_attr__('Auto-set editor height', 'microthemer'),
+						                )).'</div>'
 
+				                ),*/
 			                    'resize' => array(
 			                       'custom' =>
                                        '<div class="code-manual-resize-wrap"><span>'

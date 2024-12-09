@@ -673,6 +673,7 @@ $this->default_preferences = array(
 	"scroll_to_elements" => 1, // scroll to out of view elements in reposition_overlays
 	"autofocus_editor" => 0,
 	"wireframe_mode" => 0,
+	"code_font_size" => 14,
 	"allow_scss" => 0, // if enabled by default, invalid css/scss will prevent stylesheet update.
 	"add_block_classes_all" => 0,
 	"sync_browser_tabs" => 1, // change for Gutenberg

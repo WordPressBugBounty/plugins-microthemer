@@ -79,6 +79,12 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.3.2.5 (Jan 9th, 2024) =
+
+# Bugs fixed
+* When point and click editing of the admin interface was enabled, a JS error could be triggered when saving a Post or Page.
+* An error loading Microthemer folders could occur if making a typo and setting a number as a CSS property e.g. 3: red;
+
 = 7.3.2.4 (Dec 9th, 2024) =
 
 # Bugs fixed

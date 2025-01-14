@@ -34,7 +34,8 @@ class Logic {
 
 	// Regex patterns for reading logic
 	protected $patterns = array(
-		"andOrSurrSpace" => "/\s+\b(and|AND|or|OR)\b\s+/",
+		//"andOrSurrSpace" => "/\s+\b(and|AND|or|OR)\b\s+/",
+		"andOrSurrSpace" => '/\b(?:and|AND|or|OR)\b(?=(?:[^"\']*(?:"[^"]*"|\'[^\']*\'))*[^"\']*$)/', // exclude if inside double quotes
 		"functionName" => "(!)?\s*[a-zA-Z_\\\\]+",
 		"comparison" => "/\s*(?<comparison><=|<|>|>=|!==?|===?)\s*/",
 		"expressions" => array(

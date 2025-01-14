@@ -5,13 +5,7 @@ if(preg_match('#' . basename(__FILE__) . '#', $_SERVER['PHP_SELF'])) {
 	die('Please do not call this page directly.');
 }
 
-/*global $media_queries_list_above, $media_queries_list;
-$this->show_me = '<pre>$media_queries_list: '.print_r($this->oxygen_mqs, true). '</pre>' .
-                 '<pre>$media_queries_list_above: '.print_r($media_queries_list_above, true). '</pre>';*/
-
 //$this->show_me = '<pre>layout: '.print_r($this->preferences['layout'], true). '</pre>';
-
-
 
 $debug_unlock = false;
 if ($debug_unlock){

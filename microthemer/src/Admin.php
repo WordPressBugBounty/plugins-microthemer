@@ -10767,6 +10767,22 @@ class Admin {
 
 	}
 
+    /*function testMoxieJson(){
+        $data = file_get_contents($this->thisplugindir . 'error-reports/blue-config.json');
+	    if( !class_exists('Moxiecode_JSON') ) {
+		    require_once($this->thisplugindir . 'includes/class-json.php');
+		    //require_once($this->thisplugindir . 'includes/class-json-modernised.php');
+	    }
+	    $json_object = new \Moxiecode_JSON();
+
+	    if (!$json_array = $json_object->decode($data)) {
+		    $this->log('', '', 'error', 'json-decode', array('json_file', 'example-json.json'));
+		    return false;
+	    } else {
+           $this->show_me = 'The JSON decoded successfully: <pre>' . print_r($json_array, 1) . '</pre>';
+	    }
+    }*/
+
 	// encode or decode json todo replace other $json_object actions with this function (and test)
 	function json($action, $data, $json_file = ''){
 
@@ -10780,22 +10796,22 @@ class Admin {
 
 				// MT may be trying to decode data encoded by an older custom JSON class, rather than PHP native
 				// so attempt to decode using legacy class
-				if( !class_exists('Moxiecode_JSON') ) {
-					require_once($this->thisplugindir . 'includes/class-json.php');
-				}
-				$json_object = new \Moxiecode_JSON();
+                try {
+	                if( !class_exists('Moxiecode_JSON') ) {
+		                //require_once($this->thisplugindir . 'includes/class-json.php');
+		                require_once($this->thisplugindir . 'includes/class-json-modernised.php');
+	                }
+	                $json_object = new \Moxiecode_JSON();
 
-				// we still can't decode the data
-				if (!$json_array = $json_object->decode($data)) {
-					$this->log('', '', 'error', 'json-decode', array('json_file', $json_file));
-					return false;
-				}
-
-				/*$this->log(
-							esc_html__('Legacy format data successfully decoded', 'microthemer'),
-							'<p>' . esc_html__('Please contact themeover.com for help', 'microthemer') . '</p>',
-						   'info'
-						);*/
+	                // we still can't decode the data
+	                if (!$json_array = $json_object->decode($data)) {
+		                $this->log('', '', 'error', 'json-decode', array('json_file', $json_file));
+		                return false;
+	                }
+                } catch(\Exception $e){
+	                $this->log('', '', 'error', 'json-decode', array('json_file', $json_file));
+	                return false;
+                }
 
 			}
 			return $json_array;

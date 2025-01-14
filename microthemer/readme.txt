@@ -79,6 +79,20 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.3.2.6 (Jan 14th, 2024) =
+
+# Bugs fixed
+* Logical folder conditions could return the wrong result if the word "and" was in the page title text used for human reference.
+* Fixed an issue with a legacy JSON decoder which could cause issues saving settings.
+* Microthemer could create multiple folders for the same page if the page title changed.
+* Selecting a different folder from the top toolbar during targeting was overwritten if the "Auto folder" checkbox was enabled.
+
+= 7.3.2.6 (Jan 13th, 2024) =
+
+# Bugs fixed
+* Logical folder conditions could return the wrong result if the word "and" was in the page title text used for human reference.
+* Fixed an issue with a legacy JSON decoder which could cause issues saving settings.
+
 = 7.3.2.5 (Jan 9th, 2024) =
 
 # Bugs fixed

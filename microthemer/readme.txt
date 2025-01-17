@@ -79,6 +79,11 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.3.2.7 (Jan 17th, 2024) =
+
+# Bugs fixed
+* The previous update caused an error with "or" conditions in the folder logic, causing folders to not load.
+
 = 7.3.2.6 (Jan 14th, 2024) =
 
 # Bugs fixed

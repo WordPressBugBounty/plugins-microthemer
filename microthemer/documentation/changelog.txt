@@ -1,5 +1,12 @@
 CHANGELOG
 
+= 7.3.2.8 (Feb 26th, 2024) =
+
+# Bugs fixed
+* The color picker value was getting lost if manually typing a color value name, hex, or rgb.
+* When using variable colors, the top part of the color input was white instead of the variable color.
+* Reordering a draft selector before saving it triggered an error.
+
 = 7.3.2.7 (Jan 17th, 2024) =
 
 # Bugs fixed

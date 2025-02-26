@@ -1696,7 +1696,7 @@ class Admin {
 
 		// color variables
 		$colorVariablesRuleSet = !empty($this->preferences['mt_color_variables_css'])
-			? '.sp-container .tile-color, .tvr-input-wrap .var-color-box { '.strip_tags($this->preferences['mt_color_variables_css']).' }'
+			? '.sp-container .tile-color, .tvr-input-wrap .var-color-box, .mt-color-picker { '.strip_tags($this->preferences['mt_color_variables_css']).' }'
 			: '';
 
 		echo '

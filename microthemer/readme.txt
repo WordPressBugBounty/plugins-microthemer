@@ -66,7 +66,7 @@ This lite version limits you styling 15 things, and doesn't include the features
 
 Hello everyone, my name is Sebastian. I've designed Microthemer for developers as well as beginners. My aim is to level up beginners by exposing the CSS code Microthemer generates when using the visual controls. This is of course helpful for developers who may wish to make manual edits. Some developers use Microthemer as an in-browser CSS or Sass editor, and just lean on the interface for element selection or more advanced properties like filters, grid, and animation.
 
-I've been happily developing Microthemer and supporting users of varying technical experience in my forum for many years now. I'm always ready to answer questions about the software and help out with CSS hurdles. Please don't hesitate to get in touch!
+I've been happily developing Microthemer and supporting users of varying technical experience in my forum for many years now. I'm always ready to answer questions about the software and help out with CSS issues. Please don't hesitate to get in touch!
 
 
 == Installation ==
@@ -78,6 +78,13 @@ I've been happily developing Microthemer and supporting users of varying technic
 5. Start customizing the appearance of your site.
 
 == Changelog ==
+
+= 7.3.2.8 (Feb 26th, 2024) =
+
+# Bugs fixed
+* The color picker value was getting lost if manually typing a color value name, hex, or rgb.
+* When using variable colors, the top part of the color input was white instead of the variable color.
+* Reordering a draft selector before saving it triggered an error.
 
 = 7.3.2.7 (Jan 17th, 2024) =
 

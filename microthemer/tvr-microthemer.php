@@ -4,13 +4,13 @@ Plugin Name: Microthemer
 Plugin URI: https://themeover.com/microthemer
 Text Domain: microthemer
 Domain Path: /languages
-Description: Microthemer is a feature-rich visual design plugin for customizing the appearance of ANY WordPress Theme or Plugin Content (single posts & pages, headers, footers, sidebars, contact forms, shopping carts etc.) down to the smallest detail. For CSS coders, Microthemer is a proficiency tool that allows them to rapidly restyle a WordPress site. For non-coders, Microthemer's intuitive point and click editing opens the door to advanced style customization.
-Version: 7.3.2.8
+Description: Microthemer is a powerful visual CSS editor that cares about site performance.
+Version: 7.4.0.9
 Author: Themeover
 Author URI: https://themeover.com
 */
 
-// Copyright 2023 by Sebastian Webb @ Themeover
+// Copyright 2025 by Sebastian Webb @ Themeover
 
 // Stop direct call
 if ( !defined( 'ABSPATH') ) {
@@ -21,40 +21,67 @@ if ( !defined( 'ABSPATH') ) {
 require dirname(__FILE__) . '/src/autoload.php';
 
 // Plugin constants
-if (!defined('MT_IS_ACTIVE')) {
-	define('MT_IS_ACTIVE', true); // signal MT is active, for inactive code
-} if (!defined('TVR_DEV_MODE')) {
+if (!defined('TVR_DEV_MODE')) {
 	define('TVR_DEV_MODE', false); // signal dev mode
 } if (!defined('TVR_DEBUG_DATA')) {
 	define('TVR_DEBUG_DATA', false); // debug data
+} if (!defined('TVR_CSS_EDITOR')) {
+	define('TVR_CSS_EDITOR', true);
+} if (!defined('MT_IS_ACTIVE')) {
+	define('MT_IS_ACTIVE', true); // signal MT is active, for inactive code
 }
 
 // Initiate Microthemer functionality once current_user_can() can be checked (after plugins_loaded hook runs)
-function initiateMicrothemer() {
+if (!function_exists('initiateMicrothemer')){
+	function initiateMicrothemer() {
 
-	// Admin dashboard
-	if ( is_admin() ) {
+		// Admin dashboard
+		if (is_admin()) {
 
-		// Only run admin code for a logged in Administrator
-		if (current_user_can('administrator')){
-			new Microthemer\Admin();
-		}
-	}
+			// Only run admin code for a logged in Administrator
+			if (current_user_can('administrator')){
+				new Microthemer\Admin();
+			}
 
-	// Site frontend
-	else {
+			// Public ajax
+			new Microthemer\AjaxPublic();
 
-		// logged in Administrator viewing the frontend - include editing assets
-		if (current_user_can('administrator')){
-			new Microthemer\AssetAuth('edit');
 		}
 
-		// Non-admin viewing the site - just load minimal CSS assets
+		// Site frontend
 		else {
-			new Microthemer\AssetLoad();
-		}
 
+			// logged in Administrator viewing the frontend - include editing assets
+			if (current_user_can('administrator')){
+				new Microthemer\AssetAuth('edit');
+			}
+
+			// Non-admin viewing the site - just load minimal CSS assets
+			else {
+				new Microthemer\AssetLoad();
+			}
+
+		}
 	}
+
+	add_action('plugins_loaded', 'initiateMicrothemer');
 }
 
-add_action('plugins_loaded', 'initiateMicrothemer');
+// Explain how admins should set up both Amender and Microthemer correctly
+elseif (is_admin()) {
+	add_action(
+		'admin_notices',
+		function() {
+			if (current_user_can('administrator')){
+				echo '
+				<div class="notice notice-error">
+					<p>' .
+					     '<strong>You cannot run Microthemer and Amender as two separate plugins</strong>. Remove one, then enable Amender or Microthemer as an addon via <i>Settings > General > Preferences</i>.' .
+					'</p>
+				</div>';
+			}
+
+		}
+	);
+}
+

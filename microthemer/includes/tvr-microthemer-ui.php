@@ -5,15 +5,16 @@ if(preg_match('#' . basename(__FILE__) . '#', $_SERVER['PHP_SELF'])) {
 	die('Please do not call this page directly.');
 }
 
-//$this->show_me = '<pre>layout: '.print_r($this->preferences['layout'], true). '</pre>';
 
-$debug_unlock = false;
+//$this->show_me = '<pre>Connection result: '.print_r($result, true). '</pre>';
+
+/*$debug_unlock = false;
 if ($debug_unlock){
 	$this->show_me.= '<pre>'.print_r($this->preferences['subscription'], true). '</pre>';
 	$this->show_me.= '<pre>'.print_r($this->preferences['subscription_checks'], true). '</pre>';
 	$this->show_me.= 'buyer_email: ' . $this->preferences['buyer_email'] . '<br />';
 	$this->show_me.= 'retro_sub_check_done: ' . $this->preferences['retro_sub_check_done'] . '<br />';
-}
+}*/
 
 // is edge mode active?
 if ($this->edge_mode['available'] and !empty($this->preferences['edge_mode'])){
@@ -50,6 +51,7 @@ $this->preferences['show_rulers'] ? $ui_class.= ' show_rulers' : false;
 $this->preferences['draft_mode'] ? $ui_class.= ' draft_mode' : false;
 $this->preferences['dock_wizard_right'] ? $ui_class.= ' dock_wizard_right' : false;
 $this->preferences['dock_settings_right'] ? $ui_class.= ' dock_settings_right' : false;
+$this->preferences['dock_ai_right'] ? $ui_class.= ' dock_ai_right' : false;
 $this->preferences['hover_inspect'] ? $ui_class.= ' hover_inspect' : false;
 $this->preferences['selname_code_synced'] ? $ui_class.= ' selname_code_synced' : false;
 $this->preferences['wizard_expanded'] ? $ui_class.= ' wizard_expanded' : false;
@@ -73,6 +75,7 @@ $this->preferences['detach_preview'] ? $ui_class.= ' detach_preview' : false;
 !empty($this->preferences['show_sampled_values']) ? $ui_class.= ' show_sampled_values' : false;
 !empty($this->preferences['show_sampled_variables']) ? $ui_class.= ' show_sampled_variables' : false;
 !empty($this->preferences['tape_measure_slider']) ? $ui_class.= ' tape_measure_slider' : false;
+!empty($this->preferences['show_setup_screen_first_time']) ? $ui_class.= ' show_setup_screen_first_time' : false;
 !empty($this->preferences['show_setup_screen_first_time']) ? $ui_class.= ' show_setup_screen_first_time' : false;
 
 // signal if error reporting is disabled
@@ -106,6 +109,39 @@ foreach ($this->css_filters as $key => $arr){
 		}
 	}
 }
+
+// Signal plugin capabilities
+$corePlugin = $this->isFullEditor()
+    ? 'core-microthemera'
+    : ($this->isContentEditor()
+        ? 'core-amender'
+        : 'core-microthemer'
+    );
+
+$ui_class.= ' ' . $corePlugin;
+if (!$this->supportContent()){
+	$ui_class.= ' microthemer-only';
+} else {
+	$ui_class.= ' support-amender';
+	if ($this->hasContentSubscription()){
+		$ui_class.= ' amender-pro';
+	}
+}
+
+if (!$this->supportGUICSS()){
+	$ui_class.= ' amender-only';
+} else {
+	$ui_class.= ' support-microthemer';
+	if ($this->hasCSSSubscription()){
+		$ui_class.= ' microthemer-pro';
+	}
+}
+
+$ui_class.= ' original-install-'.preg_replace("/[ +]+/", "", strtolower($this->preferences['original_install']));
+
+
+
+//$this->show_me = '$this->supportGUICSS(): ' . $this->supportGUICSS();
 
 // edge mode interface classes
 if ($this->edge_mode['active']){
@@ -581,10 +617,24 @@ require_once('common-inline-assets.php');
                         </div>
 
                         <?php
-                            echo $this->icon('save', array(
-                                'class' => 'mt-save-action',
-                                'title' => esc_attr__('Save settings', 'microthemer')
-                            ));
+                            echo $this->icon('instant-undo', array(
+                                    'id' => 'mt-instant-undo',
+                                    'class' => 'ss-icon disabled',
+                                    'title' => esc_attr__('Undo', 'microthemer'),
+                                    'data-action' => 'undo',
+                                    'data-mtc' => 'TvrUi.iterateRevisionStack'
+                                )) .
+                                $this->icon('instant-redo', array(
+	                                'id' => 'mt-instant-redo',
+	                                'class' => 'ss-icon disabled',
+	                                'title' => esc_attr__('Redo', 'microthemer'),
+	                                'data-action' => 'redo',
+	                                'data-mtc' => 'TvrUi.iterateRevisionStack'
+	                            )) .
+                                $this->icon('save', array(
+                                    'class' => 'ss-icon mt-save-action',
+                                    'title' => esc_attr__('Save settings', 'microthemer')
+                                ));
                         ?>
 
                         <div id="mt-publish-action" class="mt-publish-action">
@@ -598,7 +648,20 @@ require_once('common-inline-assets.php');
 
                     <?php
 
-
+                    // AI assistant
+                    echo $this->ui_toggle(
+	                    'ai_assistant',
+	                    esc_attr__('Expand AI assistant', 'microthemer'),
+	                    esc_attr__('Close AI assistant', 'microthemer'),
+	                    0,
+	                    'ai-expand-toggle ' . $this->iconFont('chatbot-icon', array('onlyClass' => 1)),
+	                    'mt-ai-assistant',
+	                    array(
+		                    'dataAtts' => array(
+			                    'forpopup' => 'aiAssistant'
+		                    ),
+	                    )
+                    );
 
                     // settings
                     echo $this->iconFont('cog', array(
@@ -608,7 +671,7 @@ require_once('common-inline-assets.php');
                     ));
 
                     // unlock MT
-                    if (!$this->preferences['buyer_validated']){
+                    if (!$this->preferences['buyer_validated'] || !$this->preferences['amender_buyer_validated']){
 	                    echo $this->icon('unlock-alt', array(
 		                    'class' => 'license-action mt-fixed-color unlock-pro-version show-dialog',
 		                    'rel' => 'mt-initial-setup',
@@ -675,7 +738,8 @@ require_once('common-inline-assets.php');
                     ?>
 
                     <div class="tvr-input-wrap search-folders-wrap">
-                        <input type="text" id="search-folders-input" class="search-folders-input" name="search_folders" />
+                        <input type="text" id="search-folders-input" class="search-folders-input combobox has-arrows" name="search_folders" rel="search_folders" />
+                        <span class="combo-arrow"></span>
                         <span class="mt-clear-field"></span>
                         <span class="search-folders-placeholder">
                             <?php echo esc_html__('Search folders', 'microthemer'); ?>
@@ -910,19 +974,19 @@ require_once('common-inline-assets.php');
                 <div id="adv-tabs" class="query-tabs menu-style-tabs">
 					<?php
 
-					$tab_headings = array(
+					$tabHeadings = array(
 						'html-inspector' => esc_html__('HTML', 'microthemer'),
 						'css-computed' => esc_html__('Computed', 'microthemer'),
 						'css-inspector' => esc_html__('Styles', 'microthemer'),
 						'refine-targeting' => esc_html__('Targeting', 'microthemer'),
 					);
-					foreach ($tab_headings as $key => $value) {
+					foreach ($tabHeadings as $key => $value) {
 						if ($key == $adv_wizard_focus){
 							$active_c = 'active';
 						} else {
 							$active_c = '';
 						}
-						echo '<span class="adv-tab mt-tab adv-tab-'.$key.' show '.$active_c.'" rel="'.$key.'">'.$tab_headings[$key].'</span>';
+						echo '<span class="adv-tab mt-tab adv-tab-'.$key.' show '.$active_c.'" rel="'.$key.'">'.$value.'</span>';
 					}
 					// this is redundant (preferences store focus) but kept for consistency with other tab remembering
 					?>
@@ -948,18 +1012,6 @@ require_once('common-inline-assets.php');
             <div id="advanced-wizard">
 
                 <div id="footer-shortcuts">
-
-                    <?php
-                    echo $this->ui_toggle(
-	                    'ai_assistant',
-	                    esc_attr__('Expand AI assistant', 'microthemer'),
-	                    esc_attr__('Close AI assistant', 'microthemer'),
-	                    0,
-	                    'ai-expand-toggle '.$this->iconFont('chatbot-icon', array('onlyClass' => 1)),
-	                    'mt-ai-assistant'
-                    );
-
-                    ?>
 
                     <div id="folder-organisation">
 
@@ -989,7 +1041,7 @@ require_once('common-inline-assets.php');
 
                         <span><?php echo esc_html__('Auto folder', 'microthemer'); ?></span>
 
-                        <div id="auto-folders-mode" class="mt-binary-buttons context-binary uit-par <?php echo $autoPageOn; ?>" data-run="autoFolderOptions" data-always-run="1" data-aspect="auto_folders_page" data-toggle-feature="1">
+                        <div id="auto-folders-mode" class="mt-binary-buttons context-binary uit-par <?php echo $autoPageOn; ?>" data-run="mod.MTfolder.autoFolderOptions" data-always-run="1" data-aspect="auto_folders_page" data-toggle-feature="1">
 
                                 <span class="binary-button-option folder-option global-folder-option" title="<?php echo esc_attr__('Assign selectors to global folders', 'microthemer'); ?>" rel="0" data-forpopup="contextMenu">
                                     <?php echo esc_html__('Global', 'microthemer'); ?>
@@ -1058,7 +1110,7 @@ require_once('common-inline-assets.php');
                     <div id="on-canvas-behaviour">
 
                         <div class="mt-oncanvas-dropdown-wrap">
-                            <select id="mt-oncanvas-dropdown">
+                            <select id="mt-oncanvas-dropdown" class="mt-select">
                                 <optgroup label="<?php echo esc_attr__('Visual controls', 'microthemer'); ?>">
                                 <?php
                                 $canvas_controls = array(
@@ -1123,11 +1175,157 @@ require_once('common-inline-assets.php');
 
             </div>
 
+            <div id="ai-assistant-panel" data-popupName="aiAssistant">
+               
+                <div class="mt-panel-column-heading ai-panel-heading">
+					<?php
+					echo $this->iconFont('chatbot-icon', array(
+						'class' => 'heading-icon',
+					));
+
+                    echo '<span>'.esc_html__('AI Assistant', 'microthemer').' <span class="ai-trial-hint muted">(free trial)</span></span>';
+
+					$auto_save = !empty($this->preferences['auto_save_mode'])
+						? ' (changes are auto-saved)'
+						: '';
+
+                    // New chat
+					echo $this->iconFont('add', array(
+						'class' => 'ai-new-task',
+						'title' => 'New chat / task',
+					));
+
+                    // AI more options
+					$pos_title = esc_attr__('Show AI settings', 'microthemer');
+					$neg_title = esc_attr__('Hide AI settings', 'microthemer');
+					echo $this->iconFont('dots-vertical', array(
+						'class' => 'toggle-ai-advanced',
+						'title' => $this->aiData['advanced']['title'],
+						'data-forpopup' => 'contextMenu',
+						//'data-filter' => '#cm-ai-advanced',
+						'data-pos' => $pos_title,
+						'data-neg' => $neg_title
+					));
+                    ?>
+
+                </div>
+
+                <div class="ai-prompt-form ai-option-group">
+
+                    <div class="hidden">
+                        <label>AI can:</label>
+
+                        <select id="ai-can" name="ai_can" class="mt-select">
+                            <option value="chat">Just chat</option>
+                            <option value="add">Add settings</option>
+                            <option value="edit" selected>Add & Edit</option>
+                        </select>
+
+
+
+                    </div>
+
+                    <label>AI model:</label>
+
+                    <select id="ai-model" name="model" class="mt-select">
+                        <optgroup label="Open AI">
+                            <option value="gpt-4o-turbo">gpt-4o-turbo</option>
+                            <option value="gpt-4o-mini">gpt-4o-mini</option>
+                            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                        </optgroup>
+                        <optgroup label="Anthropic">
+                            <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
+                            <option value="claude-3-5-haiku" >claude-3-5-haiku</option>
+                        </optgroup>
+                        <optgroup label="Google">
+
+                            <option value="gemini-2.5-pro-preview-03-25">gemini-2.5-pro-preview-03-25</option>
+                            <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp</option>
+                            <option value="gemini-2.5-flash-preview-04-17">gemini-2.5-flash-preview-04-17</option>
+
+                            <option value="gemini-2.0-flash-001" selected>gemini-2.0-flash</option>
+                            <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+                            <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
+
+                            <option value="gemini-2.0-flash-thinking-exp">gemini-2.0-flash-thinking-exp</option>
+                            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                            <option value="gemini-1.5-flash" >gemini-1.5-flash</option>
+                            <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b</option>
+                        </optgroup>
+                    </select>
+
+                    <textarea id="tvr-ai-prompt" class="tvr-ai-prompt" name="ai_prompt" placeholder="<?php echo $this->supportContent() ? 'Request a website change' : 'Request a style change'; ?>"></textarea>
+                    <span id="ai-send-prompt" class="tvr-button ai-send-prompt">Send</span>
+                    <div class="tvr-ai-talk">
+                        <div id="tvr-ai-status" data-status="undefined"></div>
+                        <?php
+                        echo $this->iconFont('mic', array(
+                            'id' => 'tvr-ai-mic',
+                            'class' => 'tvr-ai-mic hidden',
+                            'title' => esc_attr__("Dictate to AI", 'microthemer'),
+                        ));
+                        ?>
+                    </div>
+                </div>
+
+                <div class="ai-chat ai-option-group scrollable-area">
+                    <ul></ul>
+                </div>
+
+                <div id="ai-editor">
+
+                    <div id="ai-editor-tabs" class="query-tabs">
+
+			            <?php
+
+                        // must be CSS if we do not support HTML and JS
+                        $defaultTab = !$this->supportContent()
+                            ? 'css'
+                            : $this->aiData['defaultTab'];
+
+                        echo '<input class="ai-focus" type="hidden" name="ai_focus_tab" value="'.$defaultTab.'" />';
+
+                        //echo '<pre>'.print_r($this->aiData['tabs'], 1).'</pre>';
+			            foreach ($this->aiData['tabs'] as $key => $value) {
+
+                            if ($key === 'css' || $this->supportContent()){
+	                            $active_c = $key == $defaultTab ? ' active' : '';
+	                            echo '<span class="ai-tab mt-tab ai-tab-'.$key.' show'.$active_c.'" rel="'.$key.'">'.$value.'</span>';
+                            }
+			            }
+
+			            ?>
+
+                    </div>
+
+                    <div id="ai-editor-content" class="ai-area ai-area-html ai-area-css ai-area-blocks hidden show">
+                        <textarea name="ai_code" class="dont-serialize hidden"></textarea>
+                        <pre id="ai_code" class="ai_code"></pre>
+                    </div>
+
+                </div>
+
+            </div>
+
 
             <div id="program-settings-menu" class="scrollable-area" data-popupName="settingsMenu">
-                <div class="mt-panel-column-heading">
-                    <?php echo esc_html__('Settings', 'microthemer'); ?>
-                </div>
+	            <?php
+	            echo $this->ui_toggle(
+		            'expand_all_settings',
+		            esc_attr__('Expand all settings', 'microthemer'),
+		            esc_attr__('Collapse all settings', 'microthemer'),
+		            0,
+		            'mt-panel-column-heading toggle-all-settings ',
+		            'toggle-all-settings',
+		            array(
+			            'tag' => 'div',
+			            'text' => esc_html__('Settings', 'microthemer'),
+			            'inner_icon' => $this->iconFont('chevron-right', array(
+				            'class' => 'toggle-all-settings'
+			            )),
+		            )
+	            );
+	            ?>
 				<?php
 				//echo $this->system_menu();
 				echo $this->settings_menu();
@@ -1169,6 +1367,10 @@ require_once('common-inline-assets.php');
 		            )
 	            ));
 
+               if ($this->supportContent()){
+	               $this->contentMethod('groupContextMenu');
+               }
+
 	            // selector modifier options (must come before targeting options for fav filters)
 	            echo $this->context_menu_content(array(
 		            'base_key' => 'suggestions',
@@ -1192,8 +1394,6 @@ require_once('common-inline-assets.php');
 			            $this->switchAutoFolder()
 		            )
 	            ));
-
-
 
                 // selector (item) options
                 echo $this->context_menu_content(array(
@@ -1290,6 +1490,43 @@ require_once('common-inline-assets.php');
 		            )
 	            ));
 
+
+                // Advanced AI options
+	            echo $this->context_menu_content(array(
+		            'base_key' => 'ai-advanced',
+		            'title' => esc_html__('AI settings', 'microthemer'),
+		            'sections' => array(
+
+			            $this->context_menu_form('edit-ai-settings', array(
+				            'wrap' => 1,
+				            //'wrapClass' => '',
+				            'fields' => array(
+					            'ai_admin_access' => array(
+						            'custom' =>
+							            '<div class="context-toggle-wrap"><span>'
+							            .esc_html__('Allow AI assistant on admin pages', 'microthemer')
+							            .'</span>'
+							            .$this->toggle('ai_admin_access', array(
+								            'toggle' => !empty($this->preferences['ai_admin_access']),
+								            'toggle_id' => 'ai_admin_access',
+							            )).'</div>'
+
+					            ),
+					            /*'api_key' => array(
+						            'label' => esc_html__("API Key", 'microthemer'),
+						            'type' => 'input',
+					            ),
+					            'filler' => array(
+						            'custom' => '<span></span>'
+					            ),*/
+
+				            ),
+				            /*'button' => array(
+					            'text' => esc_html__("Save", 'microthemer'),
+				            )*/
+			            ))
+		            )
+	            ));
 
                 ?>
 
@@ -1399,7 +1636,7 @@ require_once('common-inline-assets.php');
 
 			<?php echo $this->start_dialog(
                     'mt-initial-setup',
-                    esc_html__('Microthemer Setup', 'microthemer') .
+				    $this->appNameFull . ' ' .esc_html__('Setup', 'microthemer') .
                     '<span class="dialog-sub-heading mt-skip-setup"> - <span class="link close-dialog">Skip setup</span></span>'
             ); ?>
 
@@ -1413,163 +1650,101 @@ require_once('common-inline-assets.php');
 
                 <div class="setup-preferences">
 
-                    <div class="setup-preferences-tabs query-tabs dialog-tabs">
-                        <span class="active mt-tab dialog-tab dialog-tab-0 dialog-tab-general" rel="0">
-							Set initial preferences
-						</span>
-                        <span class=" mt-tab dialog-tab dialog-tab-1 dialog-tab-units" rel="1">
-							Import preferences
-						</span>
-                    </div>
+                    <?php
+                    // Initial preferences / import preferences
+                    $sectionHTML = '';
+                    $optionalData = array(
+	                    'my_props' => 'CSS property menu values',
+	                    'm_queries' => 'Media queries',
+	                    'enq_js' => 'Global JS dependencies', // also pull in active_scripts_deps
+                    );
 
-                    <div class="dialog-tab-fields">
+                    foreach ($optionalData as $key => $label) {
+	                    $sectionHTML.= '<input type="checkbox" name="tvr_optional_preferences['.$key.']" value="1" checked="checked" />' .
+	                         $this->iconFont( 'tick-box-unchecked', array(
+		                         'class' => 'fake-checkbox on',
+	                         )) .
+		                '<span class="optional-pref-label">'.$label.'</span>';
+                    }
 
-                        <div class="dev-preferences dialog-tab-field dialog-tab-field-0 hidden show">
+                    echo $this->dialogSectionTabs(array(
+	                    'dev-preferences' => array(
+		                    'title' => 'Set Initial Preferences',
+		                    'content' => '<p class="setup-section-intro">Optionally adjust some default preferences, which are set up for non-coders:</p>
+                            <ul class="mt-form-settings main-preferences-grid initial-preferences-fields">'.$this->preferences_grid_items($this->initial_preference_options).'</ul>'
+	                    ),
+	                    'import-preferences' => array(
+		                    'title' => 'Import Preferences',
+		                    'content' => '<p class="setup-section-intro">Get file from another site via: <i>Settings > General > Preferences > Download preferences</i></p>
+                            <div class="import-preferences-checkboxes">'.$sectionHTML.'</div>
+                            <input type="hidden" name="MAX_FILE_SIZE" value="'.$this->maxUploadPrefSize.'" />
+                            <input id="preferences-file" type="file" name="preferences_file" />'
+	                    )
+                    ));
 
-                            <p class="setup-section-intro">Optionally adjust some default preferences, which are set up for non-coders:</p>
-
-                            <ul class="mt-form-settings main-preferences-grid initial-preferences-fields">
-                                <?php
-                                echo $this->preferences_grid_items($this->initial_preference_options);
-                                ?>
-                            </ul>
-
-                        </div>
-
-                        <div class="import-preferences dialog-tab-field dialog-tab-field-1 hidden">
-
-                            <p class="setup-section-intro">Get file from another site via: Settings > General > Preferences > Download preferences</p>
-
-                            <div class="import-preferences-checkboxes">
-                                <?php
-                                $optionalData = array(
-                                    'my_props' => 'CSS property menu values',
-                                    'm_queries' => 'Media queries',
-                                    'enq_js' => 'JavaScript dependencies', // also pull in active_scripts_deps
-                                );
-
-                                foreach ($optionalData as $key => $label) {
-	                                echo '<input type="checkbox" name="tvr_optional_preferences['.$key.']" value="1" checked="checked" />' .
-                                         $this->iconFont( 'tick-box-unchecked', array(
-			                                'class' => 'fake-checkbox on',
-		                                )),
-                                    '<span class="optional-pref-label">'.$label.'</span>';
-                                }
-                                ?>
-
-                            </div>
-
-                            <input type="hidden" name="MAX_FILE_SIZ" value="<?php echo $this->maxUploadPrefSize; ?>" />
-                            <input id="preferences-file" type="file" name="preferences_file" />
-
-                        </div>
-
-                    </div>
+                    ?>
 
                 </div>
 
                 <div class="setup-videos">
-                    <div class="heading top-10-heading">Top 10 tutorial videos</div>
-                    <div class="mt-video-thumbs">
-	                    <?php
-	                    $videos = array(
-		                    'introducing-microthemer-7' => "Introduction",
-		                    'basic-workflow' => "Workflow",
-		                    'dark-mode-and-layout-options' => "Theme & layout",
-		                    'selecting-elements' => "Select elements",
-		                    'styling-options' => "Style elements",
-		                    'html-and-css-inspection' => "HTML & CSS",
-		                    'folders' => "Folders",
-		                    'automatic-page-speed-optimisation' => "Page speed",
-		                    'uninstall-but-keep-changes' => "Uninstall",
-		                    'troubleshooting' => "Troubleshooting",
-	                    );
+                    
+                    <?php
+                    echo $this->dialogSectionTabs(array(
+	                    'microthemer-videos' => array(
+                            'skip' => !$this->supportGUICSS(),
+		                    'title' => 'Microthemer Videos',
+		                    'content' => '<div class="mt-video-thumbs">'.$this->generateVideoButtons(array(
+				                    'introducing-microthemer-7' => "Introduction",
+				                    'basic-workflow' => "Workflow",
+				                    'dark-mode-and-layout-options' => "Theme & layout",
+				                    'selecting-elements' => "Select elements",
+				                    'styling-options' => "Style elements",
+				                    'html-and-css-inspection' => "HTML & CSS",
+				                    'folders' => "Folders",
+				                    'automatic-page-speed-optimisation' => "Page speed",
+				                    'uninstall-but-keep-changes' => "Uninstall",
+				                    'troubleshooting' => "Troubleshooting",
+			                    )).'</div>'
+	                    ),
+	                    'amender-videos' => array(
+		                    'skip' => !$this->supportContent(),
+		                    'title' => 'Amender Videos',
+		                    'content' => '
+                            <div class="mt-video-thumbs">'.$this->generateVideoButtons(array(
+                                'introducing-amender' => "Introduction",
+                            )).'</div>'
+	                    )
+                    ));
 
-	                    foreach ($videos as $slug => $title){
-
-                            $thumb_class = isset($this->preferences['external_videos']['last_viewed'])
-                                           && $slug === $this->preferences['external_videos']['last_viewed']
-                                ? ' mt-last-viewed-video'
-                                : '';
-
-		                    $pos_title = esc_attr__('Watch video', 'microthemer');
-		                    $neg_title = esc_attr__('Unmark video as watched', 'microthemer');
-                            $tooltip = $pos_title;
-                            if (!empty($this->preferences['external_videos']['watched'][$slug])){
-	                            $thumb_class.= ' mt-watched-video';
-	                            $tooltip = $neg_title;
-                            }
-
-		                    $icon = $this->iconFont('play', array(
-			                    'class' => "external-video-watched-toggle",
-			                    'title' => $tooltip,
-			                    'data-pos' => $pos_title,
-			                    'data-neg' => $neg_title
-		                    ));
-
-		                    echo '<a class="external-video-thumb'.$thumb_class.'" target="_blank" 
-		                    href="https://themeover.com/'.$slug.'/" data-slug="'.$slug.'">'
-                                     .$icon.
-                                     '<span class="video-label">'.$title.'</span>' .
-                                 '</a>';
-	                    }
-	                    ?>
-                    </div>
+                    ?>
 
                 </div>
 
                 <div class="setup-unlock">
 
-                    <div class="heading">License key</div>
-
                     <?php
-                    $validated = !empty($this->preferences['buyer_validated']);
-                    $capped = $this->is_capped_version();
-                    $introText = $validated
-                        ? ($capped
-                            ? '<a href="https://themeover.com/my-account/" target="_blank">Renew your subscription</a> to get the latest version of Microthemer. Then re-submit your license key.'
-                            : esc_html__('Microthemer has been successfully unlocked.', 'microthemer'))
-                        : 'Optionally enter your <a href="https://themeover.com/my-account/" target="_blank">'
-                        . esc_html__('license key', 'microthemer').'</a> if you have purchased a <a href="https://themeover.com/microthemer-pricing/" target="_blank">premium plan</a>';
-                    $differentKey = $validated && !$capped
-                        ? '<p class="setup-section-intro">Unlock  using a <span class="link reveal-unlock">'. esc_html__('different license key', 'microthemer').'.</span>
-                        </p>'
-                        : '';
-                    $show_form = !$differentKey ? 'show' : '';
-                    $attempted_email = !$validated || $capped
-                        ? $this->preferences['buyer_email']
-                        : '';
-                    $inputLine = '
-                    <ul class="form-field-list license-key-setup">
-                         <li>
-                            <label class="text-label" title="'. esc_attr__("License key shown in 'My Downloads'", 'microthemer').'">'.
-                                esc_html__('License key', 'microthemer').'
-                            </label>
-                            <input id="license-key-input" type="text" autocomplete="off" name="tvr_preferences[buyer_email]"
-                                   value="'.esc_attr($attempted_email).'" />
-                        </li>
-                    </ul>';
 
+                    // Firewall notice
                     $firewallHTML = '';
                     if ($this->innoFirewall){
 
-                        $realIP = file_get_contents("http://ipecho.net/plain");
-                        $debug_info = '';
+	                    $realIP = file_get_contents("http://ipecho.net/plain");
+	                    $debug_info = '';
 
-                        if (!empty($this->innoFirewall['debug'])){
-                            $debug_info = '<br /><br /><div class="heading firewall-heading">Debug info</div>
+	                    if (!empty($this->innoFirewall['debug'])){
+		                    $debug_info = '<br /><br /><div class="heading firewall-heading">Debug info</div>
                                             <pre class="connection-debug">'.print_r($this->innoFirewall['debug'], true).'</pre>';
-                        }
+	                    }
 
 	                    $firewallHTML =
-                        '
+		                    '
                         <div class="firewall-captcha">
                             <div class="heading firewall-heading">Possible firewall issue</div>
                             <ol>
                                 <li>Please make a note of "<b>'.esc_html($realIP).'</b>" as well as any other IP address that may be shown in the box below - <b>before doing step 2.</b></li>
                                 <li>Fill out the captcha form below, if one is shown.</li>
                                 <li>Once you have completed the captcha form, try submitting your license key again.</li>
-                                <li>If you still cannot unlock Microthemer, please <a target="_blank" href="https://themeover.com/support/contact/">send us</a> the IP address(es) you noted down in step 1.</li>
+                                <li>If you still cannot unlock, please <a target="_blank" href="https://themeover.com/support/contact/">send us</a> the IP address(es) you noted down in step 1.</li>
                               
                             </ol>
                             
@@ -1580,31 +1755,102 @@ require_once('common-inline-assets.php');
                         ';
                     }
 
-                    // Output the form
-                    $licenseHTML = '<p class="setup-section-intro">'.$introText.'</p>';
-                    $licenseHTML.= $differentKey;
-                    $licenseHTML.= '<div id="tvr_validate_form" class="hidden '.$show_form.'">';
-		            //$licenseHTML.=      $cappedInstructions;
-		            $licenseHTML.=      $inputLine;
-                    $licenseHTML.=      $firewallHTML;
-                    $licenseHTML.= '</div>';
-
-                    echo $licenseHTML;
+                    // Microthemer license
+                    $validated = !empty($this->preferences['buyer_validated']);
+                    $amender_validated = !empty($this->preferences['amender_buyer_validated']);
+                    $capped = $this->is_capped_version();
+                    $introText = $validated
+	                    ? ($capped
+		                    ? '<a href="https://themeover.com/my-account/" target="_blank">Renew your subscription</a> to get the latest version of Microthemer. Then re-submit your license key.'
+		                    : esc_html__('Microthemer has been successfully unlocked.', 'microthemer')
+                        )
+	                    : 'Optionally enter your <a href="https://themeover.com/my-account/" target="_blank">'
+	                      . esc_html__('license key', 'microthemer').'</a> if you have purchased a <a href="https://themeover.com/microthemer-pricing/" target="_blank">premium plan</a>';
+                    $differentKey = $validated && !$capped
+	                    ? '<p class="setup-section-intro">Unlock using a <span class="link reveal-unlock">'. esc_html__('different license key', 'microthemer').'.</span>
+                        </p>'
+	                    : '';
+                    $show_form = !$differentKey ? 'show' : '';
+                    $attempted_email = !$validated || $capped
+	                    ? $this->preferences['buyer_email']
+	                    : '';
+                    $amender_attempted_email = !$amender_validated
+	                    ? $this->preferences['amender_buyer_email']
+	                    : '';
+                    $inputLine = '
+                    <ul class="form-field-list license-key-setup">
+                         <li>
+                            <label class="text-label" title="'. esc_attr__("License key shown in 'My Downloads'", 'microthemer').'">'.
+                                 esc_html__('License key', 'microthemer').'
+                            </label>
+                            <input id="license-key-input" type="text" autocomplete="off" name="tvr_preferences[buyer_email]"
+                                   value="'.esc_attr($attempted_email).'" />
+                        </li>
+                    </ul>';
+                    $MTlicense = '<p class="setup-section-intro">'.$introText.'</p>';
+                    $MTlicense.= $differentKey;
+                    $MTlicense.= '<div id="tvr_validate_form" class="hidden '.$show_form.'">';
+                    $MTlicense.=      $inputLine;
+                    $MTlicense.= '</div>';
+                    
+                    
+                    echo $firewallHTML . $this->dialogSectionTabs(array(
+	                    'microthemer-license' => array(
+		                    'skip' => !$this->supportGUICSS(),
+		                    'title' => 'Microthemer License',
+		                    'content' => $MTlicense
+	                    ),
+	                    'amender-license' => array(
+		                    'skip' => !$this->supportContent(),
+		                    'title' => 'Amender License',
+		                    'content' => '
+		                    <div id="tvr_validate_form_amender">
+		                        <ul class="form-field-list license-key-setup">
+                                     <li>
+                                        <label class="text-label">'.
+                                            esc_html__('License key', 'microthemer').'
+                                        </label>
+                                        <input id="license-key-input" type="text" autocomplete="off" name="tvr_preferences[amender_buyer_email]"
+                                               value="'.esc_attr($amender_attempted_email).'" />
+                                    </li>
+                                </ul>
+		                    
+		                    </div>'
+	                    )
+                    ));
                     ?>
 
                 </div>
 
                 <div class="setup-support">
-                    <div class="heading">Docs & Support</div>
-                    <p class="setup-section-intro">Dive into the full documentation, get help in the forum, or join our Facebook community.</p>
 
-                    <div class="support-buttons">
-                        <a target="_blank" href="https://themeover.com/introducing-microthemer-7/">Video docs</a>
-                        <a target="_blank" href="https://themeover.com/font-family/">CSS reference</a>
-                        <a target="_blank" href="https://themeover.com/forum/">Support forum</a>
-                        <a target="_blank" href="">Facebook group</a>
-                    </div>
-
+                    <?php
+                    echo $this->dialogSectionTabs(array(
+	                    'microthemer-docs' => array(
+		                    'skip' => !$this->supportGUICSS(),
+		                    'title' => 'Microthemer Docs',
+		                    'content' => '
+                            <p class="setup-section-intro">Dive into the full documentation, get help in the forum, or join our Facebook community.</p>
+                            <div class="support-buttons">
+                                <a target="_blank" href="https://themeover.com/introducing-microthemer-7/">Video docs</a>
+                                <a target="_blank" href="https://themeover.com/font-family/">CSS reference</a>
+                                <a target="_blank" href="https://themeover.com/forum/">Support forum</a>
+                                <a target="_blank" href="https://www.facebook.com/groups/microthemer">Facebook group</a>
+                            </div>'
+	                    ),
+	                    'amender-license' => array(
+		                    'skip' => !$this->supportContent(),
+		                    'title' => 'Amender Docs',
+		                    'content' => '<p class="setup-section-intro">Take the Amender tour, and reach out if you need help.</p>
+                            <div class="support-buttons">
+                                <a target="_blank" href="https://themeover.com/introducing-amender/">Video docs</a>
+                                <a target="_blank" href="https://themeover.com/action/">Option reference</a>
+                                <a target="_blank" href="https://themeover.com/forum/">Support forum</a>
+                                <a target="_blank" href="https://www.facebook.com/groups/microthemer">Facebook group</a>
+                            </div>'
+	                    )
+                    ));
+                    ?>
 
                 </div>
 
@@ -1625,8 +1871,8 @@ require_once('common-inline-assets.php');
                             ? $this->reporting['max']['dataSends'] . ' times'
                             : 'once';
                         $reportTypes = array(
-                              'file' =>  "Send info about JS errors in plugins / themes while using MT (for conflict resolution)",
-                              'data' =>  "Include non-sensitive Microthemer settings for error replication and UX fixes (".$freq." a day max)",
+                              'file' =>  "Send info about JS errors in plugins / themes (for conflict resolution)",
+                              'data' =>  "Include non-sensitive ".$this->appName." settings for error replication and UX fixes (".$freq." a day max)",
                               'contact' =>  "Include your domain & Themeover account number (for debugging follow-up questions)",
                         );
 
@@ -1658,15 +1904,25 @@ require_once('common-inline-assets.php');
                 </div>
 
                 <div class="setup-review-mt">
-                    <div class="heading">Rate Microthemer</div>
+
+                    <div class="heading">Leave a Review</div>
                     <p class="setup-section-intro">If you like Microthemer, please consider giving it 5 stars on wordpress.org</p>
-                    <p><a target="_blank" href="https://wordpress.org/plugins/microthemer/#reviews">Leave a quick review</a></p>
+
+                    <div class="rate-themeover">
+	                    <?php
+	                    if ($this->supportGUICSS()){
+		                    echo ' <p><a target="_blank" href="https://wordpress.org/plugins/microthemer/#reviews">Rate Microthemer</a></p>';
+	                    } /*if ($this->supportContent()){
+		                    echo ' <p><a target="_blank" href="https://wordpress.org/plugins/amender/#reviews">Rate Amender</a></p>';
+	                    }*/
+	                    ?>
+                    </div>
 
                 </div>
 
                 <div id="data-send-preview">
                     <div class="mt-panel-header">
-                        <div class="mt-panel-title ui-draggable-handle">Error reporting data Microthemer will send</div>
+                        <div class="mt-panel-title ui-draggable-handle">Error reporting data <?php echo $this->appName; ?> will send</div>
                         <span class="mtif mtif-times-circle-regular toggle-preview-report-data"></span>
                     </div>
                     <div class="report-data-dump">
@@ -1703,7 +1959,7 @@ require_once('common-inline-assets.php');
 						$yes_no = array(
 							'initial_scale' => array(
 								'label' => __('Set device viewport zoom level to "1"', 'microthemer'),
-								'explain' => __('Set this to yes if you\'re using media queries to make your site look good on mobile devices. Otherwise mobile phones etc will continue to scale your site down automatically as if you hadn\'t specified any media queries. If you set leave this set to "No" it will not override any viewport settings in your theme, Microthemer just won\'t add a viewport tag at all.', 'microthemer')
+								'explain' => __('Set this to yes if you\'re using media queries to make your site look good on mobile devices. Otherwise mobile phones etc will continue to scale your site down automatically as if you hadn\'t specified any media queries.', 'microthemer')
 							)
 
 						);
@@ -1720,7 +1976,7 @@ require_once('common-inline-assets.php');
 							'load_mq_set' => array(
 								'combobox' => 'mq_sets',
 								'label' => __('Select a media query set', 'microthemer'),
-								'explain' => __('Microthemer lets you choose from a list of media query "sets". If you are trying to make a non-responsive site look good on mobiles, you may want to use the default "Desktop-first device MQs" set. If you designing mobile first, you may want to try an alternative set.', 'microthemer')
+								'explain' => __('Choose from a list of media query "sets". If you are trying to make a non-responsive site look good on mobile, you may want to use the default "Desktop-first device MQs" set. If you designing mobile first, you may want to try an alternative set.', 'microthemer')
 							)
 						);
 
@@ -1762,7 +2018,7 @@ require_once('common-inline-assets.php');
 
 						<div class="full-about">
 
-							<p><?php esc_html_e('If you\'re not using media queries in Microthemer to make your site look good on mobile devices you don\'t need to set the viewport zoom level to 1. You will be passing judgement over to the devices (e.g. an iPhone) to display your site by automatically scaling it down. But if you are using media queries you NEED to set this setting to "Yes" in order for things to work as expected on mobile devices (otherwise mobile devices will just show a proportionally reduced version of the full-size site).', 'microthemer'); ?></p>
+							<p><?php esc_html_e('If you\'re not using responsive tabs to make your site look good on mobile devices you don\'t need to set the viewport zoom level to 1. You will be passing judgement over to the devices (e.g. an iPhone) to display your site by automatically scaling it down. But if you are using media queries you NEED to set this setting to "Yes" in order for things to work as expected on mobile devices (otherwise mobile devices will just show a proportionally reduced version of the full-size site).', 'microthemer'); ?></p>
 							<p><?php echo wp_kses (
 								sprintf(
 									__('You may want to read <a %s>this tutorial which gives a bit of background on the viewport meta tag</a>.', 'microthemer'),
@@ -1770,7 +2026,7 @@ require_once('common-inline-assets.php');
 								),
 								array( 'a' => array( 'href' => array(), 'target' => array() ) )
 							); ?></p>
-							<p><?php esc_html_e('Feel free to rename the media queries and change the media query code. You can also reorder the media queries by dragging and dropping them. This will determine the order in which the media queries are written to the stylesheet and the order that they are displayed in the Microthemer interface.', 'microthemer'); ?></p>
+							<p><?php esc_html_e('Feel free to rename the media queries and change the media query code. You can also reorder the media queries by dragging and dropping them. This will determine the order in which the media queries are written to the stylesheet and the order that they are displayed in the interface.', 'microthemer'); ?></p>
 							<p><?php esc_html_e('TIP: to reset the default media queries simply delete all media query boxes and then save your settings', 'microthemer'); ?></p>
 						</div>
 					</div>
@@ -1780,31 +2036,104 @@ require_once('common-inline-assets.php');
 				<?php echo $this->end_dialog(esc_html__('Update Media Queries', 'microthemer'), 'span', 'update-media-queries'); ?>
 			</form>
 
-			<!-- Enqueue JS libraries -->
+			<!-- Manage JS libraries -->
+            <?php
+            $tabs = array(
+                esc_html__('Global WordPress JavaScript', 'microthemer'),
+            );
+            if ($this->supportContent()){
+                array_unshift($tabs, esc_html__('JavaScript modules', 'microthemer'));
+            }
+            ?>
 			<form id="mt-enqueue-js" name='mt_enqueue_js' method="post" autocomplete="off"
 				  action="admin.php?page=<?php echo $this->microthemeruipage;?>" >
 
 				<input type="hidden" name="mt_enqueue_js_submit" value="1" />
 				<?php echo $this->start_dialog(
 					'mt-enqueue-js',
-					esc_html__('Enqueue WordPress JavaScript Libraries', 'microthemer'),
-					'small-dialog'
+					esc_html__('Manage JavaScript Libraries', 'microthemer'),
+					'small-dialog',
+			        $tabs
 				); ?>
 
 				<div class="content-main">
 
-					<p><?php echo esc_html__('If you want to write custom JavaScript code that depends on jQuery or any other JS library, you can enqueue it here. The dropdown menu below only includes the most popular script handles.', 'microthemer'); ?>
-					 <a href="https://developer.wordpress.org/reference/functions/wp_register_script/" target="_blank">
-						 <?php echo esc_html__('View more WP script handles online.', 'microthemer'); ?>
-					 </a>
+					<?php
+					foreach ($tabs as $i => $name){
+						$show = $i == 0 ? 'show' : '';
+						// design pack import
+						?>
+                        <div class="dialog-tab-field dialog-tab-field-<?php echo $i; ?> hidden <?php echo $show; ?>">
+							<?php
 
-					</p>
+                            // JavaScript modules
+                            if ($this->supportContent() && $i == 0){
 
-					<?php echo $this->dyn_menu(
-						$this->preferences['enq_js'], // data
-						$this->enq_js_structure, // structure
-						array('controls' => 1) // config
-					); ?>
+                                ?>
+
+                                <div class="tvr-message tvr-warning npm-warning">
+                                    <b>Warning: </b>&nbsp;you cannot trust all npm packages. It is safer to install&nbsp;<a href="https://kinsta.com/blog/javascript-libraries/" target="_blank"> well known packages</a>, but&nbsp;<a href="https://cheatsheetseries.owasp.org/cheatsheets/NPM_Security_Cheat_Sheet.html#5-audit-for-vulnerabilities-in-open-source-dependencies" target="_blank">not foolproof</a>.
+                                </div>
+
+                                <?php
+                                // Dependency table
+                                echo $this->dependency_table();
+                                ?>
+
+
+                                <div class="explain">
+                                    <div class="heading link explain-link">About this feature</div>
+                                    <div class="full-about">
+                                        <p class="module-intro"><?php echo $this->appName; ?> uses modern <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules" target="_blank">JavaScript modules</a> so you can easily leverage third-party libraries using import statements: <pre>import someVariable from 'somePackage'</pre></p>
+                                        <p>Use the options above to add and update your libraries. You can install any JavaScript <i>module</i> (ESM) on <a href="https://jsdelivr.com" target="_blank">jsdelivr.com</a>.</p>
+
+                                        <div class="heading">Auto-added JavaScript Modules</div>
+                                        <p><?php echo $this->appName; ?> will prompt you to install the following trusted packages if their use is detected in your JavaScript snippets.</p>
+                                        <ul>
+                                            <li>three</li>
+                                            <li>gsap</li>
+                                            <li>alpinejs</li>
+                                        </ul>
+                                    </div>
+
+                                </div>
+
+
+
+
+
+                                <?php
+
+
+							}
+
+                            // Global WordPress JavaScript
+							else {
+
+								?>
+                                <p class="enqueue-intro"><?php echo esc_html__('If you want to write custom JavaScript code that depends on jQuery or any other JS library, you can enqueue it here. The dropdown menu below only includes the most popular script handles.', 'microthemer'); ?>
+                                <p>
+                                    <a href="https://developer.wordpress.org/reference/functions/wp_register_script/" target="_blank">
+                                        <?php echo esc_html__('View more WP script handles online.', 'microthemer'); ?>
+                                    </a>
+                                </p>
+
+                                </p>
+
+								<?php echo $this->dyn_menu(
+									$this->preferences['enq_js'], // data
+									$this->enq_js_structure, // structure
+									array('controls' => 1) // config
+								);
+
+                            }
+
+                          ?>
+                        </div>
+						<?php
+					}
+					?>
+
 
 				</div>
 
@@ -1881,7 +2210,7 @@ require_once('common-inline-assets.php');
 								<div class="full-about">
 									<p><?php echo wp_kses(
 											sprintf(
-												__('Microthemer can be used to restyle any WordPress theme or plugin without the need for pre-configuration. That\'s thanks to the handy "Double-click to edit" feature. But just because you <i>can</i> do everything yourself doesn\'t mean <i>have</i> to. That\'s where importable design packs come in. A design pack contains folders, selectors, hand-coded CSS, and background images that someone else has created while working with Microthemer. Of course it may not be someone else, you can create design packs too using the "<span %s>Export</span>" feature!', 'microthemer'),
+												__('A design pack contains folders, selectors, hand-coded CSS, and background images that someone else has created while working with Microthemer or Amender. Of course, it may not be someone else, you can create design packs too using the "<span %s>Export</span>" feature!', 'microthemer'),
 												'class="link show-dialog" rel="export-to-pack"'
 											),
 											array( 'i' => array(), 'span' => array() )
@@ -1893,10 +2222,10 @@ require_once('common-inline-assets.php');
 									<p><b><?php esc_html_e('You may want to make use of this feature for the following reasons:', 'microthemer'); ?></b></p>
 									<ul>
 										<li><?php printf(
-												esc_html__('You\'ve downloaded and installed a design pack that you found on %s for restyling a theme, contact form, or any other WordPress content you can think of. Importing it will load the folders and hand-coded CSS contained within the design pack into the Microthemer UI.', 'microthemer'),
+												esc_html__('You\'ve downloaded and installed a design pack that you found on %s for restyling a theme, contact form, or any other WordPress content you can think of. Importing it will load the folders and hand-coded CSS into the interface.', 'microthemer'),
 												'<a target="_blank" href="http://themeover.com/">themeover.com</a>'
 											); ?></li>
-										<li><?php esc_html_e('You previously exported your own work as a design pack and now you would like to reload it back into the Microthemer UI.', 'microthemer'); ?></li>
+										<li><?php esc_html_e('You previously exported your own work as a design pack and now you would like to reload it back into the interface.', 'microthemer'); ?></li>
 									</ul>
 								</div>
 							</div>
@@ -1999,7 +2328,7 @@ require_once('common-inline-assets.php');
 										),
 										'css_imp_friendly' => array(
 											'label' => __('Give selectors friendly names', 'microthemer'),
-											'explain' => __('When using the selector wizard, Microthemer can give selectors more human readable names. This option mimics that behaviour.', 'microthemer')
+											'explain' => __('Give selectors more human readable names.', 'microthemer')
 										),
 										'css_imp_adjust_paths' => array(
 											'label' => __('Make relative URLs absolute', 'microthemer'),
@@ -2008,7 +2337,7 @@ require_once('common-inline-assets.php');
 
 										'css_imp_copy_remote' => array(
 											'label' => __('Copy images to WP media library', 'microthemer'),
-											'explain' => __('Microthemer will copy any images referenced in the stylesheet to your WordPress media library. Image file paths will be automatically adjusted.',
+											'explain' => __('Copy any images referenced in the stylesheet to your WordPress media library. Image file paths will be automatically adjusted.',
 												'microthemer')
 
 										/* 'label' => __('Copy remote images to WP media library', 'microthemer'),
@@ -2032,7 +2361,7 @@ require_once('common-inline-assets.php');
 									$text_input = array(
 										'css_imp_max' => array(
 											'label' => __('Max @import rules to follow', 'microthemer'),
-											'explain' => __('Instead of adjusting @import file paths, Microthemer can follow these paths and combine CSS code it finds there with the initial stylesheet. Thus doing a deep import of the CSS into Microthemer\'s GUI interface.', 'microthemer')
+											'explain' => __('Instead of adjusting @import file paths, follow them and combine CSS code with the initial stylesheet. Thus doing a deep import of the CSS into the interface.', 'microthemer')
 										),
 									);
 
@@ -2205,7 +2534,7 @@ require_once('common-inline-assets.php');
 					<div class="full-about">
 						<p><?php echo wp_kses(
 							sprintf(
-								__('Microthemer gives you the flexibility to export your current work to a design pack for later use (you can <span %s>import</span> it back). Microthemer will create a directory on your server in %s which will be used to store your settings and background images. Your folders, selectors, and hand-coded css settings are saved to a configuration file in this directory called config.json.', 'microthemer'),
+								__('Export your current work to a design pack for later use (you can <span %s>import</span> it back). The export will be located in %s', 'microthemer'),
 								'class="link show-dialog" rel="import-from-pack"',
 								'<code>/wp-content/micro-themes/</code>'
 								),
@@ -2238,7 +2567,9 @@ require_once('common-inline-assets.php');
 			<?php
 			// begin dialog
 			$tabs = array('CSS'); // dummy tab to create the container element, but tabs are added with JS
-			echo $this->start_dialog('display-css-code', esc_html__('View the CSS code Microthemer generates', 'microthemer'), 'medium-dialog', $tabs); ?>
+			echo $this->start_dialog('display-css-code',
+                esc_html__('View your CSS code', 'microthemer'),
+                'medium-dialog', $tabs); ?>
 
 			<div class="content-main dialog-tab-fields">
 
@@ -2316,9 +2647,61 @@ require_once('common-inline-assets.php');
 		<?php echo $this->end_dialog(esc_html_x('Close', 'verb', 'microthemer'), 'span', 'close-dialog'); ?>
 
 
+
+
         </div>
 
-        <?php
+
+        <div id="tvr-install-popup">
+            <div class="tvr-install-inner">
+
+                <div class="mt-panel-header">
+                    <span class="install-title"></span>
+		            <?php
+		            echo $this->iconFont('times-circle-regular', array(
+			            'class' => "close-tvr-install-button",
+			            'title' => esc_attr__('Close', 'microthemer')
+		            ));
+		            ?>
+                </div>
+
+                <div class="tvr-addon amender-addon hidden">
+                    <div class="tvr-addon-summary amender-summary">
+                        <p><a target="_blank" href="https://themeover.com/amender/">Amender</a> allows you to make any text, HTML, CSS, or JavaScript amendments to your site by simply asking it to change (see the AI Assistant microphone option). Or, apply content changes yourself with familiar point and click editing.</p>
+                        <p>Amender is not a page builder in its current form. It is designed to make customisations in those hard to reach places. Think of it like a "child theme" for your modern WordPress stack. Changes are made on the fly, without touching any files, so you can keep using (and now customizing) the tools you love.</p>
+                        <p>Furthermore, you only pay for Amender when you want to publish your changes - when you know it solves your problem(s).</p>
+                        <p class="addon-install-cta">
+                            <span class="tvr-button install-addon" data-addon="amender">Install Amender (free)</span>
+                            <a target="_blank" href="https://themeover.com/amender/" title="Buy an Amender license">Go Pro</a>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="tvr-addon microthemer-addon-content hidden">
+                    <div class="tvr-addon-summary microthemer-summary">
+                        <p><a target="_blank" href="https://themeover.com/">Microthemer</a> provides input fields, menus, and sliders for applying CSS styles visually. You can edit 15 selectors with the free version. Go pro for unlimited selectors and more advanced properties: CSS grid, flexbox, transition, transform, animation, shapes, and masks.</p>
+                        <p class="addon-install-cta">
+                            <span class="tvr-button install-addon" data-addon="microthemer">Install Microthemer (free)</span>
+                            <a target="_blank" href="https://themeover.com/" title="Buy a Microthemer license">Go Pro</a>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="detected-packages hidden">
+
+                    <ul class="tvr-install-list"></ul>
+
+                    <div class="install-detected-wrapper">
+                        <span class="tvr-button install-detected-npm">Install</span>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+
+		<?php
 	}
 	?>
 

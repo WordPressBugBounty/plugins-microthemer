@@ -11,12 +11,15 @@ trait FileTrait {
 		// create micro-themes directory and some subdirectories
 		// the parent directory is created so just need define subdirectories
 		$directories = array(
-			/*$this->micro_root_dir,
-			$this->micro_root_dir . 'mt/',
-			$this->micro_root_dir . 'mt/conditional/',*/
 			$this->micro_root_dir . 'mt/conditional/draft/',
 			$this->micro_root_dir . 'mt/conditional/active/',
-			$this->micro_root_dir . 'mt/cache/themes/' . get_stylesheet() . '/'
+			$this->micro_root_dir . 'mt/js/draft/npm/',
+			$this->micro_root_dir . 'mt/js/active/npm/',
+			$this->micro_root_dir . 'mt/cache/themes/' . get_stylesheet() . '/',
+			$this->micro_root_dir . 'mt/cache/tailwind/classes/',
+			$this->micro_root_dir . 'mt/cache/tailwind/styles/',
+			$this->micro_root_dir . 'mt/cache/content/',
+			$this->micro_root_dir . 'Content/',
 		);
 
 		foreach ($directories as $path){
@@ -75,7 +78,7 @@ trait FileTrait {
 
 		foreach(scandir($dir) as $filename) {
 
-			if ($filename[0] === '.' || $filename === 'stock' || $filename === 'mt') {
+			if ($filename[0] === '.' || $filename[0] === '..' || $filename === 'stock' || $filename === 'mt' || $filename === 'Content') {
 				continue;
 			}
 
@@ -139,15 +142,30 @@ trait FileTrait {
 			'/src/AssetLoad.php',
 			'/src/Logic.php',
 			'/src/Helper.php',
-			'/includes/animation/animation-code.inc.php'
+
+			'/src/FrontAndBackTrait.php',
+			'/src/Content/AssetLoadContent.php',
+			'/src/Content/HTML.php',
+			'/src/Content/ContentHelper.php',
+
+			'/includes/animation/animation-code.inc.php',
+			'/js-min/amender.zip',
+			'/js-min/npm.zip',
 		);
+
 		$new_files = array(
 			'animation-events.js',
 			'stock.zip',
 			'AssetLoad.php',
 			'Logic.php',
 			'Helper.php',
-			'animation-code.inc.php'
+			'FrontAndBackTrait.php',
+			'Content/AssetLoadContent.php',
+			'Content/HTML.php',
+			'Content/ContentHelper.php',
+			'animation-code.inc.php',
+			'mt/js/amender.zip',
+			'mt/js/draft/npm.zip',
 		);
 		$i = 0;
 
@@ -155,17 +173,24 @@ trait FileTrait {
 
 			$orig = $this->thisplugindir .  $file;
 			$newFileName = $new_files[$i];
+			$dirName = trailingslashit(explode('.', $newFileName)[0]);
 			$new = $this->micro_root_dir . $newFileName;
 			$i++;
+			$isZipFile = strpos($newFileName, '.zip');
+
+			// amender.zip will not be available if content is not included
+			if (!file_exists($orig)){
+				continue;
+			}
 
 			// if we are updating / activating
 			if ($activated
 
-			    // or it's stock.zip and the folder hasn't already been extracted
-			    || ($newFileName === 'stock.zip' && !is_dir($this->micro_root_dir.'stock'))
+			    // or it's a zip file and the folder hasn't already been extracted
+			    || ($isZipFile&& !is_dir($this->micro_root_dir. $dirName))
 
 			    // or it's any other file, which doesn't exist
-			    || ($newFileName !== 'stock.zip' && !file_exists($new))
+			    || (!$isZipFile && !file_exists($new))
 			){
 
 				//wp_die('We need to copy file: '. $this->micro_root_dir.'stock');
@@ -189,19 +214,18 @@ trait FileTrait {
 
 					//wp_die('Copy successful, try extracting '. $newFileName);
 
-					if ($newFileName === 'stock.zip'){
+					if ($isZipFile){
 
-						//mkdir($this->micro_root_dir.'stock/', 0755);
 						$error_logged = false;
 						$success = false;
-
-						// try native PHP function if it exists
-						//$success = $this->extract_files_native($this->micro_root_dir, $new);
 
 						// try WordPress function fallback
 						if (!$success){
 
-							$result = $this->wp_extract_files($this->micro_root_dir, $new);
+							$subdir = $newFileName === 'stock.zip' ? '' : $dirName;
+
+							$allowOverwrite = $newFileName !== 'mt/js/draft/npm.zip';
+							$result = $this->wp_extract_files($this->micro_root_dir . $subdir, $new, $allowOverwrite);
 							$success = $result['success'];
 
 							if (!$success){
@@ -210,7 +234,7 @@ trait FileTrait {
 
 								$this->log(
 									esc_html__('Extract zip error', 'microthemer'),
-									'<p>' . $newFileName . ' could not be extracted to ' . $this->root_rel($this->micro_root_dir.'stock/') .'</p>' . '<p><pre>'. print_r($result['data']->errors, true).'</pre></p>'
+									'<p>' . $newFileName . ' could not be extracted to ' . $this->root_rel($this->micro_root_dir.$dirName) .'</p>' . '<p><pre>'. print_r($result['data']->errors, true).'</pre></p>'
 								);
 
 								$error_logged = true;
@@ -234,7 +258,7 @@ trait FileTrait {
 							if (!$error_logged){
 								$this->log(
 									esc_html__('Extract zip error', 'microthemer'),
-									'<p>' . $newFileName . ' could not be extracted to ' . $this->root_rel($this->micro_root_dir.'stock/') .'</p>'
+									'<p>' . $newFileName . ' could not be extracted to ' . $this->root_rel($this->micro_root_dir.$dirName.'/') .'</p>'
 								);
 							}
 
@@ -250,7 +274,7 @@ trait FileTrait {
 	}
 
 	// Copy an entire folder
-	function copyFolder($from, $to, $minifyCSS = false, $minifyJS = false) {
+	function copyFolder($from, $to, $minifyCSS = false, $minifyJS = false, $overwrite = true, $recursive = true) {
 
 		if (!is_dir($from)) {
 			return false; // bail if no directory to copy
@@ -265,17 +289,22 @@ trait FileTrait {
 		while (($ff = readdir($dir)) !== false) {
 			if ($ff != "." && $ff != "..") {
 				if (is_dir("$from$ff")) {
-					$this->copyFolder("$from$ff/", "$to$ff/");
-				} else {
-
-					// copy or copy and minify the file
-					$ext = $this->get_extension($ff);
-					$doMinify = $ext === 'css' && $minifyCSS || $ext === 'js' && $minifyJS;
-					if ($doMinify){
-						$this->minify("$from$ff", $ext, "$to$ff");
-					} else {
-						copy("$from$ff", "$to$ff");
+					if ($recursive){
+						$this->copyFolder("$from$ff/", "$to$ff/");
 					}
+				} else {
+					if ($overwrite || !file_exists("$to$ff")){
+
+						// copy or copy and minify the file
+						$ext = $this->get_extension($ff);
+						$doMinify = $ext === 'css' && $minifyCSS || $ext === 'js' && $minifyJS;
+						if ($doMinify){
+							$this->minify("$from$ff", $ext, "$to$ff");
+						} else {
+							copy("$from$ff", "$to$ff");
+						}
+					}
+
 				}
 			}
 		}
@@ -303,7 +332,7 @@ trait FileTrait {
 	}
 
 
-	function wp_extract_files($dest, $zip_file){
+	function wp_extract_files($dest, $zip_file, $allowOverwrite = true){
 
 		global $wp_filesystem;
 
@@ -328,7 +357,26 @@ trait FileTrait {
 
 		}
 
-		$result =  unzip_file($zip_file, $dest);
+		// Support unzip without overwriting existing - needed for vendor JS scripts which should not auto-update
+		$unzipDir = $dest;
+		if (!$allowOverwrite){
+			$unzipDir = untrailingslashit($dest) . '/tmp/';
+		}
+
+		// Unzip
+		$result = unzip_file($zip_file, $unzipDir);
+
+		// Copy unzipped from tmp dir if being careful not to overwrite
+		if ($result === TRUE){
+			if (!$allowOverwrite){
+
+				// copy files without overwriting
+				$this->copyFolder($unzipDir, $dest, false, false, false);
+
+				// Delete tmp directory
+				$this->destroyDirectoryAndContents($unzipDir);
+			}
+		}
 
 		//wp_die('Res: '. print_r($res, true));
 
@@ -336,6 +384,19 @@ trait FileTrait {
 			'success' => ($result === TRUE),
 			'data' => $result
 		);
+	}
+
+	// Recursively delete a directory and it's contents
+	function destroyDirectoryAndContents($dir) {
+		if (!is_dir($dir) || is_link($dir)) return @unlink($dir); // error suppressed
+		foreach (scandir($dir) as $file) {
+			if ($file == '.' || $file == '..') continue;
+			if (!$this->destroyDirectoryAndContents($dir . DIRECTORY_SEPARATOR . $file)) {
+				chmod($dir . DIRECTORY_SEPARATOR . $file, 0777);
+				if (!mt_destroy_dir($dir . DIRECTORY_SEPARATOR . $file)) return false;
+			};
+		}
+		return rmdir($dir);
 	}
 
 	function extract_files_native($dest, $zip_file){
@@ -433,8 +494,32 @@ trait FileTrait {
 		}
 	}
 
-	function getDirectoryFileList($directory){
+	/*function getDirectoryFileList($directory){
 		return array_diff(scandir($directory), array('..', '.'));
+	}*/
+
+	// Get a flat list of relative paths of files in directory and sub-directory
+	function getDirectoryFileList($directory, $relativePath = '') {
+		$fileList = [];
+		$items = scandir($directory);
+
+		foreach ($items as $item) {
+			if ($item === '.' || $item === '..') {
+				continue;
+			}
+
+			$dir_sep = '/'; // DIRECTORY_SEPARATOR
+			$fullPath = $directory . $dir_sep . $item;
+			$currentPath = ltrim($relativePath . $dir_sep . $item, $dir_sep);
+
+			if (is_dir($fullPath)) {
+				$fileList = array_merge($fileList, $this->getDirectoryFileList($fullPath, $currentPath));
+			} else {
+				$fileList[] = $currentPath;
+			}
+		}
+
+		return $fileList;
 	}
 
 	function maybeLoadMinify(){
@@ -478,9 +563,24 @@ trait FileTrait {
 
 	// write to a file
 	// the file will be created if it doesn't exist. Otherwise, it is overwritten.
-	function write_file($file, $data, $minify = false, $dataType = false){
-		
-		$write_file = @fopen($file, 'w');
+	function write_file($file, $data, $minify = false, $dataType = false, $deleteFirst = false){
+
+		// Ensure the directory exists
+		$dir = dirname($file);
+		if (!is_dir($dir) && !mkdir($dir, 0775, true)) {
+			$this->log(
+				esc_html__('Directory creation error', 'microthemer'),
+				'<p>' . sprintf(esc_html__('Failed to create directory: %s', 'microthemer'),
+					$this->root_rel($dir)) . '</p>'
+			);
+			return false;
+		}
+
+		if ($deleteFirst && file_exists($file)){
+			unlink($file);
+		}
+
+		$write_file = fopen($file, 'w');
 		$write_data = &$data; 
 		
 		// perhaps we minify

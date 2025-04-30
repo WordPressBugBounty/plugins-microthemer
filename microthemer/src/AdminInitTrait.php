@@ -10,11 +10,6 @@ trait AdminInitTrait {
 	
 	function init(){
 
-		// bail if server doesn't meet the minimum requirements
-		if (!$this->checkMinimumRequirements()){
-			return;
-		}
-
 		// setup text domain
 		$this->loadTextDomain();
 
@@ -27,6 +22,19 @@ trait AdminInitTrait {
 		// Setup essential vars
 		$page = isset($_GET['page']) ? $_GET['page'] : false;
 		$this->preferences = get_option($this->preferencesName);
+
+		// setup reference to content class
+		if ($this->hasContentCapability()){
+			$this->contentClass = new Content\AdminContent($this);
+		}
+
+		// Set the app name
+		$this->setAppName();
+
+		// bail if server doesn't meet the minimum requirements
+		if (!$this->checkMinimumRequirements()){
+			return;
+		}
 
 		// hook minimal functionality on all admin pages
 		$this->hookAjax();
@@ -41,7 +49,7 @@ trait AdminInitTrait {
 		}
 
 		// Non-MT page
-		// Support loading MT assets in the admin area (without the user setting a preference)
+		// - note MT admin area styling only works for admin level priviledges, without some rejigging
 		else {
 
 			// Pass in the context of loading assets or actually being able to edit the admin area with point and click
@@ -54,7 +62,9 @@ trait AdminInitTrait {
 
 	function initMicrothemerPage($page){
 
-		$this->new_version = (empty($this->preferences['version']) || $this->preferences['version'] != $this->version);
+		$this->new_version = (empty($this->preferences['version'])
+		                      || $this->preferences['version'] != $this->version)
+		                      || $this->contentRequiresSetup();
 
 		// if it's a new version, run the activation/upgrade function (if not done at activation hook)
 		// this will update the translations in the JS cached HTML
@@ -74,8 +84,8 @@ trait AdminInitTrait {
 			'tab' => __('tab', 'microthemer'),
 			'tab-input' => __('tab', 'microthemer'),
 			'group' => __('group', 'microthemer'),
-			'pgtab' => __('styles', 'microthemer'),
-			'subgroup' => __('styles', 'microthemer'),
+			'pgtab' => __('settings', 'microthemer'),
+			'subgroup' => __('settings', 'microthemer'),
 			'property' => __('property', 'microthemer'),
 			'script' => __('Enqueued Script', 'microthemer')
 		);
@@ -157,15 +167,6 @@ trait AdminInitTrait {
 		}
 	}
 
-	// plugin update stuff
-	function hookPluginUpdate(){
-		add_filter( 'site_transient_update_plugins', array( $this, 'site_transient_update_plugins' ) );
-		add_filter( 'plugins_api_result', array( &$this, 'plugins_api_result' ), 99, 3 );
-		add_action( 'in_plugin_update_message-microthemer/' . $this->microthemeruipage,
-			array( &$this, 'plugin_update_message' ), 1, 2
-		);
-	}
-
 	// activation hook for setting initial preferences (so e.g. Microthemer link appears in top toolbar)
 	function hookActivation(){
 
@@ -188,8 +189,8 @@ trait AdminInitTrait {
 
 
 	// user's subscription has expired and they are capped at a version
-	function is_capped_version(){
-		return !empty($this->preferences['buyer_validated']) and !empty($this->preferences['subscription']['capped_version']);
+	function is_capped_version($prefix = ''){
+		return !empty($this->preferences[$prefix . 'buyer_validated']) and !empty($this->preferences[$prefix . 'subscription']['capped_version']);
 	}
 
 	function supportAdminAssets(){
@@ -224,7 +225,7 @@ trait AdminInitTrait {
 				'admin_notices',
 				function(){
 					echo '<div id="message" class="error"><p><strong>' .
-					     sprintf(esc_html__('Sorry, Microthemer only runs on WordPress version %s or above. Deactivate Microthemer to remove this message.', 'microthemer'), $this->minimum_wordpress) .
+					     sprintf(esc_html__('Sorry, %s only runs on WordPress version %s or above. Deactivate %s to remove this message.', 'microthemer'), $this->appName, $this->minimum_wordpress, $this->appName) .
 					     '</strong></p></div>';
 				}
 			);
@@ -253,7 +254,7 @@ trait AdminInitTrait {
 				'admin_notices',
 				function() {
 					echo '<div id="message" class="error"><p><strong>' .
-					     sprintf( esc_html__( 'Sorry, Microthemer has a memory requirement of 16MB or higher to run. Your allocated memory is less than this (%sMB). Deactivate Microthemer to remove this message. Or increase your memory limit.', 'microthemer' ), $this->user_memory_limit) .
+					     sprintf( esc_html__( 'Sorry, %s has a memory requirement of 16MB or higher to run. Your allocated memory is less than this (%sMB). Deactivate %s to remove this message. Or increase your memory limit.', 'microthemer' ), $this->appName, $this->user_memory_limit, $this->appName) .
 					     '</strong></p></div>';
 				}
 			);
@@ -271,13 +272,18 @@ trait AdminInitTrait {
 		// get_current_user_id() needs to be here (hooked function)
 		$this->current_user_id = get_current_user_id();
 
-		add_menu_page(__('Microthemer UI', 'microthemer'), 'Microthemer', 'administrator', $this->microthemeruipage, array(&$this,'microthemer_ui_page'));
+		add_menu_page(
+			sprintf(__('%s UI', 'microthemer'), $this->appName),
+			$this->appNameFull,
+			'administrator', $this->microthemeruipage, array(&$this,'microthemer_ui_page')
+		);
+
 		add_submenu_page('options.php',
 			__('Manage Design Packs', 'microthemer'),
-			__('Manage Packs', 'microthemer'),
+			__('Manage Design Packs', 'microthemer'),
 			'administrator', $this->microthemespage, array(&$this,'manage_micro_themes_page'));
 		add_submenu_page('options.php',
-			__('Manage Single Design Pack', 'microthemer'),
+			__('Manage Single Pack', 'microthemer'),
 			__('Manage Single Pack', 'microthemer'),
 			'administrator', $this->managesinglepage, array(&$this,'manage_single_page'));
 		add_submenu_page('options.php',
@@ -285,15 +291,15 @@ trait AdminInitTrait {
 			__('Documentation', 'microthemer'),
 			'administrator', $this->docspage, array(&$this,'microthemer_docs_page'));
 		add_submenu_page('options.php',
-			__('Microthemer Fonts', 'microthemer'),
-			__('Fonts', 'microthemer'),
+			__('Google Fonts', 'microthemer'),
+			__('Google Fonts', 'microthemer'),
 			'administrator', $this->fontspage, array(&$this,'microthemer_fonts_page'));
 		add_submenu_page('options.php',
-			__('Microthemer Detached Preview', 'microthemer'),
+			__('Detached Preview', 'microthemer'),
 			__('Detached Preview', 'microthemer'),
 			'administrator', $this->detachedpreviewpage, array(&$this,'microthemer_detached_preview_page'));
 		add_submenu_page($this->microthemeruipage,
-			__('Microthemer Preferences', 'microthemer'),
+			__('Preferences', 'microthemer'),
 			__('Preferences', 'microthemer'),
 			'administrator', $this->preferencespage, array(&$this,'microthemer_preferences_page'));
 	}
@@ -334,12 +340,12 @@ trait AdminInitTrait {
 
 		$args = array(
 			'id' => 'wp-mcr-shortcut',
-			'title' => 'Microthemer',
+			'title' => $this->appNameFull,
 			'parent' => $parent,
 			'href' => $href,
 			'meta' => array(
 				'class' => 'wp-mcr-shortcut',
-				'title' => __('Jump to the Microthemer interface', 'microthemer')
+				'title' => sprintf(__('Jump to the %s interface', 'microthemer'), $this->appName)
 			)
 		);
 
@@ -450,8 +456,15 @@ trait AdminInitTrait {
 
 		}
 
+	}
 
-
+	// plugin update stuff
+	function hookPluginUpdate(){
+		add_filter( 'site_transient_update_plugins', array( $this, 'site_transient_update_plugins' ) );
+		add_filter( 'plugins_api_result', array( &$this, 'plugins_api_result' ), 99, 3 );
+		add_action( 'in_plugin_update_message-microthemer/' . $this->microthemeruipage,
+			array( &$this, 'plugin_update_message' ), 1, 2
+		);
 	}
 
 	// maybe sets 'Automatic update is unavailable for this plugin'
@@ -495,6 +508,24 @@ trait AdminInitTrait {
 		}
 	}
 
+	function installThemeoverAddon($addon){
+
+		$key = $addon === 'microthemer' ? 'css_addon' : 'content_addon';
+		$pref_array = array(
+			$key => 1
+		);
+
+		if ($addon === 'amender'){
+			$pref_array['pg_focus'] = 'html';
+		}
+
+		$this->savePreferences($pref_array);
+
+		return array(
+			'success' => 1
+		);
+	}
+
 	function microthemer_ajax_actions(){
 
 		if ( !current_user_can('administrator') ){
@@ -505,6 +536,8 @@ trait AdminInitTrait {
 		if (isset($_GET['mcth_simple_ajax'])) {
 
 			check_ajax_referer( 'mcth_simple_ajax', '_wpnonce' );
+
+			$revision_id = null;
 
 			// workspace preferences
 			if (isset($_POST['tvr_preferences_form'])) {
@@ -518,6 +551,15 @@ trait AdminInitTrait {
 				wp_die();
 			}
 
+			// If we're copying the revision from the server to indexedDB
+			if (isset($_GET['copy_revision_locally'])) {
+				$revision_id = !empty($_GET['revision_id']) ? $_GET['revision_id'] : null;
+				$recent_revisions = !empty($_GET['recent_revisions']) ? $_GET['recent_revisions'] : null;
+				$this->getRevisionForIndexedDB($revision_id, true, true, $recent_revisions);
+				wp_die();
+			}
+
+
 			// if it's a silent save request for updating ui options (e.g. last viewed selector)
 			if (isset($_GET['mt_action']) and $_GET['mt_action'] == 'mt_silent_save_interface') {
 				$savePackage = $this->deep_unescape($_POST['savePackage'], 1, 1, 1);
@@ -530,6 +572,20 @@ trait AdminInitTrait {
 				wp_die();
 			}
 
+			// addon installation
+			if (!empty($_GET['install_tvr_addon'])) {
+				echo json_encode($this->installThemeoverAddon($_GET['install_tvr_addon']));
+				wp_die();
+			}
+
+			// content actions
+			$this->contentMethod('ajaxActions');
+
+			if (isset($_GET['process_ai_prompt'])) {
+				$AI = new AI($this);
+				$AI->sendAIPrompt();
+				wp_die();
+			}
 
 			// $this->get_site_pages();
 			if (isset($_GET['get_site_pages'])) {
@@ -641,6 +697,13 @@ trait AdminInitTrait {
 				wp_die();
 			}
 
+			// AI admin access
+			if (isset($_GET['ai_admin_access'])) {
+				$pref_array['ai_admin_access'] = intval($_GET['ai_admin_access']);
+				$this->savePreferences($pref_array);
+				wp_die();
+			}
+
 			// remember the state of the extra icons in the selectors menu
 			if (isset($_GET['show_extra_actions'])) {
 				$pref_array['show_extra_actions'] = intval($_GET['show_extra_actions']);
@@ -677,8 +740,8 @@ trait AdminInitTrait {
 			}
 
 			// wizard footer/right dock
-			if (isset($_GET['dock_wizard_right'])) {
-				$pref_array['dock_wizard_right'] = intval($_GET['dock_wizard_right']);
+			if (isset($_GET['dock_ai_right'])) {
+				$pref_array['dock_ai_right'] = intval($_GET['dock_ai_right']);
 				$this->savePreferences($pref_array);
 				wp_die();
 			}
@@ -879,7 +942,7 @@ trait AdminInitTrait {
 			}
 
 			// update multiple preferences in one go
-			if (isset($_GET['save_multiple_preferences'])) {
+			if (isset($_GET['save_multiple_preferences']) && isset($_POST['pref_array'])) {
 
 				$pref_array = array();
 
@@ -1350,20 +1413,21 @@ trait AdminInitTrait {
 				$this->update_preference('manual_recompile_all_css', 1);
 
 				// update the revisions DB field
-				if (!$this->updateRevisions($this->options, $this->json_format_ua(
+				$revision_id = $this->updateRevisions($this->options, $this->json_format_ua(
 					'import-from-pack lg-icon',
 					esc_html__('Import', 'microthemer') . ' ('.$context.'):&nbsp;',
 					$this->readable_name($theme_name)
-				))) {
+				));
+				if (!$revision_id) {
 					$this->log('','','error', 'revisions');
 				}
 
 				// save last message in database so that it can be displayed on page reload (just once)
 				$this->cache_global_msg();
-				wp_die();
+
+				// Return the revision data for indexedDB
+				$this->jsonResponse($this->getRevisionData($revision_id));
 			}
-
-
 
 			// if it's a reset request
 			elseif( isset($_GET['mt_action']) and $_GET['mt_action'] == 'tvr_ui_reset'){
@@ -1376,10 +1440,11 @@ trait AdminInitTrait {
 						'notice'
 					);
 					// update the revisions DB field
-					if (!$this->updateRevisions($this->options, $this->json_format_ua(
+					$revision_id = $this->updateRevisions($this->options, $this->json_format_ua(
 						'folder-reset lg-icon',
 						$item
-					))) {
+					));
+					if (!$revision_id) {
 						$this->log(
 							esc_html__('Revision failed to save', 'microthemer'),
 							'<p>' . esc_html__('The revisions table could not be updated.', 'microthemer') . '</p>',
@@ -1389,7 +1454,8 @@ trait AdminInitTrait {
 				}
 				// save last message in database so that it can be displayed on page reload (just once)
 				$this->cache_global_msg();
-				wp_die();
+
+				$this->jsonResponse($this->getRevisionData($revision_id));
 			}
 
 			// if it's a restore revision request
@@ -1404,10 +1470,11 @@ trait AdminInitTrait {
 					);
 					$this->update_assets('customised');
 					// update the revisions DB field
-					if (!$this->updateRevisions($this->options, $this->json_format_ua(
+					$revision_id = $this->updateRevisions($this->options, $this->json_format_ua(
 						'display-revisions lg-icon',
 						$item
-					))) {
+					));
+					if (!$revision_id) {
 						$this->log('','','error', 'revisions');
 					}
 				}
@@ -1419,7 +1486,9 @@ trait AdminInitTrait {
 				}
 				// save last message in database so that it can be displayed on page reload (just once)
 				$this->cache_global_msg();
-				wp_die();
+
+				// Return the revision data for indexedDB
+				$this->jsonResponse($this->getRevisionData($revision_id));
 			}
 
 			// if it's a get revision ajax request
@@ -1509,7 +1578,17 @@ trait AdminInitTrait {
 				}
 				// save last message in database so that it can be displayed on page reload (just once)
 				$this->cache_global_msg();
-				wp_die();
+
+				// Return the revision data for indexedDB
+				$this->jsonResponse($this->getRevisionData(
+					$this->updateRevisions(
+						$this->options,
+						$this->json_format_ua(
+							'mtif-devices lg-icon',
+							esc_html__('Media queries updated', 'microthemer')
+						)
+					)
+				));
 			}
 
 			// update the enqueued JS files
@@ -1534,7 +1613,17 @@ trait AdminInitTrait {
 
 				// save last message in database so that it can be displayed on page reload (just once)
 				$this->cache_global_msg();
-				wp_die();
+
+				// Return the revision data for indexedDB
+				$this->jsonResponse($this->getRevisionData(
+					$this->updateRevisions(
+						$this->options,
+						$this->json_format_ua(
+							'mtif-js lg-icon',
+							esc_html__('Enqueued scripts updated', 'microthemer')
+						)
+					)
+				));
 			}
 
 			// reset default preferences

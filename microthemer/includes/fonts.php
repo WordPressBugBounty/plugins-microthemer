@@ -287,7 +287,7 @@ function tvr_render_form_inputs($name, $section){
 			case 'select':
 				?>
                 <p>
-                    <select name="<?php echo $name; ?>">
+                    <select name="<?php echo $name; ?>" class="mt-select">
 						<?php
 						foreach($input['options'] as $option){
 							echo '<option value="'.$option['value'].'">'.$option['label'].'</option>';

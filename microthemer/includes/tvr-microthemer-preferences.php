@@ -32,8 +32,9 @@ $this->display_log();
 		array(
 			esc_html_x('General', '(General Preferences)', 'microthemer' ),
 			esc_html__('Units', 'microthemer'),
+			esc_html__('Amender', 'microthemer'), //$this->supportContent() ? esc_html__('Amender', 'microthemer') : '',
 			esc_html__('Inactive', 'microthemer'),
-			esc_html__('Compatibility', 'microthemer')
+			esc_html__('Legacy', 'microthemer')
 		)
 	); ?>
 
@@ -57,8 +58,8 @@ $this->display_log();
 	              'css_important' => $this->initial_preference_options['css_important'],
 	              'allow_scss' => $this->initial_preference_options['allow_scss'],
 	              'minify_css' => array(
-		              'label' => __('Minify the CSS file Microthemer generates', 'microthemer'),
-		              'explain' => __('Minify the CSS code Microthemer outputs - not necessary is you use an asset optimisation plugin' , 'microthemer')
+		              'label' => __('Minify published CSS files', 'microthemer'),
+		              'explain' => __('Minify the CSS code - not necessary is you use an asset optimisation plugin' , 'microthemer')
 	              ),
 	              'color_as_hex' => array(
 		              'label' => __('Report color in hex values instead of RGB/A'),
@@ -75,7 +76,7 @@ $this->display_log();
 	              ),*/
 	              'global_styles_on_login' => array(
 		              'label' => __('Enable global CSS on WordPress login pages', 'microthemer'),
-		              'explain' => __('Load Microthemer\'s global active-styles.css file on WordPress login, registration, and forgot password pages' , 'microthemer')
+		              'explain' => __('Load the global active-styles.css file on WordPress login, registration, and forgot password pages' , 'microthemer')
 	              ),
               )
             ),
@@ -83,13 +84,13 @@ $this->display_log();
 	            'label' => __('WordPress Admin', 'microthemer'),
 	            'items' => array(
 		            'admin_bar_shortcut' => array(
-			            'label' => __('Add a Microthemer shortcut to the WP admin bar', 'microthemer'),
-			            'explain' => __('Include a link to the Microthemer interface from the WordPress admin toolbar at the top of every page.', 'microthemer'),
+			            'label' => __('Add a shortcut to the WP admin bar', 'microthemer'),
+			            'explain' => __('Include a link to the interface from the WordPress admin toolbar at the top of every page.', 'microthemer'),
 			            //'default' => 'yes'
 		            ),
 		            'top_level_shortcut' => array(
 			            'label' => __('If yes to above, include as a top level link', 'microthemer'),
-			            'explain' => __('If you are enabling the Microthemer shortcut in the admin bar, you can either have it as a top level menu link or as a sub-menu item of the main menu.', 'microthemer'),
+			            'explain' => __('If you are enabling the shortcut in the admin bar, you can either have it as a top level menu link or as a sub-menu item of the main menu.', 'microthemer'),
 			            //'default' => 'yes'
 		            ),
 		            'admin_bar_preview' => array(
@@ -106,7 +107,7 @@ $this->display_log();
 		            ),
                     'add_block_classes_all' => array(
 	                    'label' => __('Always add classes to blocks (even outside of MT)', 'microthemer'),
-	                    'explain' => __('When loading Gutenberg inside Microthemer, it adds a unique class (e.g. "mctr-e5i34p") to all  blocks to make styling easier. You can also have this happen outside of Microthemer if you prefer using separate tabs with synced CSS and content changes.', 'microthemer')
+	                    'explain' => sprintf(__('When loading Gutenberg inside %s, it adds a unique class (e.g. "mctr-e5i34p") to all  blocks to make styling easier. You can also have this happen outside of %s if you prefer using separate tabs with synced CSS and content changes.', 'microthemer'), $this->appName, $this->appName)
                     ),
 	            )
             ),
@@ -121,53 +122,48 @@ $this->display_log();
 		            ),
 	            )
             ),
-            'integrations' => array(
-	            'label' => __('Stylesheet', 'microthemer'),
+
+            'tools' => array(
+	            'label' => __('Tools', 'microthemer'),
 	            'items' => array(
-		            'stylesheet_in_footer' => array(
-			            'label' => __('Load the Stylesheet in the footer', 'microthemer'),
-			            'explain' => __("Load Microthemer's stylesheet in the footer (if just for 'below the fold' content)", 'microthemer'),
-
+		            'manual_recompile_all_css' => array(
+			            'label' => __('Regenerate all CSS (can fix certain issues)', 'microthemer'),
+			            'explain' => __('If an error occurs, this can sometimes fix the issue', 'microthemer')
 		            ),
-		            'stylesheet_order' => array(
-			            'is_text' => 1,
-			            'one_line' => 1,
-			            'combobox' => 'stylesheet_order_options',
-			            'label' => __('Stylesheet loading order', 'microthemer'),
-			            'explain' => __("Set the order Microthemer's active-styles.css stylesheet loads with respect to other stylesheets", 'microthemer'),
-
+		            'refresh_template_map' => array(
+			            'label' => __('Regenerate Gutenberg template cache', 'microthemer'),
+			            'explain' => __('Do this if you\'ve uploaded new block template/part/pattern files to your theme directory', 'microthemer')
 		            ),
-		            'page_class_prefix' => array(
-			            'is_text' => 1,
-			            'one_line' => 1,
-			            'combobox' => 'page_class_prefix_options',
-			            'label' => __('Prefix for page-specific body element classes', 'microthemer'),
-			            'explain' => __("Change this value if the default clashes with a utility library like Bootstrap or Tailwind", 'microthemer'),
-
+		            'edge_mode' => array(
+			            'label' => __('Enable edge mode. ', 'microthemer'),
+			            'link' => '<a target="_blank" href="'.$this->edge_mode['edge_forum_url'].'">' . __('Read about/comment here', 'microthemer') .'</a>',
+			            'explain' => $this->edge_mode['cta'],
 		            ),
-		            //support this soon: https://wordpress.org/support/article/custom-fields/
-                    'insert_custom_field_classes' => array(
-			            'label' => __('Insert body classes defined using', 'microthemer'),
-			            'explain' => __("Append WordPress post/page custom field values (metadata) to the body tag class attribute when the field key is: my_body_classes", 'microthemer'),
-                        'link' => sprintf(
-	                        '<a href="%s" target="_blank">%s</a>',
-	                        esc_url( 'https://wordpress.org/support/article/custom-fields/' ),
-	                        esc_html__( 'custom fields', 'microthemer' )
-                        )
-
-		            )
 	            )
             ),
 
-            'interface' => array(
-	            'label' => __('Microthemer Interface', 'microthemer'),
+            /*'addons' => array(
+	            'label' => __('Addons', 'microthemer'),
 	            'items' => array(
+		            'css_addon' => array(
+			            'label' => __('Enable Microthemer', 'microthemer'),
+			            'explain' => __('Install / uninstall the Microthemer addon', 'microthemer')
+		            ),
+		            'content_addon' => array(
+			            'label' => __('Enable Amender', 'microthemer'),
+			            'explain' => __('Install / uninstall the Amender addon', 'microthemer')
+		            ),
+	            )
+            ),*/
 
+            'interface' => array(
+	            'label' => __('Interface', 'microthemer'),
+	            'items' => array(
 		            'preview_url' => array(
 			            'is_text' => 1,
 			            'input_id' => 'pref-preview-url-input',
-			            'label' => __('Frontend preview URL Microthemer should load', 'microthemer'),
-			            'explain' => __('Manually specify a link to the page you would like Microthemer to load for editing when it first starts. By default Microthemer will load your home page or the last page you visited. This option is useful if you want to style a page that can\'t be navigated to from the home page or other pages.', 'microthemer')
+			            'label' => __('Frontend preview URL to edit', 'microthemer'),
+			            'explain' => __('Manually specify a link to the page you would like edit. This option can be used via the standalone preferences pages to fix any issues caused by an invalid URL.', 'microthemer')
 		            ),
 		            'num_history_points' => array(
 			            'is_text' => 1,
@@ -183,6 +179,12 @@ $this->display_log();
 			            'explain' => __('Set the screen height below which elements will be styled with asynchronous (non-blocking) CSS, for maximum page speed ("Auto folder" must be enabled for this)', 'microthemer'),
 			            'combobox' => 'fold_threshold',
 		            ),
+		            'code_font_size' => array(
+			            'is_text' => 1,
+			            'one_line' => 1,
+			            'label' => __('Set the font-size for the code editor', 'microthemer'),
+			            'explain' => ''
+		            ),
                     //
 		            'tape_measure_slider' => array(
 			            'label' => __('Enable tape measure style sliders', 'microthemer'),
@@ -190,12 +192,12 @@ $this->display_log();
 
 		            ),
 		            'gzip' => array(
-			            'label' => __('Gzip the Microthemer UI page for faster loading', 'microthemer'),
+			            'label' => __('Gzip the UI page for faster loading', 'microthemer'),
 			            'explain' =>__('Having this gzip option enabled will speed up the initial page loading, but you can switch it off if this setting is not compatible with your server.', 'microthemer')
 		            ),
 		            'hover_inspect_off_initially' => array(
 			            'label' => __('Disable targeting mode when the interface first loads', 'microthemer'),
-			            'explain' =>__('Useful for devs that prefer to code selectors manually, without assistance from Microthemer', 'microthemer')
+			            'explain' =>__('Useful for devs that prefer to code selectors manually, without assistance', 'microthemer')
 		            ),
 		            'scroll_to_elements' => array(
 			            'label' => __('Auto-scroll to the current element, if out of view', 'microthemer'),
@@ -204,12 +206,6 @@ $this->display_log();
 		            'autofocus_editor' => array(
 			            'label' => __('Auto-focus the code editor cursor on element select', 'microthemer'),
 			            'explain' =>__('This saves time clicking on the code editor after selecting an element, but can also lead to accidental typing in the editor', 'microthemer')
-		            ),
-		            'code_font_size' => array(
-                        'is_text' => 1,
-                        'one_line' => 1,
-			            'label' => __('Set the font-size for the code editor', 'microthemer'),
-			            'explain' => ''
 		            ),
 
 		            /*'tooltip_delay' => array(
@@ -225,55 +221,27 @@ $this->display_log();
 	            'items' => array(
 		            'monitor_js_errors' => array(
 			            'label' => __('Monitor general JavaScript errors on your site'),
-			            'explain' => __('General JavaScript errors on your site can interfere with Microthemer, and other plugins. Microthemer can check for errors and warn you about them.', 'microthemer')
+			            'explain' => sprintf(__('General JavaScript errors on your site can interfere with %s, and other plugins. %s can check for errors and warn you about them.', 'microthemer'), $this->appName, $this->appName)
 		            ),
 		            'minify_js' => array(
-			            'label' => __('Minify the JS you add with Microthemer', 'microthemer'),
+			            'label' => __('Minify published JavaScript files', 'microthemer'),
 			            'explain' => __('Minify the custom JavaScript you add - not necessary is you use an asset optimisation plugin' , 'microthemer')
 		            ),
 		            'active_scripts_footer' => array(
-			            'label' => __('Load the JS you add with Microthemer in the footer'),
+			            'label' => __('Load global JavaScript in the footer'),
 			            'explain' => __('Load your active-scripts.js file just before the closing body tag', 'microthemer')
 		            ),
 		            'active_scripts_deps' => array(
 			            'is_text' => 1,
-			            'label' => __('List WP script handles your JS depends on'),
+			            'label' => __('List WP script handles your global JS depends on'),
 			            'explain' => __('If your custom JavaScript depends on a library, enter the library handles (comma separated)', 'microthemer')
 		            ),
 	            )
             ),
 
-            'legacy' => array(
-	            'label' => __('Legacy', 'microthemer'),
-	            'items' => array(
-		            'first_and_last' => array(
-			            'label' => __('Add "first" and "last" classes to menu items', 'microthemer'),
-			            'explain' => __('Microthemer can insert "first" and "last" classes on WordPress menus so that you can style the first or last menu items a bit differently from the rest. Note: this only works with "Custom Menus" created on the Appearance > Menus page.', 'microthemer')
-		            ),
-		            /*'hide_ie_tabs' => array(
-			            'label' => __('Hide the legacy Internet Explorer tabs', 'microthemer'),
-			            'explain' => __('Microthemer\'s IE tabs are not really needed these days, and so are hidden by default. Set this option to No if you still want them.' , 'microthemer')
-		            ),*/
-	            )
-            ),
-            'tools' => array(
-	            'label' => __('Tools', 'microthemer'),
-	            'items' => array(
-		            'manual_recompile_all_css' => array(
-			            'label' => __('Regenerate all CSS (can fix certain issues)', 'microthemer'),
-			            'explain' => __('If Microthemer encounters an error, this can sometimes fix the issue', 'microthemer')
-		            ),
-		            'refresh_template_map' => array(
-			            'label' => __('Regenerate Gutenberg template cache', 'microthemer'),
-			            'explain' => __('Do this if you\'ve uploaded new block template/part/pattern files to your theme directory', 'microthemer')
-		            ),
-		            'edge_mode' => array(
-			            'label' => __('Enable edge mode. ', 'microthemer'),
-			            'link' => '<a target="_blank" href="'.$this->edge_mode['edge_forum_url'].'">' . __('Read about/comment here', 'microthemer') .'</a>',
-			            'explain' => $this->edge_mode['cta'],
-		            ),
-	            )
-            ),
+
+
+
         );
 
 		// output
@@ -285,135 +253,32 @@ $this->display_log();
 
     <!-- Tab 2 (CSS Units) -->
     <div class="dialog-tab-field dialog-tab-field-<?php echo ++$tab_count; ?> hidden">
-
-        <ul class="form-field-list css_units">
-
-            <!--<li><span class="reveal-hidden-form-opts link reveal-unit-sets" rel="css-unit-set-opts">
-					<?php //esc_html_e('Load a full set of suggested CSS units', 'microthemer'); ?></span></li>-->
-			<?php
-
-			$group_key = '';
-
-			$unit_cats = array(
-				'all_units' => array(
-					'label' => __('All length units', 'microthemer'),
-					'items' => array(
-						'load_css_unit_sets' => array(
-						    'is_text' => 1,
-							'one_line' => 1,
-							'empty_after' => 1,
-							'input_id' => 'css_unit_set',
-							'combobox' => 'css_length_units',
-							'label' => __('Set ALL length units to:', 'microthemer'),
-							'explain' => __('Pixels are easier for beginners. But many consider it best practice to rem units for length properties', 'microthemer')
-						)
-					)
-				)
-            );
-
-			// output CSS unit options
-			foreach($this->preferences['my_props'] as $prop_group => $array){
-
-				// skip if non-valid or we've removed a property group
-				if ($prop_group == 'sug_values' || empty($this->propertyoptions[$prop_group])) continue;
-
-				// loop through default unit props
-				if (!empty($this->preferences['my_props'][$prop_group]['pg_props'])){
-					$first = true;
-					foreach ($this->preferences['my_props'][$prop_group]['pg_props'] as $prop => $arr){
-
-						if (!isset($this->propertyoptions[$prop_group][$prop]['default_unit'])){
-							continue;
-						}
-
-						unset($units);
-						// user doesn't need to set all padding (for instance) individually
-                        $factoryUnit = $this->propertyoptions[$prop_group][$prop]['default_unit'];
-						$box_model_rel = false;
-						$first_in_group = false;
-						//$label = $arr['label'];
-						$label = $this->propertyoptions[$prop_group][$prop]['label'];
-
-                        if (!empty($this->propertyoptions[$prop_group][$prop]['unit_rel'])){
-                            $box_model_rel = $this->propertyoptions[$prop_group][$prop]['unit_rel'];
-                        } elseif (!empty($this->propertyoptions[$prop_group][$prop]['rel'])){
-							$box_model_rel = $this->propertyoptions[$prop_group][$prop]['rel'];
-						}
-
-						if (!empty($this->propertyoptions[$prop_group][$prop]['unit_sub_label'])){
-							$first_in_group = $this->propertyoptions[$prop_group][$prop]['unit_sub_label'];
-						} elseif (!empty($this->propertyoptions[$prop_group][$prop]['sub_label'])){
-							$first_in_group = $this->propertyoptions[$prop_group][$prop]['sub_label'];
-						}
-
-						// only output length units
-						if ( !isset($arr['default_unit'])
-                             or $this->is_non_length_unit($factoryUnit, $prop)
-                             or ($box_model_rel and !$first_in_group)
-                        ){
-							continue;
-						}
-						// use group sub label if first box model e.g. padding, margin, border width, border radius
-						if ($box_model_rel and $first_in_group){
-							$label = $first_in_group; // . esc_html__(' (all)', 'microthemer');
-						}
-						// we don't need position repeated all the time (but no biggy if non-english)
-						$label = str_replace(' (Position)', '', $label);
-
-						// output pg group heading if new group
-						if ($first){
-							// get the label for the property group (can't necessarily rely on $first_in_group)
-							foreach ($this->propertyoptions[$prop_group] as $p => $arr){
-								$pg_label = !empty($arr['pg_label']) ? $arr['pg_label'] : '';
-								break; // only need first
-							}
-							/*echo
-								'<li class="section_title">' . $pg_label . '</li>';*/
-
-
-							$group_key = strtolower(str_replace(' ', '', $pg_label));
-							$unit_cats[$group_key] = array(
-								'label' => $pg_label,
-								'items' => array()
-							);
-
-							$first = false;
-						}
-
-						$unit_cats[$group_key]['items']['cssu_'.$prop] = array(
-						    'is_text' => 1,
-                            'one_line' => 1,
-							'prop' => $prop,
-							'input_class' => 'custom_css_unit',
-							'arrow_class' => 'custom_css_unit',
-							'combobox' => 'css_length_units',
-							'input_name' => 'tvr_preferences[new_css_units]['.$prop_group.']['.$prop.']',
-							'input_value' => $this->preferences['my_props'][$prop_group]['pg_props'][$prop]['default_unit'],
-							'label' => $label,
-							'explain' => __('Set the default CSS unit for ', 'microthemer') . $label
-						);
-
-
-					}
-				}
-			}
-
-			// output
-			echo $this->preferences_grid($unit_cats, 'css-units-grid');
-			?>
-        </ul>
-
+        <?php include $this->thisplugindir . 'src/CSS/templates/css-units.php'; ?>
     </div>
 
-	<!-- Tab 3 (Inactive) -->
+
+    <!-- Tab 3 (Amender) -->
+    <div class="dialog-tab-field dialog-tab-field-<?php echo ++$tab_count; ?> hidden">
+		<?php include $this->thisplugindir . 'src/Content/templates/content-preferences.php'; ?>
+    </div>
+
+    <?php
+    if ($this->supportContent()){
+        ?>
+
+        <?php
+    }
+    ?>
+
+	<!-- Tab 4 (Inactive) -->
 	<div class="dialog-tab-field dialog-tab-field-<?php echo ++$tab_count; ?> hidden">
 		<ul class="form-field-list delete-upon-install">
 			<?php
 			// yes no options
 			$yes_no = array(
 				'clean_uninstall' => array(
-					'label' => __('Upon Uninstall, Delete ALL Microthemer Data', 'microthemer'),
-					'explain' => __('Microthemer database settings and the contents of the /micro-themes folder are not deleted by default when you uninstall Microthemer. But they can be if you set this option to Yes.', 'microthemer'),
+					'label' => sprintf(__('Upon Uninstall, Delete ALL %s Data', 'microthemer'), $this->appName),
+					'explain' => sprintf(__('%s database settings and the contents of the /micro-themes folder are not deleted by default when you uninstall %s. But they can be if you set this option to Yes.', 'microthemer'), $this->appName, $this->appName),
 				)
 			);
 			$this->output_radio_input_lis($yes_no);
@@ -422,8 +287,8 @@ $this->display_log();
 		</ul>
 
 		<div id="functions-php">
-			<div class="heading"><?php echo esc_html__('Manually Load Microthemer Styles', 'microthemer'); ?></div>
-			<p class="instruction-text"><?php echo esc_html__('As long as you don\'t set the above option to Yes, you can uninstall Microthemer and still use the customisations you made with it. Simply copy and paste the code below at the bottom of your child theme\'s functions.php file. The code will not cause any problems when Microthemer is active. It simply won\'t run. So you can safely paste and forget.', 'microthemer'); ?></p>
+			<div class="heading"><?php echo esc_html__('Uninstall, but keep your changes', 'microthemer'); ?></div>
+			<p class="instruction-text"><?php echo sprintf(esc_html__('As long as you don\'t set the above option to Yes, you can uninstall %s and still use the customisations you made with it. Simply copy and paste the code below at the bottom of your child theme\'s functions.php file. The code will not cause any problems when %s is active. It simply won\'t run. So you can safely paste and forget.', 'microthemer'), $this->appName, $this->appName); ?></p>
 			<textarea spellcheck="false"><?php
 				echo esc_html(
 					file_get_contents(
@@ -438,36 +303,93 @@ $this->display_log();
             This approach is necessary for Oxygen users because Oxygen disables the theme.', 'microthemer'); ?></p>
             <p><a href="<?php echo $this->thispluginurl . 'includes/inactive-loading/mt-inactive.zip'; ?>"><?php echo esc_html__('Download plugin', 'microthemer'); ?></a></p>
 
-            <p class="instruction-text"><?php echo esc_html__('Simply install and activate the "mt-inactive.zip" plugin, and then you can uninstall Microthemer - the CSS will still apply.', 'microthemer'); ?></p>
+            <p class="instruction-text"><?php echo sprintf(esc_html__('Simply install and activate the "mt-inactive.zip" plugin, and then you can uninstall %s - the CSS will still apply.', 'microthemer'), $this->appName); ?></p>
             <br /><br />
 		</div>
 	</div>
 
-    <!-- Tab 4 (Compatibility) -->
+    <!-- Tab 5 (Legacy) -->
     <div class="dialog-tab-field dialog-tab-field-<?php echo ++$tab_count; ?> hidden">
+
+        <p>The following settings are rarely needed. Or, they only have relevance to previous versions but still need to be configurable.</p>
+
         <ul class="form-field-list compatibility-settings">
 			<?php
 
             // ensure this setting is off by default
 			$this->preferences['remove_all_bricks_container_hacks'] = 0;
 
-			// yes no options
-			$yes_no = array(
-				'wp55_jquery_version' => array(
-					'label' => __('Load a legacy version of jQuery', 'microthemer'),
-					'explain' => __('This is a temporary setting to fix issues some sites may have with the new version of jQuery and jQueryUI WordPress 5.6+ uses', 'microthemer'),
+			$options = array(
+				'integrations' => array(
+					'label' => __('Stylesheet', 'microthemer'),
+					'items' => array(
+						'stylesheet_in_footer' => array(
+							'label' => __('Load the Stylesheet in the footer', 'microthemer'),
+							'explain' => __("Load Microthemer's CSS in the footer", 'microthemer'),
+
+						),
+						'stylesheet_order' => array(
+							'is_text' => 1,
+							'one_line' => 1,
+							'combobox' => 'stylesheet_order_options',
+							'label' => __('Stylesheet loading order', 'microthemer'),
+							'explain' => __("Set the order Microthemer's active-styles.css stylesheet loads with respect to other stylesheets", 'microthemer'),
+
+						),
+						'page_class_prefix' => array(
+							'is_text' => 1,
+							'one_line' => 1,
+							'combobox' => 'page_class_prefix_options',
+							'label' => __('Prefix for page-specific body element classes', 'microthemer'),
+							'explain' => __("Change this value if the default clashes with a utility library like Bootstrap or Tailwind", 'microthemer'),
+
+						),
+						//support this soon: https://wordpress.org/support/article/custom-fields/
+						'insert_custom_field_classes' => array(
+							'label' => __('Insert body classes defined using', 'microthemer'),
+							'explain' => __("Append WordPress post/page custom field values (metadata) to the body tag class attribute when the field key is: my_body_classes", 'microthemer'),
+							'link' => sprintf(
+								'<a href="%s" target="_blank">%s</a>',
+								esc_url( 'https://wordpress.org/support/article/custom-fields/' ),
+								esc_html__( 'custom fields', 'microthemer' )
+							)
+
+						)
+					)
 				),
-				'bricks_container_hack' => array(
-					'label' => __('Enable Bricks grid workaround (BGW)', 'microthemer'),
-					'explain' => __('Ensure styles applied to Bricks container elements also work when Bricks is active - by creating special selectors that will be tagged with [BGW]', 'microthemer'),
+				'compatibility' => array(
+					'label' => __('Compatibility', 'microthemer'),
+					'items' => array(
+						'wp55_jquery_version' => array(
+							'label' => __('Load a legacy version of jQuery', 'microthemer'),
+							'explain' => __('This is a temporary setting to fix issues some sites may have with the new version of jQuery and jQueryUI WordPress 5.6+ uses', 'microthemer'),
+						),
+						'bricks_container_hack' => array(
+							'label' => __('Enable Bricks grid workaround (BGW)', 'microthemer'),
+							'explain' => __('Ensure styles applied to Bricks container elements also work when Bricks is active - by creating special selectors that will be tagged with [BGW]', 'microthemer'),
+						),
+						'remove_all_bricks_container_hacks' => array(
+							'label' => __('Remove all Bricks grid workarounds (BGW)', 'microthemer'),
+							'explain' => __('Automatically update all BGW selectors to remove the workaround that may not be necessary anymore', 'microthemer'),
+						),
+					)
 				),
-				'remove_all_bricks_container_hacks' => array(
-					'label' => __('Remove all Bricks grid workarounds (BGW)', 'microthemer'),
-					'explain' => __('Automatically update all BGW selectors to remove the workaround that may not be necessary anymore', 'microthemer'),
+				'misc' => array(
+					'label' => __('Miscellaneous', 'microthemer'),
+					'items' => array(
+						'first_and_last' => array(
+							'label' => __('Add "first" and "last" classes to menu items', 'microthemer'),
+							'explain' => __('Microthemer can insert "first" and "last" classes on WordPress menus so that you can style the first or last menu items a bit differently from the rest. Note: this only works with "Custom Menus" created on the Appearance > Menus page.', 'microthemer')
+						),
+						/*'hide_ie_tabs' => array(
+							'label' => __('Hide the legacy Internet Explorer tabs', 'microthemer'),
+							'explain' => __('Microthemer\'s IE tabs are not really needed these days, and so are hidden by default. Set this option to No if you still want them.' , 'microthemer')
+						),*/
+					)
 				),
 			);
 
-			$this->output_radio_input_lis($yes_no);
+			echo $this->preferences_grid($options, 'main-preferences-grid');
 
 			?>
         </ul>

@@ -1,11 +1,15 @@
 <?php
 
+/*
+ * Common properties and methods for Admin and AssetAuth classes
+ */
+
 namespace Microthemer;
 
 trait PluginTrait {
 
-	var $version = '7.3.2.8';
-	var $db_chg_in_ver = '7.0.5.0';
+	var $version = '7.4.0.9';
+	var $db_chg_in_ver = '7.4.0.4';
 	var $minimum_wordpress = '5.6';
 	var $preferencesName = 'preferences_themer_loader';
 	var $autoloadPreferencesName = 'microthemer_autoload_preferences';
@@ -18,6 +22,7 @@ trait PluginTrait {
 	var $fontspage = 'tvr-fonts.php';
 	//var $preferences = array(); PHP warning when AssetLoad runs
 	var $current_user_id = -1;
+	var $wp_ajax_url = '';
 
 	// Previously dynamic properties
 	// @var strings dir/url paths
@@ -52,7 +57,7 @@ trait PluginTrait {
 	var $micro_root_dir = '';
 	var $micro_root_url = '';
 	var $site_url = '';
-
+	var $content;
 
 	function loadTextDomain(){
 
@@ -86,6 +91,28 @@ trait PluginTrait {
 		unset($_COOKIE[$key]);
 	}
 
+
+	function setAdminAjaxUrl(){
+		$this->wp_ajax_url = $this->wp_blog_admin_url . 'admin-ajax.php' . '?action=mtui&mcth_simple_ajax=1&page='.$this->microthemeruipage . '&_wpnonce='.wp_create_nonce('mcth_simple_ajax');
+	}
+
+	function jsonResponse($data, $clean = true){
+
+		if ($clean){
+			//ob_clean();
+			// Clean all levels of output buffering - this fixes issues like <p> wrapped around JSON
+			while (ob_get_level()) {
+				ob_end_clean();
+			}
+		}
+
+		header('Content-type: application/json');
+
+		http_response_code(200);
+
+		echo json_encode($data);
+		exit;
+	}
 
 
 

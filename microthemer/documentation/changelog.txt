@@ -1,5 +1,77 @@
 CHANGELOG
 
+= 7.4.0.9 (April 30th, 2024) =
+
+# Enhancements
+* Instant undo falls back to a server revision if not available in the browser cache.
+* Faster AI responses for users outside the US.
+
+# Bugs Fixed
+* Box-shadow and text-shadow were not syncing between the code editor and visual controls.
+* AI retry could sometimes re-apply changes to the previously selected element.
+* Media query tabs were not dynamically added if the AI created a new breakpoint.
+
+= 7.4.0.8 (April 24th, 2024) =
+
+# Enhancements
+* AI can detect pseudo elements ::before and ::after.
+
+= 7.4.0.7 (April 23rd, 2024) =
+
+# Enhancements
+* Better AI support for responsive styling.
+
+= 7.4.0.6 (April 22nd, 2024) =
+
+# Enhancements
+* AI assistant now available in the main release.
+* More room for chat / sketchpad with new chat icon at top right.
+
+= 7.4.0.5 beta (April 20th, 2024) =
+
+# Enhancements
+* Improved effectiveness at complex tasks involving multiple elements.
+* Improved integration with Microthemer's stock animations.
+
+= 7.4.0.4 beta (April 18th, 2024) =
+
+# Enhancements
+- Improvements to the reliability and simplicity of CSS selectors the AI assistant generates.
+
+# Bugs fixed
+- Saving settings could get stuck on very fast servers due to a timing bug.
+
+= 7.4.0.3 beta (April 10th, 2024) =
+
+# Change
+- Regular auto-save system applies to AI edits too, with easy undo.
+
+# Enhancements
+* Significantly more capable AI model.
+* AI model can probe the web page more effectively.
+* AI model can utilize Microthemer stock animations.
+* Instant undo / redo buttons added to the top right of the interface.
+* Undo icon next to each AI reply for easily jumping back one or more steps.
+* AI conversation and code sketchpad persist across page refresh and can be retrieved from history.
+
+= 7.4.0.2 beta (Dec 11th, 2024) =
+
+# Enhancements
+* The AI can help debug styles not working due to CSS rule conflicts.
+* "New Task" button added below the chat to clear the history and start a new task.
+* Auto-scroll to the top of the AI's message.
+
+= 7.4.0.1 beta (Dec 5th, 2024) =
+
+# Enhancements
+* Improved the AI assistant's awareness of previous messages in the conversation.
+
+= 7.4.0.0 beta (Dec 3rd, 2024) =
+
+# Enhancements
+* New AI assistant panel can help with styling and debugging.
+* Media library insert popup now has a size menu next to the "Insert Image" button.
+
 = 7.3.2.8 (Feb 26th, 2024) =
 
 # Bugs fixed

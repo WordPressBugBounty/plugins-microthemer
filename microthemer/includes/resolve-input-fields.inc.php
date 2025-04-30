@@ -137,7 +137,9 @@ if (!$is_picker){
 
 
 // determine if the user has applied a value for this field, adjust comp class accordingly
-
+$comp_att = ($property === 'snippet' || $property === 'text')
+	? ' contenteditable="true"'
+	: '';
 $comp_class = 'comp-style cprop-' . $cssf;
 if (!empty($value) or $value === 0 or $value === '0') {
 	$man_class = ' manual-val';
@@ -169,7 +171,8 @@ else {
 $variable_line = !empty($prop_data['variable_line']);
 
 // does the input have array format values
-$array_values = !empty($prop_data['array_values']);
+$isHTMLField = $property_group_name === 'html';
+$array_values = !empty($prop_data['array_values']) || $isHTMLField;
 
 // css property icon
 $icon_name = !empty($prop_data['icon-name']) ? $prop_data['icon-name'] : $cssf;
@@ -204,7 +207,7 @@ if ($property == 'google_font') {
 	$extra_icon = $this->iconFont('search', array(
 		'class' => 'g-font show-dialog',
 		'rel' => 'google-fonts',
-		'title' => esc_attr__('Browse Google fonts', 'Microthemer'),
+		'title' => esc_attr__('Browse Google fonts', 'microthemer'),
 	));
 
 	// hide if font-family isn't set to Google Font
@@ -627,6 +630,10 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 
 		$input_wrap_html = '';
 
+		if ($property === 'snippet'){
+			$html.= $this->snippet_dependency_table();
+		}
+
 		$input_wrap_html.= '<span class="tvr-input-wrap tvr-field-input-wrap '.$man_class . '">';
 
 			// if a variable input field, provide a color picker too
@@ -645,8 +652,9 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 			$name_suffix = '[value]';
 			$unit_name_suffix = '[unit]';
 			if ($array_values){
-				$name_suffix.= '[]';
-				$unit_name_suffix.= '[]';
+				$numbered = $isHTMLField ? '0' : '';
+				$name_suffix.= '['.$numbered.']';
+				$unit_name_suffix.= '['.$numbered.']';
 			}
 
 			// grid template prop should be flagged with class
@@ -689,25 +697,43 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 				        '</div>';
 			}
 
+			elseif ($property === 'snippet' || $property === 'text'){
+
+				$input_wrap_html.= '<textarea rel="'.$property.'" class="property-input '.$input_class.' '.$property.'-textarea"
+			name="tvr_mcth'.$mq_stem.'['.$section_name.']['.$css_selector.'][styles]['.$property_group_name.']['. $property.']'.$name_suffix.'"></textarea>';
+
+			}
+
 			else {
 				// render combobox // data-appto=".styling-options"
 				$input_wrap_html.= $property_input . $combo_arrow;
 			}
 
 
-
 			$input_wrap_html.= $extra_icon;
 
 
+			if ($property === 'snippet'){
+				$input_wrap_html.= '<pre id="snippet-code" class="snippet-code"></pre>';
+				$input_wrap_html.= '
+				<div class="snippet-choice">
+					<div class="snippet-choice-inner">
+						<span class="snippet-choice-option tvr-button" data-option="original">Edit original</span>
+						<span class="snippet-choice-option tvr-button tvr-blue" data-option="clone">Create clone</span>
+					</div>
+				</div>';
+			}
 
-			$input_wrap_html.= '<span class="'.$comp_class.'"></span>';
-
-
+			$input_wrap_html.= '<span class="'.$comp_class.'"'.$comp_att.'></span>';
 
 			$input_wrap_html.= '</span>'; // end input wrap
 
 
 		$html.= $input_wrap_html;
+
+		if ($property === 'snippet' || $property === 'text'){
+			$html.= $this->snippetNameField(); // . $this->htmlContentActionsMenu();
+		}
 
 		// save input wrap for template/auto-rows/columns
 		if ($variable_line && empty($this->input_wrap_templates[$property])){
@@ -722,8 +748,12 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 			'title' => 'Add field',
 			)) : '';
 
-		$html.= $this->icon_control(false, 'important', $important_val, 'property', $section_name,
-			$css_selector, $key, $property_group_name, $this->subgroup, $property);
+
+		if ($property_group_name !== 'html'){
+			$html.= $this->icon_control(false, 'important', $important_val, 'property', $section_name,
+				$css_selector, $key, $property_group_name, $this->subgroup, $property);
+		}
+
 
 		// CSS unit
 		//$html.= '<span class="input-unit-right">px</span>';
@@ -741,6 +771,12 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 if (!empty($prop_data['linebreak']) and $prop_data['linebreak'] == '1') {
 	$html.= '<div class="clear property-row-divider"></div>';
 }
+
+// Display invalid combination warning
+if ($property === 'aspect'){
+	$html.= '<div class="amender-settings-advice tvr-message tvr-warning">Invalid action-aspect combination</div>';
+}
+
 
 // global UI toggle for grid highlight
 /*if (!empty($prop_data['highlight_grid_toggle'])) {

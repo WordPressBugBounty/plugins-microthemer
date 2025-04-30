@@ -27,10 +27,8 @@ trait TimerTrait {
 		
 		if (!isset($this->profiler[$fName])){
 			$this->profiler[$fName] = array(
-				'fName' => $fName,
 				'sT' => [],
 				'eT' => [],
-				'elT' => [],
 				'calls' => 0,
 				'avg_time' => 0,
 				'total_time' => 0
@@ -60,11 +58,11 @@ trait TimerTrait {
 
 		// update profiler values for single function call
 		$this->profiler[$fName]['eT'][$callIndex] = $eT;
-		$this->profiler[$fName]['elT'][$callIndex] = $elT;
+		//$this->profiler[$fName]['elT'][$callIndex] = $elT;
 
 		// update total values
-		$this->profiler[$fName]['total_time']+= round($elT, 4);
-		$this->profiler[$fName]['avg_time']+= round($this->profiler[$fName]['total_time'] / $callIndex, 4);
+		$this->profiler[$fName]['total_time'] = round($elT, 4);
+		$this->profiler[$fName]['avg_time'] = round($this->profiler[$fName]['total_time'] / $callIndex, 6);
 
 	}
 

@@ -20,12 +20,20 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 	class AssetLoad {
 
-		protected $context = 'load';
-		protected $isFrontend = true;
-		protected $isAdminArea = false;
+		use TimerTrait,
+			FrontAndBackTrait;
+
 		protected $isBlockEditorScreen;
 		var $logicSettings = array();
+		public $context = 'load';
+
+		public $isFrontend = true;
+		public $isAdminArea = false;
+
+		var $contentClass;
+		var $cssClass;
 		var $preferences = array();
+		var $draft = false;
 		var $assetLoadingKey = 'asset_loading_published';
 		var $globalStylesheetRequiredKey = "global_stylesheet_required_published";
 		var $globalJSRequiredKey = "load_js_published";
@@ -45,8 +53,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 		var $menuSlugs = array(); // for adding first/last classes to menus
 		var $menuItemCount = 0;
 
-
-		protected $hooks = array(
+		public $hooks = array(
 			'head' => 'wp_head',
 			'footer' => 'wp_footer',
 			'enqueue_scripts' => 'wp_enqueue_scripts'
@@ -67,6 +74,13 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 			$p = $this->getPreferences();
 			$this->checkAdminVsFront();
+
+			if ($this->hasContentCapability()){
+				$this->contentClass = new Content\AssetLoadContent($this, TVR_DEV_MODE);
+			}
+
+			// Set the app name
+			$this->setAppName();
 
 			// setup version and path vars
 			$this->mtv = 'mtv=' . (!empty($p['version']) ? $p['version'] : 7);
@@ -97,27 +111,6 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				$this->$hookMethod();
 			}
 		}
-
-		// Fix for an issue where do_item() echos code before the <html> tag when used with the enqueue_block_assets hooks
-		// when editing a regular post or page with Gutenberg (the issue doesn't affect the FSE editor)
-		// bizare, but it seems I don't need this now. What happened?
-		/*function printDeferredHandles(){
-
-			if (isset($this->deferredHandles['css'])){
-
-				$wp_styles = $this->deferredHandles['wp_styles'];
-
-				//wp_die('here <pre>'.print_r($this->deferredHandles['css'], 1).'</pre>');
-
-				foreach ($this->deferredHandles['css'] as $handle => $data){
-					if (empty($this->deferredHandles['cssDone'][$handle])){
-						$wp_styles->do_item($handle);
-						$wp_styles->done[] = $handle;
-						$this->deferredHandles['cssDone'][$handle] = 1;
-					}
-				}
-			}
-		}*/
 
 		// get the directory path for /wp-content/micro-themes/, accounting for multisite
 		function getPaths(){
@@ -171,8 +164,6 @@ if (!class_exists('\Microthemer\AssetLoad')){
 					: null;
 
 				$this->isBlockEditorScreen = !empty($screen->is_block_editor) || $pagenow === 'site-editor.php';
-
-				//wp_die('bastyscreen: <pre>'.print_r([$this->isBlockEditorScreen, $pagenow, $screen], 1).'</pre>');
 
 				return $this->isBlockEditorScreen;
 			}
@@ -257,7 +248,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 			}
 		}
 
-		function addGlobalStylesheet($p, $add){
+		function addGlobalStylesheet(&$p, $add){
 
 			$path = $this->fileStub . '-styles.css';
 
@@ -298,7 +289,10 @@ if (!class_exists('\Microthemer\AssetLoad')){
 			// if Auth, we add a placeholder to update conditional styles on synced other tabs
 			$this->addMTPlaceholder();
 
-			// Global CSS is just for the frontend and block editor pages
+			// maybe load Tailwind - frontend and back so editor matches up with frontend styling
+			$this->contentMethod('maybeLoadTailwind', array(&$p, $add));
+
+			// Global CSS is just for the frontend
 			if ($this->isFrontend
 			    || ($this->isBlockEditorScreen && !empty($p['admin_asset_loading']))
 			){
@@ -317,9 +311,6 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 			// insert MT interface CSS here if AssetAuth child class is running
 			$this->addMTCSS();
-			/*if ($this->isFrontend || $this->supportAdminAssets()){
-
-			}*/
 
 			// restore the default do_concat setting
 			// (which may have been changed if using enqueue_block_assets hook)
@@ -368,13 +359,11 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 						$inline = empty($folder['css_external']);
 						$async = !empty($folder['css_async']);
-
 						//echo '$cssFile: ' . $url . $cssFileName . '?' . $this->cacheParam;
 
 						// force file_get_contents to get a non-cached version of the file
 						if ($inline){
 							touch($cssFile);
-							//echo 'touched $cssFile: ' . $url . $cssFileName . '?' . $this->cacheParam;
 						}
 
 						// load the CSS file
@@ -412,11 +401,6 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 			if (!empty($this->asyncAssets['css'][$handle])){
 
-				// The preload method - doesn't support IE11 & preload will prioritise resource
-				/*$html = '<link rel="preload" href="' . $href . '" as="style" id="' . $handle . '-css"
-						media="' . $media . '" onload="this.onload=null;this.rel=\'stylesheet\'">'
-				       . $noscript;*/
-
 				// The media print method - works in all browsers and doesn't change resource priority
 				$html = '<link rel="stylesheet" href="'.$href.'" id="'.$handle.'-css" 
 						media="print" onload="this.onload=null; this.media=\''.$media.'\';">'
@@ -444,6 +428,9 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 			else {
 				$this->loadConditionalAssets($folders, $logic);
+				
+				// Now we have folderLoading config, queue scripts and maybe hook HTML mods
+				$this->contentMethod('initContentAmendments');
 			}
 
 			$this->folderLoadingChecked = true;
@@ -493,8 +480,173 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 		}
 
-		function addViewportMeta($p){
+		function addViewportMeta(){
 			echo '<meta name="viewport" content="width=device-width, initial-scale=1" />';
+		}
+
+		// return meta data about the current page
+		function pageMeta(){
+
+			global $wp_query, $post, $pagenow;
+
+			$logic = null;
+			$alt = array();
+			$title = null;
+			$type = null;
+			$id = null;
+			$post_id = 0;
+			$post_status = '';
+			$isFSE = $pagenow === 'site-editor.php';
+			$permalink = home_url(); // default to the home page
+			$post_title = '';
+			$slug = null;
+			$isAdminPostPageEdit = ($this->isAdminArea && !empty($_GET['post']) && isset($post->post_name));
+			$screen = $this->isAdminArea && function_exists('get_current_screen')
+				? get_current_screen()
+				: null;
+			$adminPrefix = esc_html__('Admin - ', 'microthemer');
+			$blockPrefix = '';
+			$isBlockEditorScreen = $this->isBlockEditorScreen;
+			//wp_die('<pre>$post: '.print_r($post, 1).' </pre>');
+			//wp_die('<pre>$current_screen: '.print_r($screen, 1).' </pre>');
+
+			// single post/page on frontend or admin side
+			if ( $wp_query->is_page || $wp_query->is_single || $isAdminPostPageEdit ) {
+				$post_id = $id = $post->ID;
+				$slug = $post->post_name ?: $post_id; // with certain previews the slug might not be set so default to the id
+				$type = $wp_query->is_page ? 'page' : 'single';
+				$blockPrefix = esc_html__('Blocks - ', 'microthemer');
+				$post_title = $title = ($this->isAdminArea ? $adminPrefix : '') .  $post->post_title;
+				$post_status = $post->post_status;
+
+				// general page logic
+				$pageLogic = $isAdminPostPageEdit
+					? '\Microthemer\is_public_or_admin("'.$slug.'")'
+					:  '\Microthemer\is_post_or_page('.$post_id.', "'.$post->post_title.'")'; // 'is_'.$type.'("'.$slug.'")';
+
+				$logic = $pageLogic;
+
+				// more alt logic for admin side
+				if ($isAdminPostPageEdit && $screen){
+					$alt[] = array(
+						'logic' => '\Microthemer\query_admin_screen("base", "'.$screen->base.'")',
+						'title' => $adminPrefix . ucwords($screen->base)
+					);
+				}
+
+				// Save the permalink, for turning off Gutenberg
+				$permalink = get_permalink($post_id);
+
+			}
+
+			// todo has_template() when using site editor templates, patterns, template parts,
+
+			// any other admin screen that isn't edit post/page
+			elseif ($this->isAdminArea && $screen) {
+
+				// Add Post/Page - need to convert the folder to page-specific if editor content items exist inside
+				// So flag with identifiable logic
+				if ($screen->action === 'add' && $screen->base === 'post'){
+					$logic = '\Microthemer\query_admin_screen("action", "add") && \Microthemer\query_admin_screen("base", "post")';
+					$title = $adminPrefix . $screen->action . ' ' . $screen->base;
+				}
+
+				else {
+					$logic = '\Microthemer\query_admin_screen("base", "'.$screen->base.'")';
+					$title = $adminPrefix . $screen->base;
+				}
+
+				if ($screen->parent_base){
+					$alt[] = array(
+						'logic' => '\Microthemer\query_admin_screen("parent_base", "'.$screen->parent_base.'")',
+						'title' => $adminPrefix . ucwords($screen->parent_base)
+					);
+				}
+
+				// It's a full site editor page, see if we can get a link for pages
+				if ($isFSE){
+					$permalink = Helper::getFSEPermalink($permalink);
+				}
+			} elseif ( $wp_query->is_home ) {
+				$logic = 'is_home()';
+				$title = esc_html__('Blog home', 'microthemer');
+				$type = 'blog-home';
+			} elseif ( $wp_query->is_category ) {
+				$id = $wp_query->query_vars['cat'];
+				$slug = $wp_query->query['category_name'];
+				$logic = 'is_category("'.$slug.'")';
+				$title = esc_html__('Category archive: ', 'microthemer') . $wp_query->queried_object->name;
+				$type = 'category';
+			} elseif ( $wp_query->is_tag ) {
+				$id = $wp_query->query_vars['tag'];
+				$slug = $wp_query->query['tag_name'];
+				$logic = 'is_tag()';
+				$title = esc_html__('Tag archive', 'microthemer');
+				$type = 'tag';
+			} elseif ( $wp_query->is_author ) {
+				$id = $wp_query->query_vars['author'];
+				$slug = $wp_query->query['author_name'];
+				$logic = 'is_author()';
+				$title = esc_html__('Author archive', 'microthemer');
+				$type = 'author';
+			} elseif ( $wp_query->is_archive ) {
+				$logic = 'is_archive()';
+				$title = esc_html__('Archive', 'microthemer');
+				$type = 'archive';
+			} elseif ( $wp_query->is_search ) {
+				$logic = 'is_search()';
+				$title = esc_html__('Search results', 'microthemer');
+				$type = 'search';
+			} elseif ( $wp_query->is_404 ) {
+				$logic = 'is_404()';
+				$title = esc_html__('404 page', 'microthemer');
+				$type = '404';
+			}
+
+			// Complete the 3 levels of logic when editing the admin area
+			// 1 = most specific e.g. single page or current screen
+			// 2 = base or parent base
+			// 3 = is_admin()
+			if ($this->isAdminArea){
+				$alt[] = array(
+					'logic' => 'is_admin()',
+					'title' => esc_html__('Admin area', 'microthemer')
+				);
+			}
+
+			$min = !TVR_DEV_MODE ? '-min' : '/page';
+
+			// Tailwind data
+			$tailwind = array(
+				'classCache' => '',
+				'siteWideCache' => '',
+				'config' => ''
+			);
+
+			$this->contentMethod('getFrontendDataTailwindCache', array($type, $id, &$tailwind));
+
+			return array_merge(array(
+				'post_id' => $post_id,
+				'post_title' => $post_title,
+				'id' => $id,
+				'post_status' => $post_status,
+				'slug' => $slug,
+				'title' => $title,
+				'logic' => $logic,
+				'alt_logic' => $alt,
+				'type' => $type,
+				'isBlockEditorScreen' => $isBlockEditorScreen,
+				'adminPrefix' => $adminPrefix,
+				'blockPrefix' => $blockPrefix,
+				'permalink' => $permalink,
+				'pagenow' => $pagenow,
+				'tailwind' => $tailwind
+			), $this->authOnlyData($min));
+
+		}
+
+		function authOnlyData($min){
+			return array();
 		}
 
 		// Microthemer updates a separate database entry with a handful of preferences that are needed on the frontend

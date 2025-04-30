@@ -14,8 +14,11 @@ class AssetAuth extends AssetLoad {
 
     use PluginTrait;
 
+	var $context = 'assetAuth';
+
     var $builderBlockedEdit = false;
     var $assetLoadingKey = 'asset_loading';
+	var $draft = true;
 	var $globalStylesheetRequiredKey = "global_stylesheet_required";
 	var $globalJSRequiredKey = "load_js";
 
@@ -42,6 +45,10 @@ class AssetAuth extends AssetLoad {
 	    // get the directory paths
 	    include dirname(__FILE__) .'/../get-dir-paths.inc.php';
 
+	    if ($this->hasContentCapability()){
+		    $this->contentClass = new Content\AssetAuthContent($this, TVR_DEV_MODE);
+	    }
+
         // setup plugin text domain - not sure if this is needed as JS text strings run on parent window
         // but let's see when reviewing code
         $this->loadTextDomain();
@@ -51,6 +58,7 @@ class AssetAuth extends AssetLoad {
 
 		// hook save post
 	    $this->hookPostSaved();
+        $this->hookAjaxUrlSetup();
 
         if ($this->isFrontend){
 	        $this->hookRedirect();
@@ -75,6 +83,11 @@ class AssetAuth extends AssetLoad {
         // note, must come after hookMTJS as inline data is attached to the tvr_mcth_frontend handle
 	    //$this->deferHookIfAdmin('current_screen', 'hookFrontendData');
     }
+
+	// support viewing the frontend as a logged-out user
+	function hookAjaxUrlSetup(){
+		add_action('init',  array(&$this, 'setAdminAjaxUrl'), $this->defaultActionHookOrder);
+	}
 
     // support viewing the frontend as a logged-out user
 	function hookNonLoggedIn(){
@@ -187,7 +200,9 @@ class AssetAuth extends AssetLoad {
 
 	function addMTJS(){
 
-		$min = !TVR_DEV_MODE ? '-min' : '/page';
+		$p = $this->preferences;
+        $min = !TVR_DEV_MODE ? '-min' : '/page';
+        $jsPath = $this->thispluginurl.'js'.$min;
 
 		// Common dependencies
 		wp_enqueue_script('jquery');
@@ -213,11 +228,13 @@ class AssetAuth extends AssetLoad {
 		// e.g. Frontend loaded, Folder loading config
 		wp_register_script(
 			'tvr_mcth_frontend',
-			$this->thispluginurl.'js'.$min.'/frontend.js?v='.$this->version,
+			$jsPath.'/frontend.js?v='.$this->version,
 			array('jquery', 'jquery-ui-tooltip')
 		);
 
 		wp_enqueue_script( 'tvr_mcth_frontend');
+
+		$this->contentMethod('maybeLoadTailwindProcessor', array(&$p, $jsPath));
 
 		// the previous system of hooking this separately did not work on the wp-login.php page
 		// And I think it added unnecessary complexity too
@@ -237,7 +254,7 @@ class AssetAuth extends AssetLoad {
 
 			// ensure that folderLoading config has been set
 			// it won't be if stylesheet_order has a value
-			if (!$this->folderLoadingChecked && isset($asset_loading['logic']) && count($asset_loading['logic'])){
+			if (!$this->folderLoadingChecked && isset($asset_loading['logic'])){
 				//echo 'getCondAssets ';
 				$this->conditionalAssets($asset_loading['logic'], false, true);
 			}
@@ -289,6 +306,9 @@ class AssetAuth extends AssetLoad {
 					// flag if bricks builder is active
 					'bricksBuilderActive' => $this->isBricksUi(),
 
+                    // Ajax URL for saving data after monitoring the frontend e.g. Tailwind class usage
+                    'wp_ajax_url' => $this->wp_ajax_url,
+
 					// WordPress info
                     'wp_version' => $wp_version,
                     'theme' => get_stylesheet(),
@@ -322,168 +342,16 @@ class AssetAuth extends AssetLoad {
 		}
 	}
 
-    // return logic for targeting the current page or type of page
-    function pageMeta(){
+	function authOnlyData($min){
 
-	    global $wp_query, $post, $pagenow;
+		// pageHasMods, what mods the folder has...
 
-	    //$header_template = get_post_meta( $post->ID);
+		return array(
+			'jQueryScript' => includes_url().'js/jquery/jquery.min.js?v='.$this->version,
+		    'MTFscript' => $this->thispluginurl.'js'.$min.'/frontend.js?v='.$this->version
+		);
+	}
 
-	    //wp_die('<pre>The $wp_query'.print_r($header_template, true).'</pre>');
-
-	    $logic = null;
-        $alt = array();
-        $title = null;
-        $type = null;
-        $id = null;
-	    $post_status = '';
-        $post_id = 0;
-	    $isFSE = $pagenow === 'site-editor.php';
-	    $permalink = home_url(); // default to the home page
-	    $post_title = '';
-        $slug = null;
-	    $isAdminPostPageEdit = ($this->isAdminArea && !empty($_GET['post']) && isset($post->post_name));
-        $screen = $this->isAdminArea && function_exists('get_current_screen')
-            ? get_current_screen()
-            : null;
-        $adminPrefix = esc_html__('Admin - ', 'microthemer');
-	    $blockPrefix = '';
-        $isBlockEditorScreen = $this->isBlockEditorScreen;
-	    //wp_die('<pre>$post: '.print_r($post, 1).' </pre>');
-	    //wp_die('<pre>$current_screen: '.print_r($screen, 1).' </pre>');
-
-        // single post/page on frontend or admin side
-	    if ( $wp_query->is_page || $wp_query->is_single || $isAdminPostPageEdit ) {
-		    $post_id = $id = $post->ID;
-            $slug = $post->post_name ?: $post_id; // with certain previews the slug might not be set so default to the id
-		    $type = $wp_query->is_page ? 'page' : 'single';
-		    $blockPrefix = esc_html__('Blocks - ', 'microthemer');
-		    $post_title = $title = ($this->isAdminArea ? $adminPrefix : '') .  $post->post_title;
-		    $post_status = $post->post_status;
-
-            // general page logic
-            $pageLogic = $isAdminPostPageEdit
-                ? '\Microthemer\is_public_or_admin("'.$slug.'")'
-                :  '\Microthemer\is_post_or_page('.$post_id.', "'.$post->post_title.'")'; // 'is_'.$type.'("'.$slug.'")';
-
-		    $logic = $pageLogic;
-
-            // more alt logic for admin side
-            if ($isAdminPostPageEdit && $screen){
-	            $alt[] = array(
-                        'logic' => '\Microthemer\query_admin_screen("base", "'.$screen->base.'")',
-                        'title' => $adminPrefix . ucwords($screen->base)
-                );
-            }
-
-            // Save the permalink, for turning off Gutenberg
-		    $permalink = get_permalink($post_id);
-
-		    //wp_die('<pre>$current_screen: '.print_r($screen, 1).' </pre>');
-	    }
-
-        // todo has_template() when using site editor templates, patterns, template parts,
-
-        // any other admin screen that isn't edit post/page
-        elseif ($this->isAdminArea && $screen) {
-
-            // Add Post/Page - need to convert the folder to page-specific if editor content items exist inside
-            // So flag with identifiable logic
-            if ($screen->action === 'add' && $screen->base === 'post'){
-	            $logic = '\Microthemer\query_admin_screen("action", "add") && \Microthemer\query_admin_screen("base", "post")';
-	            $title = $adminPrefix . $screen->action . ' ' . $screen->base;
-            }
-
-            else {
-	            $logic = '\Microthemer\query_admin_screen("base", "'.$screen->base.'")';
-	            $title = $adminPrefix . $screen->base;
-            }
-
-            if ($screen->parent_base){
-	            $alt[] = array(
-		            'logic' => '\Microthemer\query_admin_screen("parent_base", "'.$screen->parent_base.'")',
-		            'title' => $adminPrefix . ucwords($screen->parent_base)
-	            );
-            }
-
-			// It's a full site editor page, see if we can get a link for pages
-	        if ($isFSE){
-				$permalink = Helper::getFSEPermalink($permalink);
-				//wp_die('<pre>$permalink: '  . print_r([$permalink], true) . '</pre>');
-	        }
-
-		    //wp_die('<pre>$current_screen: '.print_r($screen, 1).' </pre>');
-	    } elseif ( $wp_query->is_home ) {
-		    $logic = 'is_home()';
-		    $title = esc_html__('Blog home', 'microthemer');
-		    $type = 'blog-home';
-	    } elseif ( $wp_query->is_category ) {
-		    $id = $wp_query->query_vars['cat'];
-		    $slug = $wp_query->query['category_name'];
-		    $logic = 'is_category("'.$slug.'")';
-		    $title = esc_html__('Category archive: ', 'microthemer') . $wp_query->queried_object->name;
-            $type = 'category';
-	    } elseif ( $wp_query->is_tag ) {
-		    $id = $wp_query->query_vars['tag'];
-		    $slug = $wp_query->query['tag_name'];
-		    $logic = 'is_tag()';
-		    $title = esc_html__('Tag archive', 'microthemer');
-		    $type = 'tag';
-	    } elseif ( $wp_query->is_author ) {
-		    $id = $wp_query->query_vars['author'];
-		    $slug = $wp_query->query['author_name'];
-		    $logic = 'is_author()';
-		    $title = esc_html__('Author archive', 'microthemer');
-		    $type = 'author';
-	    } elseif ( $wp_query->is_archive ) {
-		    $logic = 'is_archive()';
-		    $title = esc_html__('Archive', 'microthemer');
-		    $type = 'archive';
-	    } elseif ( $wp_query->is_search ) {
-		    $logic = 'is_search()';
-		    $title = esc_html__('Search results', 'microthemer');
-		    $type = 'search';
-	    } elseif ( $wp_query->is_404 ) {
-		    $logic = 'is_404()';
-		    $title = esc_html__('404 page', 'microthemer');
-		    $type = '404';
-	    }
-
-	    // Complete the 3 levels of logic when editing the admin area
-        // 1 = most specific e.g. single page or current screen
-        // 2 = base or parent base
-        // 3 = is_admin()
-        if ($this->isAdminArea){
-            $alt[] = array(
-	            'logic' => 'is_admin()',
-	            'title' => esc_html__('Admin area', 'microthemer')
-            );
-        }
-
-        $min = !TVR_DEV_MODE ? '-min' : '/page';
-
-	    return array(
-		    'post_id' => $post_id,
-		    'post_title' => $post_title,
-            'id' => $id,
-		    'post_status' => $post_status,
-		    'slug' => $slug,
-            'title' => $title,
-            'logic' => $logic,
-            'alt_logic' => $alt,
-            'type' => $type,
-            'isBlockEditorScreen' => $isBlockEditorScreen,
-            'adminPrefix' => $adminPrefix,
-            'blockPrefix' => $blockPrefix,
-            'permalink' => $permalink,
-            'pagenow' => $pagenow,
-		    'jQueryScript' => includes_url().'js/jquery/jquery.min.js?v='.$this->version,
-            'MTFscript' => $this->thispluginurl.'js'.$min.'/frontend.js?v='.$this->version
-        );
-
-
-
-    }
 
 	function adminBarLink($wp_admin_bar) {
 
@@ -505,12 +373,12 @@ class AssetAuth extends AssetLoad {
         // add menu item
         $wp_admin_bar->add_node(array(
             'id' => 'wp-mcr-shortcut',
-            'title' => 'Microthemer',
+            'title' => $this->appNameFull,
             'parent' => $parent,
             'href' => $href,
             'meta' => array(
                 'class' => 'wp-mcr-shortcut',
-                'title' => __('Edit with Microthemer', 'microthemer')
+                'title' => sprintf(__('Edit with %s', 'microthemer'), $this->appName)
             )
         ));
 	}
@@ -731,11 +599,7 @@ class AssetAuth extends AssetLoad {
 	}
 
 	function testResultResponse($testEvaluation){
-		ob_clean();
-		header('Content-type: application/json');
-		http_response_code(200);
-		echo json_encode($testEvaluation);
-		exit;
+        $this->jsonResponse($testEvaluation);
 	}
 
 }

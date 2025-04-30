@@ -12,8 +12,12 @@ class Admin {
         PreferencesTrait,
 	    SettingsTrait,
 	    FileTrait,
-	    BlockTrait;
+	    BlockTrait,
+	    FrontAndBackTrait;
 
+	var $context = 'admin';
+	var $contentClass;
+    var $cssClass;
 	var $locale = ''; // current language
 	var $lang = array(); // lang strings
 	var $time = 0;
@@ -24,7 +28,10 @@ class Admin {
 	var $optimisation_test = false;
 	var $optionsName = 'microthemer_ui_settings';
 
+    var $modification = array();
+
 	var $micro_ver_name = 'micro_revisions_version';
+	var $html_mods_ver_name = 'micro_html_mods_version';
 	var $globalmessage = array();
 	var $outdatedTabIssue = 0;
 	var $outdatedTabDebug = '';
@@ -37,7 +44,8 @@ class Admin {
 	var $demo_video = 'https://themeover.com/videos/?name=gettingStarted';
 	var $targeting_video = 'https://themeover.com/videos/?name=targeting';
 	var $mt_admin_nonce = '';
-	var $wp_ajax_url = '';
+	var $amender_demo_video = 'https://themeover.com/videos/?name=amenderGettingStarted';
+
 	var $total_sections = 0;
 	var $total_selectors = 0;
 	var $sel_loop_count;
@@ -60,11 +68,13 @@ class Admin {
 	// @var array $css_units Stores all the possible CSS units
 	var $css_units = array();
 	var $folder_item_types = array();
+	var $aiData = array();
 	//var $css_unit_sets = array();
 	// @var array $options Stores the ui options for this plugin
 	var $options = array();
 	var $preferences = array();
     var $asset_loading_change = false;
+    var $html_mods_changed = false;
 	//var $placeholderURLs = array();
 	var $serialised_post = array();
 	var $propertyoptions = array();
@@ -167,6 +177,9 @@ class Admin {
 	    'global_styles_on_login',
 	    'admin_asset_loading',
 	    'admin_asset_editing',
+        'tailwind',
+        'content_addon',
+	    'css_addon',
 	    'asset_loading',
 	    'asset_loading_published',
 	    'global_stylesheet_required',
@@ -184,7 +197,10 @@ class Admin {
         'sync_browser_tabs',
         'admin_bar_shortcut',
 	    'top_level_shortcut',
-	    'add_block_classes_all'
+	    'add_block_classes_all',
+        'npm_dependencies',
+        'npm_dependencies_published',
+        'default_amender_event'
     );
 
 	private $reporting = array(
@@ -236,17 +252,17 @@ class Admin {
 	}
 
 
-	function log_subscription_check(){
+	function log_subscription_check($prefix = ''){
 
-		$s = $this->preferences['subscription'];
-		$checks = $this->preferences['subscription_checks'];
-		$pref_array['subscription_checks'] = $checks;
-		$pref_array['subscription_checks']['num']++;
+		$s = $this->preferences[$prefix . 'subscription'];
+		$checks = $this->preferences[$prefix . 'subscription_checks'];
+		$pref_array[$prefix . 'subscription_checks'] = $checks;
+		$pref_array[$prefix . 'subscription_checks']['num']++;
 
 		// last try, max attempts reached
 		// could add a condition for max 3 days after renewal date, but holding off for now
-		if ($pref_array['subscription_checks']['num'] >= $pref_array['subscription_checks']['max']){
-			$pref_array['subscription_checks']['stop_attempts'] = true;
+		if ($pref_array[$prefix . 'subscription_checks']['num'] >= $pref_array[$prefix . 'subscription_checks']['max']){
+			$pref_array[$prefix . 'subscription_checks']['stop_attempts'] = true;
 			$this->savePreferences($pref_array);
 			return 'subscription check failed';
 		}
@@ -254,11 +270,10 @@ class Admin {
 		// add some time before next check
 		else {
 			$extra_seconds = 12 * 60 * 60; // 12 hours
-			//$extra_seconds = 10;
 
-			$inital_time = !empty($checks['next_time']) ? $checks['next_time'] : $this->time;
-			$pref_array['subscription_checks']['next_time'] =
-				$inital_time + ($pref_array['subscription_checks']['num'] * $extra_seconds);
+			$initial_time = !empty($checks['next_time']) ? $checks['next_time'] : $this->time;
+			$pref_array[$prefix . 'subscription_checks']['next_time'] =
+				$initial_time + ($pref_array[$prefix . 'subscription_checks']['num'] * $extra_seconds);
 			$this->savePreferences($pref_array);
 			return 'defer';
 		}
@@ -266,11 +281,11 @@ class Admin {
 	}
 
 	// check subscription if past renewal_check date
-	function maybe_check_subscription(){
+	function maybe_check_subscription($prefix = ''){
 
 		$p = $this->preferences;
-		$s = $p['subscription'];
-		$checks = $p['subscription_checks'];
+		$s = $p[$prefix . 'subscription'];
+		$checks = $p[$prefix . 'subscription_checks'];
 
 		// Note: renewal_check is 2 days after their subscription expires (to safely allow for timezone diffs)
 		$renewal_time = !empty($checks['next_time']) ? $checks['next_time'] : strtotime($s['renewal_check']);
@@ -279,26 +294,24 @@ class Admin {
 		$after_renewal_check = (!empty($s['renewal_check']) and $this->time > $renewal_time);
 		$higher_than_capped = (!empty($s['capped_version']) and
 		                       version_compare($s['capped_version'], $this->version) < 0);
-		$retro_check_needed = empty($p['retro_sub_check_done']);
+		$retro_check_needed = empty($p[$prefix . 'retro_sub_check_done']);
 
 		// if subscription check needed
 		if (
 			($after_renewal_check or $higher_than_capped or $retro_check_needed) and
-			!empty($p['buyer_email']) and
-			!empty($p['buyer_validated']) and
+			!empty($p[$prefix . 'buyer_email']) and
+			!empty($p[$prefix . 'buyer_validated']) and
 			empty($checks['stop_attempts'])
 		){
 			//$this->show_me.= 'doing auto remote check';
 			// check if subscription is still active
-			$this->get_validation_response($p['buyer_email'], 'scheduled');
+			$this->get_validation_response($p[$prefix . 'buyer_email'], 'scheduled', $prefix);
 		} else {
 			//$this->show_me.= 'NOT doing auto remote check';
 		}
 	}
 
-
-
-	function themeover_connection_url($email, $proxy = false){
+	function themeover_connection_url($email, $proxy = false, $prefix = ''){
 
 		$test_domain = false;
 
@@ -308,17 +321,15 @@ class Admin {
 			? 'https://validate.themeover.com/'
 			: 'https://themeover.com/wp-content/tvr-auto-update/validate.php';
 
-		$params = 'email='.rawurlencode($email)
+		$params = $prefix . 'email='.rawurlencode($email)
 		          .'&domain='.$domain
 		          .'&mt_version='.$this->version;
 
 		 //Get local URL
-        //$this->show_me = $base_url . '?' . $params;
-        //return 'https://tvrdev.themeover.com/wp-content/tvr-auto-update/validate.php'.'?'.$params;
+        $this->show_me = $base_url . '?' . $params;
+       // return 'https://themeover.test/wp-content/tvr-auto-update/validate.php'.'?'.$params;
 
 		return $base_url.'?'.$params;
-
-
 
 	}
 
@@ -332,7 +343,46 @@ class Admin {
 	 *
 	 * @return array
 	 */
-	function connect_to_themeover($url, $email, $proxy = false){
+	function connect_to_themeover($url, $email, $proxy = false, $prefix = '') {
+
+		$response = wp_remote_get($url, [
+			'headers' => [
+				'Accept' => 'application/json',
+				'User-Agent' => 'WordPress/' . get_bloginfo('version') . '; ' . home_url(),
+			],
+			'timeout' => 15,
+		]);
+
+		if (is_wp_error($response)) {
+			// Optionally handle WP error here
+			$responseString = $response->get_error_message();
+			$responseCode = 0;
+		} else {
+			$responseString = wp_remote_retrieve_body($response);
+			$responseCode = wp_remote_retrieve_response_code($response);
+		}
+
+		$decodedResponse = json_decode($responseString, true);
+
+		// If we have a valid result, or already tried the proxy, return result
+		if (!empty($decodedResponse['message']) || $proxy) {
+			return array(
+				'responseString' => $responseString,
+				'url' => $url,
+				'code' => $responseCode
+			);
+		}
+
+		// Retry with proxy if initial attempt fails and proxy hasn't been tried
+		return $this->connect_to_themeover(
+			$this->themeover_connection_url($email, true, $prefix),
+			$email,
+			true,
+			$prefix
+		);
+	}
+
+	/*function connect_to_themeover($url, $email, $proxy = false, $prefix = ''){
 
 		//$url = $this->themeover_connection_url($email, $proxy);
 		//$responseString = wp_remote_fopen($url);
@@ -355,26 +405,30 @@ class Admin {
 		// the initial connection was unsuccessful, possibly due to firewall rules, attempt proxy connection
 		else {
 			return $this->connect_to_themeover(
-				$this->themeover_connection_url($email, true), $email, true
+				$this->themeover_connection_url($email, true, $prefix),
+                $email,
+                true,
+                $prefix
 			);
 		}
 
-	}
+	}*/
 
 	// check user can unlock / continue using MT
-	function get_validation_response($email, $context = 'unlock'){
+	function get_validation_response($email, $context = 'unlock', $prefix = ''){
 
 		$pref_array = array(
-			'buyer_email' => $email
+			$prefix . 'buyer_email' => $email
 		);
-		$was_capped_version = $this->is_capped_version();
+		$was_capped_version = $this->is_capped_version($prefix);
 		$response = false;
 		//$url = $this->themeover_connection_url($email);
 		//$responseString = $this->connect_to_themeover($url, $email);
 
 		$connection_details = $this->connect_to_themeover(
-			$this->themeover_connection_url($email),
-			$email
+			$this->themeover_connection_url($email, false, $prefix),
+			$email,
+			$prefix
 		);
 
 		//wp_die('<pre>$connection_details: ' . print_r($connection_details, true) . '</pre>');
@@ -435,7 +489,7 @@ class Admin {
 
 			// if scheduled subscription check, log num tries and bail if deferring
 			if ($context == 'scheduled'){
-				$response['message'] = $this->log_subscription_check();
+				$response['message'] = $this->log_subscription_check($prefix);
 				if ($response['message'] == 'defer'){
 					return false;
 				}
@@ -448,36 +502,41 @@ class Admin {
 		else {
 
 			// save subscription response from server (includes renewal_check date)
-			$pref_array['subscription'] = $response;
+			$pref_array[$prefix . 'subscription'] = $response;
 
 			// reset subscription checks if manual unlock attempted
 			if ($context == 'unlock'){
-				$pref_array['subscription_checks'] = $this->subscription_check_defaults;
+				$pref_array[$prefix . 'subscription_checks'] = $this->subscription_check_defaults;
 			}
 
 		}
 
-		$this->change_unlock_status($context, $validation, $pref_array, $response, $was_capped_version);
+		$this->change_unlock_status($context, $validation, $pref_array, $response, $was_capped_version, $prefix);
 
         return $validation;
 	}
 
 
-	function change_unlock_status($context, $validation, $pref_array, $response, $was_capped_version){
+	function change_unlock_status($context, $validation, $pref_array, $response, $was_capped_version, $prefix = ''){
 
 		// regardless of unlock/lock no further need for retrospectively checking their subscription renewal
-		$pref_array['retro_sub_check_done'] = 1;
+		$pref_array[$prefix . 'retro_sub_check_done'] = 1;
+        $type = $prefix ? 'Amender' : 'Microthemer';
 
 		/* validation success */
 		if ($validation) {
 
-			$pref_array['buyer_validated'] = 1;
+			$pref_array[$prefix . 'buyer_validated'] = 1;
 
 			if ($context == 'unlock'){
-				if (!$this->preferences['buyer_validated']) { // not already validated
+				if (!$this->preferences[$prefix . 'buyer_validated']) {
+                    $pro_features = $type === 'Amender'
+                        ? esc_html__('You can now publish your amendments.', 'microthemer')
+                        : esc_html__('You can now use pro features.', 'microthemer');
 					$this->log(
-						esc_html__('Full program unlocked!', 'microthemer'),
-						'<p>' . esc_html__('Your license has been successfully validated. Microthemer\'s full program features have been unlocked!', 'microthemer') . '</p>',
+						$type.' ' . esc_html__('activation successful!', 'microthemer'),
+						'<p>' . esc_html__('Your license has been successfully validated. ', 'microthemer') .
+						$pro_features . '</p>',
 						'notice'
 					);
 				} else {
@@ -485,14 +544,14 @@ class Admin {
 					if ($was_capped_version){
 						if (empty($response['capped_version'])){
 							$this->log(
-								esc_html__('Updates enabled', 'microthemer'),
-								'<p>' . esc_html__('You can now update Microthemer to the latest version.', 'microthemer') . '</p>',
+								$type . ' ' . esc_html__('updates enabled', 'microthemer'),
+								'<p>' . esc_html__('You can now get the latest features.', 'microthemer') . '</p>',
 								'notice'
 							);
 						} else {
 							$this->log(
-								esc_html__('Version is still limited ', 'microthemer'),
-								'<p>' . esc_html__('Your subscription must be renewed on themeover.com to enable Microthemer updates.', 'microthemer') . '</p>',
+								$type . ' ' . esc_html__('updates still limited ', 'microthemer'),
+								'<p>' . esc_html__('Your subscription must be renewed on themeover.com to enable modern features.', 'microthemer') . '</p>',
 								'warning'
 							);
 						}
@@ -500,18 +559,13 @@ class Admin {
 
 					else {
 						$this->log(
-							esc_html__('Already validated', 'microthemer'),
-							'<p>' . esc_html__('Your license has already been validated. The full program is currently active.', 'microthemer') . '</p>',
+							$type . ' ' . esc_html__('already validated', 'microthemer'),
+							'<p>' . esc_html__('Your license has already been validated. The pro version is currently active.', 'microthemer') . '</p>',
 							'notice'
 						);
 					}
-
-
 				}
-
-
 			}
-
 		}
 
 
@@ -519,13 +573,13 @@ class Admin {
 		else {
 
 			// do checks on why validation failed here and report to user
-			$pref_array['buyer_validated'] = 0;
+			$pref_array[$prefix . 'buyer_validated'] = 0;
 
 			// prevent future subscription checks as we're already in free trial mode
-			$pref_array['subscription']['renewal_check'] = false;
+			$pref_array[$prefix . 'subscription']['renewal_check'] = false;
 
 			$explain = '';
-			$title_prefix = ($context == 'unlock') ? 'Unlock failed' : 'Notice';
+			$title_prefix = $type . ' ' . ($context == 'unlock' ? 'activation failed' : 'notice');
 
 			// check for returned message to give clue about problem
 			if (!empty($response['message'])){
@@ -565,8 +619,7 @@ class Admin {
 						$limit = intval($response['limit']);
 						$limit_lang = $limit === 1 ? 'domain' : 'domains';
 
-						$explain = '<p>Domain limit ('.intval($response['limit']).') reached. Your license permits 
-                                        installing Microthemer on '.intval($response['limit']).' '.$limit_lang.' in total, not '.intval($response['limit']).' '.$limit_lang.' at any one time.</p>';
+						$explain = '<p>Domain limit ('.intval($response['limit']).') reached. Your license permits installing '.$type.' on '.intval($response['limit']).' '.$limit_lang.' in total, not '.intval($response['limit']).' '.$limit_lang.' at any one time.</p>';
 
 						// extra text if they have already reached their limit
 						/*if (count($response['domains']) > 3){
@@ -577,18 +630,18 @@ class Admin {
 
 						$explain.= '<p><a class="tvr-button" target="_blank" 
                                         href="https://themeover.com/my-account/">Please upgrade 
-                                        to use Microthemer on this domain</a></p>
+                                        to use '.$type.' on this domain</a></p>
                                         
-                                        <h3>Domains you have installed Microthemer on</h3>';
+                                        <h3>Domains you have installed '.$type.' on</h3>';
 
 						// display domains
 						$domains = '';
 						foreach ($response['domains'] as $key => $arr){
 							$domains.= '
-                                            <li>
-                                                <span class="domain-name">' . $arr['domain'] . '</span>
-                                                <span class="install-date">' . $arr['date'] . '</span>
-                                            </li>';
+                            <li>
+                                <span class="domain-name">' . $arr['domain'] . '</span>
+                                <span class="install-date">' . $arr['date'] . '</span>
+                            </li>';
 						}
 
 						$explain.= '<ol>' . $domains . '</ol>';
@@ -606,7 +659,7 @@ class Admin {
                                 <p>The connection to Themeover\'s server may have failed due to an 
                                 intermittent network error. Please ensure you are connected to the internet, 
                                 if working from localhost. <span class="link show-dialog" 
-                                rel="unlock-microthemer">Resubmitting your email one 
+                                rel="unlock-microthemer">Resubmitting your license key one 
                                 more time</span> may do the trick</p>
                                 
                                 <p>Or try <b>disabling any security plugins</b> that may be 
@@ -674,6 +727,82 @@ class Admin {
 
 		return false;
 	}
+
+    function dialogSectionTabs($data){
+
+        $html = '<div class="mt-dialog-section">
+        <div class="dialog-section-tabs query-tabs">';
+
+        // tabs
+	    $i = 0;
+	    foreach ($data as $key => $array){
+            if (!empty($array['skip'])){
+                continue;
+            }
+		    $active = $i === 0 ? 'active ' : '';
+		    $html.= ' 
+             <span class="'.$active.' mt-tab tab-'.$key.' dialog-section-tab dialog-section-tab-'.$i.' " rel="'.$i.'">
+               '.$array['title'].'
+             </span>';
+            $i++;
+	    }
+	    $html.= '</div>
+	    <div class="dialog-tab-fields">';
+
+        // Content
+	    $i = 0;
+	    foreach ($data as $key => $array){
+		    if (!empty($array['skip'])){
+			    continue;
+		    }
+		    $active = $i === 0 ? 'show ' : '';
+		    $html.= ' 
+             <div class="'.$active.'  tab-content-'.$key.' dialog-section-tab-field dialog-section-tab-field-'.$i.' hidden">
+               '.$array['content'].'
+             </div>';
+		    $i++;
+	    }
+	    $html.= '</div>
+	    </div>';
+
+        return $html;
+    }
+
+    function generateVideoButtons($videos){
+
+        $html = '';
+
+	    foreach ($videos as $slug => $title){
+
+		    $thumb_class = isset($this->preferences['external_videos']['last_viewed'])
+		                   && $slug === $this->preferences['external_videos']['last_viewed']
+			    ? ' mt-last-viewed-video'
+			    : '';
+
+		    $pos_title = esc_attr__('Watch video', 'microthemer');
+		    $neg_title = esc_attr__('Unmark video as watched', 'microthemer');
+		    $tooltip = $pos_title;
+		    if (!empty($this->preferences['external_videos']['watched'][$slug])){
+			    $thumb_class.= ' mt-watched-video';
+			    $tooltip = $neg_title;
+		    }
+
+		    $icon = $this->iconFont('play', array(
+			    'class' => "external-video-watched-toggle",
+			    'title' => $tooltip,
+			    'data-pos' => $pos_title,
+			    'data-neg' => $neg_title
+		    ));
+
+		    $html.= '
+		    <a class="external-video-thumb'.$thumb_class.'" target="_blank" href="https://themeover.com/'.$slug.'/" data-slug="'.$slug.'">'
+               .$icon.
+               '<span class="video-label">'.$title.'</span>' .
+           '</a>';
+	    }
+
+        return $html;
+    }
 
 	// set defaults for user's property preferences (this runs on every page load)
 	function maybe_set_my_props_defaults(){
@@ -1111,6 +1240,15 @@ class Admin {
 			$update_prefs = true;
 		}
 
+        // Ensure the correct property group is active for the plugin type
+        if (!$this->hasCSSCapability() && $this->preferences['pg_focus'] !== 'html'){
+			$this->preferences['pg_focus'] = 'html';
+			$update_prefs = true;
+        } if (!$this->hasContentCapability() && $this->preferences['pg_focus'] === 'html'){
+			$this->preferences['pg_focus'] = 'font';
+			$update_prefs = true;
+		}
+
 		if ($update_prefs){
 			$this->savePreferences($this->preferences);
 		}
@@ -1154,7 +1292,12 @@ class Admin {
 	}
 
 
-
+    function customScriptAtts($tag, $handle, $src){
+        if ($handle === 'tvr_mod_firebase'){
+	        $tag = str_replace('<script ', '<script type="module" ', $tag);
+        }
+	    return $tag;
+    }
 
 	// add js
 	function add_js() {
@@ -1162,6 +1305,9 @@ class Admin {
 		if (!$this->optimisation_test){
 			wp_enqueue_media(); // adds over 1000 lines of code to footer
 		}
+
+		// allow style tag atts to be updated if they are async
+		add_filter( 'script_loader_tag', array(&$this, 'customScriptAtts'), 10, 4 );
 
 		// Run pre-wordPress 5.6 jQuery and jQuery UI (temp fix for users with sites that still have issues)
 		$runLegacyJquery = !empty($this->preferences['wp55_jquery_version']);
@@ -1191,7 +1337,7 @@ class Admin {
 				'f' => $runLegacyJquery
 					? '../js-min/legacy-jquery/jquery.js'
 					: false,
-				//'footer' => true
+				//'in_footer' => true
 			),
 			array(
 				'h' => 'jquery-migrate',
@@ -1201,7 +1347,7 @@ class Admin {
 				'f' => ($runLegacyJquery)
 					? '../js-min/legacy-jquery/jquery-migrate-1.4.1-wp.js'
 					: false,
-				//'footer' => true
+				//'in_footer' => true
 			)
 		);
 
@@ -1222,7 +1368,7 @@ class Admin {
 				'f' => $runLegacyJquery
 					? '../js-min/legacy-jquery/jquery-ui/'.$jqi.'.min.js'
 					: false,
-				//'footer' => false
+				//'in_footer' => false
 
 			);
 
@@ -1283,12 +1429,15 @@ class Admin {
 
 			// https://github.com/beautify-web/js-beautify
 			array('h' => 'tvr_html_beautify', 'f' => 'worker/beautify-html.min.js'),
+			//array('h' => 'tvr_js_beautify', 'f' => 'lib/js-beautify/beautify.js'),
 			array('h' => 'tvr_css_beautify', 'f' => 'lib/js-beautify/beautify-css.js'),
+
 			array('h' => 'tvr_sprintf', 'f' => 'lib/sprintf/sprintf.min.js'),
 			array('h' => 'tvr_parser', 'f' => 'lib/parser.js'),
 			//array('h' => 'tvr_ast_query', 'f' => 'lib/query-ast.js'), // doesn't play well with gonz
 			array('h' => 'tvr_scss_parser', 'f' => 'lib/gonzales.js'),
-			array('h' => 'tvr_cssutilities', 'f' => 'lib/mt-cssutilities.js'),
+			array('h' => 'tvr_cssutilities', 'f' => 'lib/mt-cssutilities.js'), // mt-css-to-xpath
+			array('h' => 'tvr_xpath', 'f' => 'lib/mt-css-to-xpath.js'),
 			//array('h' => 'tvr_cssutilities', 'f' => 'lib/CSSUtilities.js'), // for comparing customised
 
 			// try out a new sortable library as jquery seems buggy when there are lots of selectors
@@ -1312,7 +1461,12 @@ class Admin {
 			array('h' => 'tvr_mod_sass', 'f' => 'mod/mt-sass.js'),
 			array('h' => 'tvr_mod_grid', 'f' => 'mod/mt-grid.js'),
 			array('h' => 'tvr_mod_folder', 'f' => 'mod/mt-folder.js'),
-			array('h' => 'tvr_mod_local', 'f' => 'mod/mt-local.js',
+			array('h' => 'tvr_mod_html', 'f' => 'mod/mt-html.js'),
+
+			array('h' => 'tvr_mod_firebase', 'f' => 'mod/mt-ai-deps.js', 'page' => array($this->microthemeruipage), 'in_footer' => 1, 'strategy' => 'defer'),
+            array('h' => 'tvr_mod_ai', 'f' => 'mod/mt-ai.js', 'page' => array($this->microthemeruipage)),
+
+            array('h' => 'tvr_mod_local', 'f' => 'mod/mt-local.js',
 			      'page' => array(
 				      $this->microthemeruipage,
 				      $this->detachedpreviewpage
@@ -1335,6 +1489,7 @@ class Admin {
 			//array('h' => 'tvr_ace_html', 'f' => '../js-min/ace/mode-html.js', 'min' => 1),
 
 			// page specific (min)
+			array('h' => 'tvr_mod_firebase', 'f' => '../js-min/mt-ai-deps.js', 'page' => array($this->microthemeruipage), 'in_footer' => 1, 'strategy' => 'defer', 'min' => 1),
 			array('h' => 'tvr_sassjs', 'f' => '../js-min/sass/sass.js', 'alwaysInc' => 1, 'ifSASS'),
 			array('h' => 'tvr_deps', 'f' => '../js-min/deps.js', 'min' => 1),
 			array('h' => 'tvr_mcth_cssprops', 'f' => '../js-min/program-data.js', 'min' => 1,
@@ -1400,11 +1555,69 @@ class Admin {
 					wp_scripts()->remove( $arr['h'] );
 				}
 				if (!empty($arr['f'])){
-					wp_register_script( $arr['h'], $js_path . $arr['f']. $v, $dep );
+                    $file = $js_path . $arr['f'] . $v;
+                    if (strpos($arr['f'], 'https') !== false){
+	                    $file = $arr['f'];
+                    }
+					wp_register_script( $arr['h'], $file , $dep );
 				}
-				wp_enqueue_script( $arr['h'], '', $dep, $v, !empty($arr['footer']));
+
+                // support footer, deferred
+                $args = array();
+                if (!empty($arr['in_footer'])){
+	                $args['in_footer'] = 1;
+                } if (!empty($arr['strategy'])){
+					$args['strategy'] = $arr['strategy'];
+				}
+
+				wp_enqueue_script( $arr['h'], '', $dep, $v, $args);
 			}
+
+
 		}
+
+		// firebase config
+		/*wp_localize_script('tvr_mod_firebase', 'tvrFirebaseConfig', array(
+			'apiKey' => 'YOUR_API_KEY',
+			'authDomain' => 'YOUR_PROJECT_ID.firebaseapp.com',
+			'projectId' => 'YOUR_PROJECT_ID',
+			'storageBucket' => 'YOUR_PROJECT_ID.appspot.com',
+			'messagingSenderId' => 'YOUR_MESSAGING_SENDER_ID',
+			'appId' => 'YOUR_APP_ID'
+		));*/
+
+
+		/*// for article
+				$jqueryUIScripts = array(
+					'core',
+					'widget',
+					'mouse',
+					'sortable',
+					'menu',
+					'autocomplete',
+				);
+
+				$prevScript = false;
+
+				foreach ($jqueryUIScripts as $scriptName){
+
+					$jqueryUIDeps = array('jquery', 'jquery-migrate');
+
+					if (!empty($prevScript)){
+						$jqueryUIDeps[] = 'jquery-ui-core';
+						$jqueryUIDeps[] = 'jquery-ui-'.$prevScript;
+					}
+
+					wp_scripts()->remove( $scriptName );
+
+					wp_enqueue_script(
+						$scriptName, '/wp-content/themes/my-theme/js/temp-fix/'.$scriptName.'.js',
+						$jqueryUIDeps
+					);
+
+					$prevScript = $scriptName;
+				}*/
+
 
 		// load js strings for translation
 		include_once $this->thisplugindir . 'includes/js-i18n.inc.php';
@@ -1414,8 +1627,8 @@ class Admin {
 	// initiate vars that are wp dependent
 	function setup_wp_dependent_vars(){
 
-		// ajax url - requires wp_create_nonce()
-		$this->wp_ajax_url = $this->wp_blog_admin_url . 'admin-ajax.php' . '?action=mtui&mcth_simple_ajax=1&page='.$this->microthemeruipage.'&_wpnonce='.wp_create_nonce('mcth_simple_ajax');
+		// ajax url
+        $this->setAdminAjaxUrl();
 
 		$pd_context = 'setup_wp_dependent_vars';
 
@@ -2241,6 +2454,11 @@ class Admin {
 					$css_func_map[$prop] = $prop_group;
 				}
 
+				// css function like rotateX or rotate3d for transform or filter
+				if (isset($propArr['defVal'])){
+					$longhand[$cssf]['defVal'] = $propArr['defVal'];
+				}
+
 				// and if MT supports multiple
 				!empty($propArr['multiple_sup']) ? $longhand[$cssf]['multiple_sup'] = 1 : 0;
 
@@ -2305,6 +2523,11 @@ class Admin {
 					// event options
 					if ($prop == 'font_family'){
 						$combo[$prop] = $this->system_fonts;
+					}
+
+					// HTML modification options
+					elseif (!empty($this->modification[$prop])){
+						$combo[$prop] = $this->modification[$prop];
 					}
 
 					// get preset animations from include file
@@ -2647,6 +2870,12 @@ class Admin {
 			'cssf' => 'extracted-gradient'
 		);
 
+        // special folder search filters
+		$combo['search_folders'] = array(
+            array('label' => 'Affecting selectors', 'value' => ':affecting_selectors'),
+			array('label' => 'Affecting selectors (inc inactive)', 'value' => ':affecting_selectors:including_inactive'),
+        );
+
 		// dev option for showing function times
 		$combo['show_total_times'] = array('avg_time', 'total_time', 'calls');
 
@@ -2655,6 +2884,10 @@ class Admin {
 
 		// suggest some handy nth formulas
 		$combo['nth_formulas'] = $this->nth_formulas;
+
+        // Allow user to set the default modification point
+        $combo['default_amender_event'] = array('DOMContentLoaded', 'serverHTMLReady');
+
 
 		// ready combo for css_units
 		$length_units = array();
@@ -2686,7 +2919,19 @@ class Admin {
 			$this->builder_sync_tabs
 		);
 
-		// options for choosing the  stylesheet loading order
+        // AI combobox menus
+        $combo['ai_actions'] = array(
+            $this->aiData['actions']['generate']['label'],
+	        $this->aiData['actions']['edit']['label'],
+        );
+        $combo['ai_scope'] = $this->to_autocomplete_arr(array(
+	        $this->aiData['actions']['generate']['label'] => $this->aiData['actions']['generate']['scope'],
+	        $this->aiData['actions']['edit']['label'] => $this->aiData['actions']['edit']['scope'],
+        ));
+		$combo['ai_commit_css'] = $this->aiData['actions']['generate']['commit']['type']['css'];
+		$combo['ai_commit_html'] = $this->aiData['actions']['generate']['commit']['type']['html'];
+
+		// options for choosing the stylesheet loading order
 		$combo['stylesheet_order_options'] = $this->stylesheet_order_options;
 
 		// customisable page prefix
@@ -2734,7 +2979,17 @@ class Admin {
                     "auto_folders",
                     "auto_folders_page"
                 )
-            )
+            ),
+            // Help users find addons not indexed separately by NPM
+            'npm_addons' => array(
+                    'three' => array(
+                            'browse' => 'https://cdn.jsdelivr.net/npm/three@{version}/examples/jsm/'
+                    ),
+                    'gsap' => array(
+                            'browse' => 'https://cdn.jsdelivr.net/npm/gsap/'
+                    )
+            ),
+            'native_packages' => json_decode(file_get_contents($this->thisplugindir . 'includes/native-packages.json'))
 		);
 
 		$data.= 'TvrMT.data.prog = ' . json_encode($prog) . ';' . "\n\n";
@@ -2819,7 +3074,11 @@ class Admin {
 				'toggle_id' => 'toggle_id',
 				'data-pos' => esc_attr__('enable_toggle_tooltip', 'microthemer'),
 				'data-neg' => esc_attr__('disable_toggle_tooltip', 'microthemer'),
-			))
+			)),
+
+			'dependency_row' => $this->dependency_row(),
+            'snippet_dependency_row' => $this->snippet_dependency_row(),
+            'detected_package_item' => $this->detected_package_item()
 
 			//'primary_context_menu_trigger' => $this->element_meta_template('primary'),
 
@@ -2865,6 +3124,193 @@ class Admin {
 
 	function svg_chev_right(){
 		return '<svg data-icon="BreadcrumbPartRight" aria-hidden="true" focusable="false" width="7" height="28" viewBox="0 0 7 28" class="bem-Svg left notch" style="display: block; color: rgb(235, 235, 235);"><path fill="currentColor" d="M6.5 14L.5 0H0v28h.5z"></path><path fill="#858585" d="M1 0H0l6 14-6 14h1l6-14z"></path></svg>';
+	}
+    
+
+
+	function dependency_table(){
+
+        $onLocal = !empty($this->preferences['npm_default_local']) ? ' on' : '';
+
+        return '
+        <div class="dependency-table-wrap">
+            
+             <div class="dependency-table-header">
+                 <div class="search-dependencies tvr-input-wrap">
+                    <input id="mt-npm-search" type="text" autocomplete="off" rel="npm_dependencies" data-autofill="" class="combobox has-arrows search-npm" name="search_npm" value="" placeholder="Search npm or enter jsDelivr URL">
+                    <span class="combo-arrow tvr-field-arrow"></span>
+                    <span class="mt-clear-field"></span>
+                    <div class="cdn-local mt-binary-buttons'.$onLocal.'" data-run="mod.MThtml.npm.toggleDefaultDepDelivery">
+                        <span class="binary-button-option" rel="0">CDN</span>
+                        <span class="binary-button-option" rel="1">Local</span>
+                    </div>
+                    <div id="add-npm-dependency" class="tvr-button add-npm-dependency">Add</div>
+                </div>
+                <div class="dependency-notifications"></div>
+             </div>
+            
+            
+            <div class="dependency-columns">
+                <div class="import-column">Default import</div>
+                <div class="package-column">Package</div>
+                <div class="size-column">Size</div>
+                <div class="version-column">Version</div>
+                <div class="about-column">Docs</div>
+                <div class="delivery-column">Delivery</div>
+                <div class="in-use-column">In use</div>
+                <div class="delete-column">Delete</div>
+            </div>
+            <div class="dependency-rows"></div>
+            
+        </div>';
+	}
+
+	function dependency_row(){
+		return '
+        <div class="dependency-row" data-package="{value}">
+            <div class="copy-import-syntax">
+                 '.$this->iconFont('copy', array(
+                    'class' => 'copy-import-syntax-icon',
+                    'title' => esc_attr__('Copy import declaration', 'microthemer')
+                )).'
+            </div>
+            <div class="import-field field-has-form">
+                <span class="import-hint">import </span>
+                <div class="npm-import-form edit-dep-form hidden">
+                    <input type="text" class="npm-import-input" name="npm_import_input" value="{importSyntax}" />
+                    <div class="tvr-button update-import-syntax update-npm-dependency">Update</div>
+                </div>
+                <span class="npm-import main-text">{importSyntax}</span>
+                '.$this->iconFont('edit', array(
+                    'class' => 'edit-import-syntax edit-dependency',
+                    'title' => esc_attr__('Change default import syntax', 'microthemer')
+                )).'
+            </div>
+            <div class="package-field main-text">
+                <span class="import-hint">from </span>
+                <a target="_blank" href="{linkToFile}" data-local="'.$this->micro_root_url . 'mt/js/draft/npm/{local}" data-cdn="https://cdn.jsdelivr.net/npm/{cdn}">"{value}"</a>
+                 <span class="tvr-button tvr-gray browse-package-addons {hiddenAddons}" data-browse="{browseAddons}">Addons</span>
+            </div>
+            <div class="size-field">
+               {size} KB
+            </div>
+            <div class="version-field field-has-form">
+                <div class="npm-version-form edit-dep-form hidden">
+                    <span class="tvr-input-wrap">
+                         <input type="text" class="npm-version-input combobox has-arrows" name="npm_version_input" rel="npm_version_input"  value="{version}" />
+                        <span class="combo-arrow"></span>
+                    </span>
+                   
+                    <div class="tvr-button update-npm-version update-npm-dependency">Update</div>
+                </div>
+                <span class="npm-version main-text">{version}</span>
+                '.$this->iconFont('edit', array(
+                    'class' => 'edit-version edit-dependency',
+                    'title' => esc_attr__('Change version', 'microthemer')
+                )).'
+            </div>
+            <div class="about-field">
+                '.$this->iconFont('docs', array(
+                    'class' => 'package-readme-link',
+                    'title' => esc_attr__('View Readme info', 'microthemer'),
+                    'tag' => 'a',
+                    'href' => "https://www.jsdelivr.com/package/npm/{value}",
+                    'target' => "_blank"
+                )).'
+            </div>
+            <div class="delivery-field">
+                <div class="cdn-local mt-binary-buttons" data-run="mod.MThtml.npm.toggleDepDelivery">
+                    <span class="binary-button-option" rel="0">CDN</span>
+                    <span class="binary-button-option" rel="1">Local</span>
+                </div>
+            </div>
+            <div class="in-use-field">{inUse}</div>
+            <div class="delete-field">
+                '.$this->iconFont('bin', array(
+                    'class' => 'delete-dependency',
+                    'title' => esc_attr__('Delete library', 'microthemer')
+                )).'
+            </div>
+        </div>';
+	}
+
+	function snippet_dependency_table(){
+		return '
+        <div class="snippet-dependency-table-wrap">
+            
+            <div class="dependency-columns">
+                <div class="single-import-column">
+                <span>Import</span>
+                 '.$this->iconFont('add', array(
+                    'class' => 'add-snippet-dependency-icon',
+                    'title' => esc_attr__('Add package', 'microthemer')
+                )).'
+                </div>
+                <div class="single-package-column">
+                    <span>Package</span>
+                    '.$this->iconFont('cog', array(
+                        'rel' => 'mt-enqueue-js',
+                        'class' => 'show-dialog',
+                        'title' => esc_attr__('Manage packages', 'microthemer')
+                    )).'
+                </div>
+            </div>
+            
+            <div class="dependency-rows"></div>
+            
+        </div>';
+	}
+
+	function snippet_dependency_row(){
+		return '
+        <div class="snippet-dependency-row" data-package="{value}">
+          
+            <div class="snippet-import-field">
+                 <input type="text" class="snippet-dep-adjust snippet-import-input" placeholder="{importSyntaxPlaceholder}" value="{manualImportSyntax}" />
+            </div>
+            <div class="snippet-package-field">
+                <span class="tvr-input-wrap">
+                    <input type="text" class="snippet-dep-adjust snippet-select-package combobox has-arrows" placeholder="{autoPackName}" value="{manualPackName}" rel="current_npm_dependencies" />
+                    <span class="combo-arrow"></span>
+                </span>
+            </div>
+            <div class="snippet-remove-package-field">
+                 '.$this->iconFont('disable', array(
+				'class' => 'snippet-disable-package-icon {autoDisabled} {disabledHidden}',
+				'title' => esc_attr__('Disable auto-added package', 'microthemer')
+			    )).
+               $this->iconFont('minus', array(
+				'class' => 'snippet-remove-package-icon {removeHidden}',
+				'title' => esc_attr__('Remove package', 'microthemer')
+			)).'
+            </div>
+        </div>';
+	}
+
+	function detected_package_item(){
+        return '
+        <li class="detected-pacakge-item" data-package="{packName}">
+            <div class="detected-package-result">
+                <span class="mt-loader-icon hidden"></span>
+                '.
+               $this->iconFont( 'tick-box-unchecked', array(
+                    'class' => 'fake-checkbox on',
+                )). '' .
+               $this->iconFont('check-circle', array(
+		        'class' => 'detected-dependency-success hidden',
+		        'title' => esc_attr__('Package added', 'microthemer')
+                )).
+               $this->iconFont('times-circle-regular', array(
+                    'class' => 'detected-dependency-failed hidden',
+                    'title' => esc_attr__('Package not added', 'microthemer')
+                )).'
+            </div>
+            <div class="detected-package-name">
+                <span>{packName} <span class="package-size-hint">({size} KB)</span></span>
+            </div>
+            
+        </li>
+        ';
 	}
 
 	function key_computed_info(){
@@ -3483,6 +3929,7 @@ class Admin {
 		$this->options = $theOptions;
 	}
 
+
 	function pseudo_class_format($pseudo){
 		return str_replace(array( ':', '(', ')' ), '', $pseudo);
 	}
@@ -3542,6 +3989,11 @@ class Admin {
 
 				// maybe update revisions table
 				$this->maybeCreateOrUpdateRevsTable();
+
+                // maybe create the HTML mods table
+                if ($this->hasContentCapability()){
+	                $this->maybeCreateOrUpdateContentTable();
+                }
 
 				// signal that all selectors should be recompiled (to ensure latest data structure)
 				$this->update_preference('manual_recompile_all_css', 1);
@@ -3688,6 +4140,8 @@ class Admin {
 			if (!empty($array['empty_before'])){
 				$html.= '<li class="empty-cell empty-before-'.$key.'"></li>';
 			}
+
+			$li_class.= ' mt-pref-' . $key;
 
 			// the option
 			$html.= '
@@ -3870,6 +4324,64 @@ class Admin {
 		}
 	}
 
+    // the HTML modifications table
+    // We copy the modifications for each folder to a row in this table so that retrieval is very quick for
+    // whatever folders load on the current page - as opposed to loading full MT options data
+    function maybeCreateOrUpdateContentTable(){
+
+        global $wpdb;
+		$table_name = $wpdb->prefix . "micro_content";
+		$table_ver_num = get_option($this->html_mods_ver_name);
+
+		// if table needs creating or updating
+		if( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) != $table_name
+            || $table_ver_num < $this->db_chg_in_ver) {
+
+			// set table charset and collation
+			$charset_collate = '';
+			if (!empty($wpdb->charset)) {
+				$charset_collate = "DEFAULT CHARACTER SET $wpdb->charset";
+			}
+			if (!empty($wpdb->collate)) {
+				$charset_collate .= " COLLATE $wpdb->collate";
+			}
+
+			// id mediumint(9) NOT NULL AUTO_INCREMENT,
+
+			$sql = "CREATE TABLE $table_name (
+						seq mediumint(9) NOT NULL,
+						name VARCHAR(80) DEFAULT '' NOT NULL,
+						slug VARCHAR(255) DEFAULT '' NOT NULL,
+						type VARCHAR(50) DEFAULT '' NOT NULL,
+						sub_type VARCHAR(50) DEFAULT '' NOT NULL,
+						published BOOLEAN DEFAULT 0,
+						content longtext NOT NULL,
+						modified_at datetime DEFAULT current_timestamp() NOT NULL,
+						meta TEXT NOT NULL,
+						func_ref BOOLEAN DEFAULT 0,
+						PRIMARY KEY (slug, type, published),
+						KEY seq_idx (seq),
+    					KEY slug_idx (slug),
+    					KEY type_idx (type),
+    					KEY published_idx (published),
+                        KEY sub_type_idx (sub_type)
+						) $charset_collate;";
+
+			//wp_die('the table should update' . $sql);
+
+			require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+			dbDelta($sql);
+
+			// store the table version in the wp_options table (useful for upgrading the DB)
+			add_option($this->html_mods_ver_name, $this->version);
+
+			return true;
+		}
+
+	    return false;
+
+    }
+
 	// create revisions table if it doesn't exist
 	function maybeCreateOrUpdateRevsTable() {
 		global $wpdb;
@@ -3884,20 +4396,23 @@ class Admin {
 		if( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) != $table_name or
 		    $micro_ver_num < $this->db_chg_in_ver) {
 
-
-			if ( ! empty( $wpdb->charset ) )
+			$charset_collate = '';
+			if (!empty($wpdb->charset)) {
 				$charset_collate = "DEFAULT CHARACTER SET $wpdb->charset";
-			if ( ! empty( $wpdb->collate ) )
+			}
+			if (!empty($wpdb->collate)) {
 				$charset_collate .= " COLLATE $wpdb->collate";
-
+			}
 
 			$sql = "CREATE TABLE $table_name (
 						id mediumint(9) NOT NULL AUTO_INCREMENT,
 						time datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
-						user_action TEXT DEFAULT '' NOT NULL,
+						user_action TEXT NOT NULL,
 						data_size VARCHAR(10) DEFAULT '' NOT NULL,
 						settings longtext NOT NULL,
 						preferences longtext DEFAULT NULL,
+						snippets longtext DEFAULT NULL,
+                        meta longtext DEFAULT NULL,
 						saved BOOLEAN DEFAULT 0,
 						upgrade_backup BOOLEAN DEFAULT 0,
 						UNIQUE KEY id (id)
@@ -3942,7 +4457,7 @@ class Admin {
 
 	// Update the Revisions Table
 	function updateRevisions(
-		$save_data, $user_action = '', $tryCreate = true, $preferences = false, $upgrade_backup = false
+		&$save_data, $user_action = '', $tryCreate = true, $preferences = false, $upgrade_backup = false, $snippets = true, $meta = ''
 	) {
 
 		//debug_print_backtrace();
@@ -3952,7 +4467,7 @@ class Admin {
 		// the change will be shown in the code editor change history entry
 		// and we don't want them to restore one without the other (selector code and editor content)
 		if (is_null($user_action) or $user_action === 'null' or $user_action === 'false' or $user_action === false){
-			return true; // false would generate an error message
+			return 'bail'; // false would generate an error message
 		}
 
 		$user_action = html_entity_decode($user_action);
@@ -3965,6 +4480,16 @@ class Admin {
 		// include the user's current media queries for restoring back
         if (!empty($save_data)){
 	        $save_data['non_section']['active_queries'] = $this->preferences['m_queries'];
+
+            // Also include a handful of other preferences that should overwrite the current ones
+            if (empty($save_data['non_section']['meta']['merge_preferences'])){
+	            $save_data['non_section']['meta']['merge_preferences'] = array();
+            }
+            $this->getRelevantPreferences(
+                    $save_data['non_section']['meta']['merge_preferences'],
+                    $this->preferences
+            );
+	        //wp_die('<pre>merge_preferences: '.print_r($save_data['non_section']['meta'], true).'</pre>');
         }
 
 		// add the revision to the table
@@ -3972,6 +4497,9 @@ class Admin {
 		$table_name = $wpdb->prefix . "micro_revisions";
 		$serialized_data = $save_data ? serialize($save_data) : '';
         $serialized_preferences = ($preferences ? serialize($preferences) : '');
+        $serialized_snippets = $snippets && $this->supportContent()
+	        ? serialize($this->contentMethod('getSnippets', array(-1, 0, ARRAY_A)))
+	        : '';
         $dataToSize = $serialized_data . $serialized_preferences;
 		$data_size = round(strlen($dataToSize)/1000).'KB';
 		// $wpdb->insert (columns and data should not be SQL escaped): https://developer.wordpress.org/reference/classes/wpdb/insert/
@@ -3988,7 +4516,17 @@ class Admin {
 			// adding this so users can rollback to a pre-speed version of MT in case of an upgrade issue
 			'preferences' => $serialized_preferences,
 			'upgrade_backup' => $upgrade_backup,
+            'snippets' => $serialized_snippets,
+            //'meta' => $meta
 		));
+		$revision_id = $wpdb->insert_id;
+
+        // Store the current revision in the preferences
+        if ($revision_id){
+            $this->savePreferences(array(
+                    'current_revision' => $revision_id
+            ));
+        }
 
 		/*$this->log(
 					esc_html__('$rows_affected: '.$rows_affected, 'microthemer'),
@@ -4023,7 +4561,7 @@ class Admin {
 			$wpdb->query($sql);
 		}
 
-		return true;
+		return $revision_id;
 	}
 
 	function updateRevisionSaveStatus($rev_id, $rev_save_status){
@@ -4230,7 +4768,8 @@ class Admin {
 						<td class="rev-restore">';
 
 			// current item
-			if ($i == 0) {
+			//if ($i == 0) {
+			if ($rev->id == $this->preferences['current_revision']) {
 				$restoreActionText = esc_html__('Current', 'microthemer');
 				$rev_table.= $summary
 					? $this->iconFont('check-circle', array(
@@ -4296,6 +4835,12 @@ class Admin {
         // if revision has preferences, restore those
 		if (!empty($rev->preferences)){
 			update_option($this->preferencesName, unserialize($rev->preferences));
+		}
+
+		// if revision has snippets, restore those
+		if (!empty($rev->snippets)){
+			// Dynamically calling 'restoreSnippets' as a method
+            $this->contentMethod('restoreSnippets', array(&$rev->snippets));
 		}
 
 		// restore to options DB field - unless this is purely a revisions history
@@ -4594,7 +5139,7 @@ class Admin {
 
 			$this->log(
 				esc_html__('Preferences saved', 'microthemer'),
-				'<p>' . esc_html__('Your Microthemer preferences have been successfully updated.', 'microthemer') . '</p>',
+				'<p>' . esc_html__('Your preferences have been successfully updated.', 'microthemer') . '</p>',
 				'notice'
 			);
 
@@ -4608,6 +5153,17 @@ class Admin {
 
 		// save last message in database so that it can be displayed on page reload (just once)
 		$this->cache_global_msg();
+
+		// Return the revision data for indexedDB
+		$this->jsonResponse($this->getRevisionData(
+                $this->updateRevisions(
+                   $this->options,
+                    $this->json_format_ua(
+                        'mtif-cog lg-icon',
+                        esc_html__('Preferences updated', 'microthemer')
+                    )
+                )
+        ));
 	}
 
 	// update the preferences array with the new units when the user saves the preferences
@@ -4748,6 +5304,9 @@ class Admin {
 					break;
 				}
 			}
+
+
+			//wp_die('$this->preferences[custom_paths]: <pre>'. print_r($pref_array, 1) . '</pre>');
 		}
 
 		$this->savePreferences($pref_array);
@@ -4786,6 +5345,8 @@ class Admin {
 				wp_die('Access denied');
 			}
 
+			$prefix = '';
+
 			// initial microthemer setup
 			if (isset($_POST['mt_initial_setup_submit'])) {
 
@@ -4794,6 +5355,7 @@ class Admin {
                 $error = false;
                 $imported = false;
 				$pref_array = array();
+                $prefix = 'amender_';
 
                 // if they provided an import file, load that
                 if (!empty($_FILES['preferences_file']['name'])){
@@ -4870,6 +5432,7 @@ class Admin {
                     foreach ($_POST['tvr_preferences'] as $key => $value){
                         switch($key){
                             case 'buyer_email':
+	                        case $prefix . 'buyer_email':
 	                            $pref_array[$key] = strip_tags($value);
                                 break;
                             default:
@@ -4894,7 +5457,7 @@ class Admin {
                 }
 				$this->savePreferences($pref_array);
 
-				// try to unlock if they supply a new license key
+				// try to unlock if they supply a new Micerothemer license key
                 if (!empty($_POST['tvr_preferences']['buyer_email'])){
 	                $response = $this->get_validation_response($_POST['tvr_preferences']['buyer_email']);
                     if (!$response){
@@ -4902,9 +5465,22 @@ class Admin {
                     }
                 }
 
+				// try to unlock if they supply a new Amender license key
+				if (!empty($_POST['tvr_preferences'][$prefix . 'buyer_email'])){
+					$response = $this->get_validation_response(
+                        $_POST['tvr_preferences'][$prefix . 'buyer_email'],
+                        'unlock',
+						$prefix
+                    );
+					if (!$response){
+						$error = 'Unlock fail';
+					}
+				}
+
 				// add to revision table
+                $save_data = '';
 				$this->updateRevisions(
-					'',
+					$save_data,
 					$this->json_format_ua(
 						'mtif-cog',
 						($imported
@@ -4927,13 +5503,13 @@ class Admin {
 			}
 
 			// validate email todo make this an ajax request, with user feedback
-			if (isset($_POST['tvr_ui_validate_submit'])) {
+			/*if (isset($_POST['tvr_ui_validate_submit'])) {
 
 				check_ajax_referer( 'tvr_validate_form', 'validate_nonce' );
 
 				// tvr_validate_form
 				$this->get_validation_response($_POST['tvr_preferences']['buyer_email']);
-			}
+			}*/
 
             // make it possible to set an invalid license key
 			$this->invalidLic();
@@ -4960,8 +5536,9 @@ class Admin {
 			// ensure Preview URL matches HTTPS in admin
 			$this->ensure_iframe_protocol_matches_admin();
 
-			// maybe check valid subscription
+			// maybe check valid subscription for MT and Amender
 			$this->maybe_check_subscription();
+			$this->maybe_check_subscription($prefix);
 
 			// Display user interface
 			include $this->thisplugindir . 'includes/tvr-microthemer-ui.php';
@@ -5351,16 +5928,7 @@ class Admin {
 	Generic Functions
 	 ***/
 
-	// get min/max media query screen size
-	function get_screen_size($q, $minmax) {
-		$pattern = "/$minmax-width:\s*([0-9.]+)\s*(px|em|rem)/";
-		if (preg_match($pattern, $q, $matches)) {
-			//echo print_r($matches);
-			return $matches;
-		} else {
-			return 0;
-		}
-	}
+
 
 
 	// show need help videos
@@ -6217,7 +6785,7 @@ class Admin {
 				'class' => 'dialog-icon'
 			)).'
 							<span class="text">'.$heading.'</span>
-							<span class="dialog-status"></span>
+							<span class="dialog-status"><span class="dialog-status-inner"></span></span>
 							 '.$this->iconFont('times-circle-regular', array(
 				'class' => 'close-dialog'
 			)).'
@@ -6240,7 +6808,13 @@ class Admin {
 
 			// maybe add functionality to remember pref tab at a later date.
 			for ($i = 0; $i < count($tabs); $i++) {
-				$tab_name = $tabs[$i];
+
+                $tab_name = $tabs[$i];
+
+                if (!$tab_name){
+                    continue;
+                }
+
 				$tab_class = strtolower(str_replace(' ', '-', $tab_name));
 				/*$mode = $tab_class;
 
@@ -6391,6 +6965,36 @@ class Admin {
 					))
 				);
 			}*/
+
+
+    function snippetNameField(){
+        return '
+        <div class="snippet-name-wrap">
+            <span class="snippet-name-label">Name: </span>
+            <span class="tvr-input-wrap">
+			    <input type="text" class="snippet-name-input snippet-dep-adjust" placeholder="" />
+			</span>
+        </div>
+        ';
+    }
+
+    /*function htmlContentActionsMenu(){
+
+        $options = array(
+	        'refresh' => array('label' => 'Refresh', 'tooltip' => 'Refresh the site to see your JS changes'),
+            //'edit' => array('label' => 'Edit Existing', 'tooltip' => 'Edit existing content'),
+            //'starter' => array('label' => 'Starter', 'tooltip' => 'Add starter code'),
+        );
+
+	    $optionsHTML = '';
+	    foreach ($options as $key => $array){
+		    $optionsHTML.= '<span class="tvr-button tvr-gray html-content-option html-content-'.$key.'" 
+		    data-option="'.$key.'" title="'.$array['tooltip'].'">'.$array['label'].'</span>';
+	    }
+
+	    return '<div class="html-content-actions">'.$optionsHTML.'</div>';
+
+    }*/
 
 	// output feather icon for section, selector, tab, or pg
 	function feather_icon($level){
@@ -7125,6 +7729,7 @@ class Admin {
 		$sm = array(
 			//'expand_device_tabs' => 1,
 			'left_sidebar_columns' => 1,
+			'right_sidebar_columns' => 1,
 		);
 		$md = array(
 			'full_height_left_sidebar' => 1, // this is now the default for CSS icons
@@ -7132,21 +7737,22 @@ class Admin {
 			'dock_styles_left' => 1,
 			'dock_editor_left' => 1,
 			'left_sidebar_columns' => 1,
+            'right_sidebar_columns' => 1,
 		);
 		$lg = array_merge($md, array(
-
-			'dock_settings_right' => 1,
-			'wizard_expanded' => 1
+			'dock_ai_right' => 1,
 		));
 		$xl = array_merge($lg, array(
-			//'wizard_expanded' => 1,
 			'left_sidebar_columns' => 3,
 			'dock_styles_left' => 0,
 			'full_height_right_sidebar' => 1,
+			'wizard_expanded' => 1
 		));
 		$xl2 = array_merge($xl, array(
 			'left_sidebar_columns' => 2,
+			'right_sidebar_columns' => 2,
 			'dock_styles_left' => 1,
+			'dock_settings_right' => 1,
 		));
 
 		return array(
@@ -7252,7 +7858,7 @@ class Admin {
 				'win' => 'Ctrl+Alt+N',
 			),
 			array(
-				'action' => 'Beautify code editor CSS',
+				'action' => 'Beautify code editor',
 				'win' => 'Ctrl+Alt+O',
 			),
 			array(
@@ -7393,7 +7999,7 @@ class Admin {
 			$optionHTML.= '<option value="'.$x.'"'.$selected.'>'.$x.'</option>';
 		}
 
-		return '<select id="'.$side.'-column-options" class="settings-select-menu" data-side="'.$side.'">'.$optionHTML.'</select>';
+		return '<select id="'.$side.'-column-options" class="settings-select-menu mt-select" data-side="'.$side.'">'.$optionHTML.'</select>';
 	}
 
 	function toggle($item_key, $arr){
@@ -8632,9 +9238,9 @@ class Admin {
 		$style_count_state = $this->selector_has_values($section_name, $css_selector, $array, true);
 
 		// trial disabled (all sels will be editable even in free trial in future)
-		if (!$this->preferences['buyer_validated'] and $this->sel_count > 15 ) {
-			$sel_class.= 'trial-disabled'; // visually signals disabled and, prevents editing
-		}
+		/*if (!$this->preferences['buyer_validated'] and $this->sel_count > 15 ) {
+			$sel_class.= 'mt-trial-disabled'; // visually signals disabled and, prevents editing
+		}*/
 
 		// user disabled
 		$disabled = false;
@@ -8659,10 +9265,16 @@ class Admin {
 			$selector_title = '';
 		}
 
+        //
+        $xpath = !empty($array['xpath']) ? $array['xpath'] : '';
+
 		?>
 		<li id="<?php echo 'strk-'.$section_name.'-'.$css_selector; ?>" class="selector-tag strk strk-sel <?php echo $sel_class; ?>">
 
 			<input type='hidden' class='selector-label' name='tvr_mcth[<?php echo $section_name; ?>][<?php echo $css_selector; ?>][label]' value='<?php echo $array['label']; ?>' />
+            <input type='hidden' class='selector-xpath' name='tvr_mcth[<?php echo $section_name; ?>][<?php echo $css_selector; ?>][xpath]' value='<?php echo esc_attr($xpath); ?>' />
+            <input type='hidden' class='selector-multi-key-html' name='tvr_mcth[<?php echo $section_name; ?>][<?php echo $css_selector; ?>][multi_key][html]' value='' />
+
 
 			<div class="sel-row item-row">
 
@@ -8811,7 +9423,7 @@ class Admin {
                     Condition 
                      <ul id="phpSyntax" class="popdown-content supported-functions-list">
                        <div class="heading">
-                           Supported WordPress and Microthemer PHP code 
+                           Supported WordPress and '.$this->appName.' PHP code 
                            <a href="'.$docPost.'" target="_blank">Watch video</a>
                        </div>
                         '.$functionsList.'
@@ -8823,7 +9435,7 @@ class Admin {
  
                 '.$this->iconFont('add', array(
                     'class' => 'toggle-add-logic toggle-popdown-content',
-                    'title' => esc_attr__('Add a condition', 'Microthemer'),
+                    'title' => esc_attr__('Add a condition', 'microthemer'),
                     'innerHTML' => $this->add_logic_options(),
                     'data-forpopup' => "addLogic"
                 )).'
@@ -8835,9 +9447,9 @@ class Admin {
             
             <input id="logic-label" type="text" name="logic[label]" autocomplete="off" />-->
             
-            <label>Load CSS</label>
+            <label class="conditional-folder-only">Load CSS</label>
             
-            <div class="mt-asset-loading-options">
+            <div class="mt-asset-loading-options conditional-folder-only">
                 <div class="inline-or-stylesheet mt-binary-buttons">
                     <span class="load-inline binary-button-option" rel="0">Inline tag</span>
                     <input type="checkbox" name="logic[css_external]" value="1" />
@@ -8930,16 +9542,19 @@ class Admin {
                 } else {
 	                $fields.= $inputField;
                 }
-
-
-
 			}
+
+            elseif ($item['type'] === 'toggle'){
+
+            }
 
 		}
 
 		// add the button
-		$button_class = !empty($form['button']['class']) ? ' '.$form['button']['class'] : '';
-		$fields.= '<span class="tvr-button '.$base_key.'-button '.$button_class.'">'.$form['button']['text'].'</span>';
+        if (!empty($form['button'])){
+	        $button_class = !empty($form['button']['class']) ? ' '.$form['button']['class'] : '';
+	        $fields.= '<span class="tvr-button '.$base_key.'-button '.$button_class.'">'.$form['button']['text'].'</span>';
+        }
 
 		// wrap if required
 		if (!empty($form['wrap'])){
@@ -9073,13 +9688,13 @@ class Admin {
 		$html = '';
 		$css_selector = esc_attr($css_selector); //=esc
 		// disable sections locked by trial
-		if (!$this->preferences['buyer_validated'] and $this->sel_option_count > 15) {
-			$trial_disabled = 'trial-disabled';
+		/*if (!$this->preferences['buyer_validated'] and $this->sel_option_count > 15) {
+			$trial_disabled = 'mt-trial-disabled';
 		} else {
 			$trial_disabled = '';
-		}
+		}*/
 		$html.= '<li id="opts-'.$section_name.'-'.$css_selector.'"
-				class="selector-tag selector-wrap '.$trial_disabled.'">';
+				class="selector-tag selector-wrap">';
 
 		// only load style options if we need to force load
 		if ($force_load == 1) {
@@ -9314,7 +9929,7 @@ class Admin {
 	// does the selector contain any styles?
 	function selector_has_values($section_name, $css_selector, $array, $deep){
 
-		return !empty($array['compiled_css']);
+		return !empty($array['compiled_css']) || !empty($array['styles']['html']);
 
 		/*$style_count_state = 0;
 				foreach ($this->propertyoptions as $property_group_name => $junk) {
@@ -9553,17 +10168,104 @@ class Admin {
 		return $html;
 	}
 
+    function groupPresets($config){
+
+        $options = '';
+        foreach ($config as $label => $items){
+
+	        $options.= '<div class="group">';
+            $options.= '<label>'.$label.':</label>';
+            foreach($items as $key => $array){
+	            $options.= '<span class="group-preset-option" data-preset="'.$key.'">'.$array['label'].'</span>';
+            }
+	        $options.= '</div>';
+        }
+	    /*$options.= '<span class="clear-presets">'.$this->iconFont('eraser', array(
+			    'title' => 'Clear all field settings',
+		    )).'</span>';*/
+
+	    return '<div class="mt-group-presets">'.$options.'</div>';
+    }
+
 	function back_to_properties($pg_slug){
+
+        // HTML group multi-modification tabs
+		$multi_tabs = '';
+		$upgradeNotice = '';
+
+        if ($pg_slug === 'html'){
+	        $multi_tabs = $this->multi_tabs($pg_slug);
+	        $upgradeNotice = '
+	        <div class="amender-notice">
+	            <div class="amender-inspect-buttons">
+	                <div class="label">Amends: </div>
+	                <div class="amender-inspect-wrap">
+                        <div class="amender-inspect-button active" data-mtc="mod.MThtml.inspectButtonClicked" data-view="normal" title="Apply amendments normally">normal</div>
+                        <div class="amender-inspect-button" data-mtc="mod.MThtml.inspectButtonClicked" data-view="data" title="Review page amendments">review</div>
+                        <div class="amender-inspect-button" data-mtc="mod.MThtml.inspectButtonClicked" data-view="none" title="View page without amendments">none</div>
+	                </div>
+	                '.$this->iconFont('sync-alt', array(
+                        'class' => 'html-content-refresh',
+                        'title' => 'Refresh page',
+                        'data-mtc' => 'mod.MThtml.refreshPreview'
+                    )).'
+	            </div>
+	            <div class="amender-upgrade">
+	                '.$this->iconFont('unlock-alt', array(
+                        'class' => 'unlock-amender',
+                    )).'
+	                <span>
+	                    <a target="_blank" href="https://themeover.com/amender/">Purchase a license</a> to publish
+	                </span>
+	            </div>
+	            <div class="microthemer-addon">
+                     '.$this->icon(
+			        'add',
+                        array(
+	                        'class' => 'trigger-microthemer-addon',
+	                        'adjacentText' => array(
+		                        'text' => 'Install Microthemer addon',
+		                        'class' => 'mti-text trigger-microthemer-addon'
+	                        ),
+                        )
+                    ).'
+	            </div>
+	        </div>';
+        }
+
 		return '
-                <div class="back-to-properties">
-                    '.$this->iconFont('arrow-alt-circle-left', array(
-				'class' => 'back-to-properties-icon',
-				'adjacentText' => array(
-					'text' => $this->property_option_groups[$pg_slug],
-					'class' => 'mti-text back-to-properties-text'
-				)
-			)).'
-                </div>';
+		 <div class="properties-header-wrap">
+             <div class="back-to-properties">
+                        '.$this->iconFont('arrow-alt-circle-left', array(
+                    'class' => 'back-to-properties-icon',
+                    'adjacentText' => array(
+                        'text' => $this->property_option_groups[$pg_slug],
+                        'class' => 'mti-text back-to-properties-text'
+                    )
+                )).'
+            </div>
+            '.
+                $this->iconFont('dots-vertical', array(
+                'class' => 'mt-group-menu-toggle',
+                'title' => 'Options',
+                'data-forpopup' => 'contextMenu',
+                'data-filter' => '#cm-group-'.$pg_slug,
+            )).'
+		 </div>
+		 '.$multi_tabs
+          .$upgradeNotice; // . $presetHTML
+	}
+
+	function multi_tabs($pg_slug){
+        return '
+        <div class="multi-tabs-wrap">
+            <div class="multi-tabs multi-tabs-'.$pg_slug.'">
+                 '.$this->iconFont('add', array(
+                    'class' => 'add-multi-tab',
+                    'title' => esc_attr__('Add tab', 'microthemer'),
+                )).'
+            </div>
+        </div>';
 	}
 
 	// the options fields part of the property group (which can be added as templates)
@@ -9729,6 +10431,17 @@ class Admin {
 		return $pref_array['m_queries'];
 	}
 
+	// get min/max media query screen size
+	function get_screen_size($q, $minmax) {
+		$pattern = "/$minmax-width:\s*([0-9.]+)\s*(px|em|rem)/";
+		if (preg_match($pattern, $q, $matches)) {
+			//echo print_r($matches);
+			return $matches;
+		} else {
+			return 0;
+		}
+	}
+
 	// compare the original set of media queries with a new config to detect deleted mqs
 	function deleted_media_queries($orig_media_queries, $new_media_queries){
 
@@ -9861,8 +10574,8 @@ class Admin {
 
 
 	function eq_str($name){
-		$eq_signs = 25-strlen($name);
-		$eq_signs = $eq_signs > -1 ? $eq_signs : 0;
+		$eq_signs = 25 - strlen($name);
+		$eq_signs = $eq_signs > 0 ? $eq_signs : 1; // change to ensure there is at least one trailing = sign
 		$eq_str = '';
 		for ($x = $eq_signs; $x >= 0; $x--) {
 			$eq_str.= '=';
@@ -10172,6 +10885,23 @@ class Admin {
 				);
 			}
 		}
+
+        // Merge certain preferences stored in the backup
+        if (!empty($filtered_json['non_section']['meta']['merge_preferences'])){
+            $merge_preferences = $filtered_json['non_section']['meta']['merge_preferences'];
+	        $pref_array = array();
+            if (is_array($merge_preferences)){
+                foreach($merge_preferences as $key => $pref_value){
+
+                    $pref_array[$key] = $pref_value;
+
+                    // No longer needed in the options
+	                unset($filtered_json['non_section']['meta']['merge_preferences'][$key]);
+                }
+	           //wp_die('<pre>merge_preferences: '.print_r($pref_array, true).'</pre>');
+	            $this->savePreferences($pref_array);
+            }
+        }
 
 		// active_queries are just used for import now. Unset as they have served their purpose
 		unset($filtered_json['non_section']['active_queries']);
@@ -10638,7 +11368,7 @@ class Admin {
 			if ($action == 'unzip') {
 				$this->log(
 					esc_html__('Design pack installed', 'microthemer'),
-					'<p>' . esc_html__('The design pack was successfully uploaded and extracted. You can import it into your Microthemer workspace any time using the') .
+					'<p>' . esc_html__('The design pack was successfully uploaded and extracted. You can import it into your workspace any time using the') .
 					' <span class="show-parent-dialog link" rel="import-from-pack">' . esc_html__('import option', 'microthemer') . '</span>'.
 					'<span id="update-packs-list" rel="' . $this->readable_name($name) . '"></span>.</p>',
 					'notice'
@@ -10972,7 +11702,7 @@ class Admin {
 				else {
 					$this->log(
 						esc_html__('Image paths failed to update.', 'microthemer'),
-						'<p>' . esc_html__('Images paths could not be updated to reflect the new location of the images transferred to your media library. This happened because Microthemer could not rewrite the config.json file.', 'microthemer') . '</p>' . $this->permissionshelp
+						'<p>' . sprintf(esc_html__('Images paths could not be updated to reflect the new location of the images transferred to your media library. This happened because %s could not rewrite the config.json file.', 'microthemer'), $this->appName) . '</p>' . $this->permissionshelp
 					);
 					return false;
 				}
@@ -11734,9 +12464,16 @@ DateCreated: '.date('Y-m-d').'
 		$options            = array();
 		$options['timeout'] = 10;
 
-		$response = wp_safe_remote_get( $uri, $options );
+		// Disable SSL verification specifically for themeover.test
+		if (TVR_DEV_MODE && str_starts_with( $uri, 'https://themeover.test/' ) ) {
+			$options['sslverify'] = false;
+			$response = wp_remote_get($uri, $options);
+		} else {
+			$response = wp_safe_remote_get( $uri, $options );
+		}
 
 		if ( is_wp_error( $response ) ) {
+			error_log( 'wp_remote_fopen error: ' . $response->get_error_message() );
 			return false;
 		}
 

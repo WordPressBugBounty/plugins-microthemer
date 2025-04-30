@@ -118,9 +118,9 @@ trait LogTrait {
 		$dataPermission    = !empty($permission['data']);
 		$contactPermission = !empty($permission['contact']);
 		$disallowed        = !$manual && !$filePermission && !$dataPermission;
-		$status            = $_POST['status'];
-		$fileQuotaReached  = !$manual && $status['fileQuotaReached'];
-		$dataQuotaReached  = !$manual && $status['dataQuotaReached'];
+		$status            = !empty($_POST['status']) ? $_POST['status'] : array();
+		$fileQuotaReached  = !$manual && !empty($status['fileQuotaReached']);
+		$dataQuotaReached  = !$manual && !empty($status['dataQuotaReached']);
 		$allQuotaReached   = $fileQuotaReached && $dataQuotaReached;
 
 		// bail if error reporting is disabled or quotas have been reached
@@ -130,6 +130,7 @@ trait LogTrait {
 
 		// minimum information to send
 		$error     = !empty($post['error']) ? $post['error'] : null;
+		$isAIFeedback = !empty($post['isAIFeedback']);
 		$onboard   = !empty($post['onboard']) ? $post['onboard'] : null;
 		$member_id = !empty($this->preferences['subscription']['member_id'])
 			? $this->preferences['subscription']['member_id']
@@ -174,7 +175,9 @@ trait LogTrait {
 
 			// include data in priority of helpfulness for debugging, bail if too big
 			$analysis = array(
-				'items'        => array('options_live', 'options', 'preferences'),
+				'items'        => $isAIFeedback
+					? array('options_live')
+					: array('options_live', 'options', 'preferences'),
 				'total_size'   => 0,
 				'max_size'     => $maxBytes, // 1.5MB
 				'max_reached' => false,

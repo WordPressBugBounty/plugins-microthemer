@@ -4,6 +4,80 @@ namespace Microthemer;
 
 trait SettingsTrait {
 
+	/*function getRevisionForIndexedDB($revision_id, $withSettings = false, $jsonResponse = false, $recent = null){
+		global $wpdb;
+		$table_name = $wpdb->prefix . "micro_revisions";
+		$columns = 'user_action, preferences, snippets'; // , meta
+		if ($withSettings){
+			$columns.= ', settings';
+		}
+		$rev = $wpdb->get_row( $wpdb->prepare("SELECT $columns FROM $table_name WHERE id = %d", $revision_id) );
+
+		$data = $rev ? array(
+			'revision_id' => $revision_id,
+			'user_action' => $rev->user_action ? json_decode($rev->user_action) : '', // should be json_decode
+			'preferences' => $rev->preferences ? unserialize($rev->preferences) : '',
+			'snippets' => $rev->snippets ? unserialize($rev->snippets) : '',
+			'settings' => $withSettings ? unserialize($rev->settings) : '',
+			//'meta' => $rev->meta,
+		) : null;
+
+		if (!$jsonResponse){
+			return $data;
+		}
+
+		$this->jsonResponse($data);
+	}*/
+
+	function getRevisionForIndexedDB($revision_id, $withSettings = false, $jsonResponse = false, $recent = null) {
+		global $wpdb;
+		$table_name = $wpdb->prefix . "micro_revisions";
+		$columns = 'id, user_action, preferences, snippets';
+		if ($withSettings) {
+			$columns .= ', settings';
+		}
+
+		// Helper to normalize a DB row into an array
+		$normalizeRevision = function($rev) use ($withSettings) {
+			return array(
+				'revision_id' => isset($rev->id) ? (int) $rev->id : null,
+				'user_action' => !empty($rev->user_action) ? json_decode($rev->user_action) : '',
+				'preferences' => !empty($rev->preferences) ? unserialize($rev->preferences) : '',
+				'snippets'    => !empty($rev->snippets) ? unserialize($rev->snippets) : '',
+				'settings'    => $withSettings && isset($rev->settings) ? unserialize($rev->settings) : '',
+			);
+		};
+
+		if ($recent !== null) {
+			// Fetch multiple recent revisions
+			$recent = (int) $recent;
+			$results = $wpdb->get_results(
+				$wpdb->prepare("SELECT $columns FROM $table_name ORDER BY id DESC LIMIT %d", $recent)
+			);
+
+			$data = array();
+			if ($results) {
+				foreach ($results as $rev) {
+					$data[] = $normalizeRevision($rev);
+				}
+			}
+		} else {
+			// Fetch a single revision by ID
+			$rev = $wpdb->get_row(
+				$wpdb->prepare("SELECT $columns FROM $table_name WHERE id = %d", $revision_id)
+			);
+
+			$data = $rev ? $normalizeRevision($rev) : null;
+		}
+
+		if (!$jsonResponse) {
+			return $data;
+		}
+
+		$this->jsonResponse($data);
+	}
+
+
 	function actionSaveInterface(){
 
 		// remove slashes and custom escaping so that DB data is clean
@@ -31,6 +105,10 @@ trait SettingsTrait {
 			? $this->serialised_post['last_save_time']
 			: false;
 		$new_select_option = '';
+		$revisionData = array();
+
+		//$revision_id = null;
+		//$revision = null;
 
 
 		/*$debug = true;
@@ -60,6 +138,7 @@ trait SettingsTrait {
 			$saveOk = empty($this->preferences['auto_publish_mode'])
 				? esc_html__('Draft saved', 'microthemer')
 				: esc_html__('Settings saved and published', 'microthemer');
+			$skip_revision = !empty($this->serialised_post['skip_revision']);
 
 			$this->log(
 				$saveOk,
@@ -67,25 +146,23 @@ trait SettingsTrait {
 				'notice'
 			);
 
-
-
 			// check if settings need to be exported to a design pack
 			if (!empty($this->serialised_post['export_to_pack']) && $this->serialised_post['export_to_pack'] == 1) {
 
 				$theme = htmlentities($this->serialised_post['export_pack_name']);
 				$context = 'existing';
-				$do_option_insert = false;
+				$do_option_delete = false;
 
 				if ($this->serialised_post['new_pack'] == 1){
 					$context = 'new';
-					$do_option_insert = true;
+					$do_option_delete = true;
 				}
 
 				// function return sanitised theme name
 				$theme = $this->update_json_file($theme, $context);
 
 				// save new sanitised theme in span for updating select menu via jQuery
-				if ($do_option_insert) {
+				if ($do_option_delete) {
 					$meta_file = $this->micro_root_dir.$theme.'/meta.txt';
 					if (file_exists($meta_file)){
 						$meta_info = $this->read_meta_file($meta_file);
@@ -104,19 +181,33 @@ trait SettingsTrait {
 				//$user_action.= esc_html__(' (regular)', 'microthemer');
 			}
 
+			// Save snippets in DB if set
+			if (!empty($this->serialised_post['snippet_cache']) || !empty($this->serialised_post['snippets_deleted'])){
+				$this->contentMethod('addUpdateOrDeleteSnippets', array(
+					&$this->serialised_post['snippet_cache'],
+					&$this->serialised_post['snippets_deleted']
+				));
+			}
+
 			// update active-styles.css
 			$this->update_assets($theme);
 
 			// update the revisions DB field
-			$user_action = !empty($this->serialised_post['user_action'])
-				? json_encode($this->serialised_post['user_action'])
-				: null;
-
-			if (!$this->updateRevisions($this->options, $user_action)) {
-				$this->log('','','error', 'revisions');
+			if (!$skip_revision){
+				$user_action = !empty($this->serialised_post['user_action'])
+					? json_encode($this->serialised_post['user_action'])
+					: null;
+				$revision_id = $this->updateRevisions(
+					$this->options, $user_action, 1, 0, 0, $this->supportContent(),
+				);
+				if (!$revision_id) {
+					$this->log('','','error', 'revisions');
+				} else {
+					$revisionData = $this->getRevisionData($revision_id);
+				}
 			}
-		}
 
+		}
 
 
 		//echo 'carrots!';
@@ -130,12 +221,13 @@ trait SettingsTrait {
 							<span id="returned-save-time">'.$this->options['non_section']['last_save_time'].'</span>*/
 
 		// we're returning a JSON obejct here, the HTML is added as a property of the object
-		$response = array(
-			//'prefs' => $this->preferences,
+		$response = array_merge(array(
 			'html'=> $html,
 			'outdatedTab'=> $this->outdatedTabIssue,
 			'outdatedTabDebug'=> $this->outdatedTabDebug,
-			'returnedSaveTime'=> $this->options['non_section']['last_save_time'],
+			'returnedSaveTime'=> !empty($this->options['non_section']['last_save_time'])
+				? $this->options['non_section']['last_save_time']
+				: time(),
 			'returnedRevisions' => $this->getRevisions(true),
 			'exportName' => $new_select_option,
 			'num_saves' => $this->preferences['num_saves'],
@@ -143,113 +235,97 @@ trait SettingsTrait {
 			'asset_loading_change' => $this->asset_loading_change,
 			'adjusted_logic' => !empty($this->serialised_post['adjusted_logic']),
 			'recent_logic' => $this->preferences['recent_logic'],
-			'num_unpublished_saves' => $this->preferences['num_unpublished_saves']
+			'num_unpublished_saves' => $this->preferences['num_unpublished_saves'],
+			//'revision_id' => $revision_id !== 'bail' ? $revision_id : null,
+			//'revision' => $revision
 			//'uiData'=> $this->options
 			//'uiData'=> array()
-		);
+		), $revisionData);
 
 		echo json_encode($response); //$html;
 	}
 
-	function publishSettings(){
-
-		$root = $this->micro_root_dir;
-		$conditionalRoot = $root . 'mt/conditional/';
-		$draftDir  = $conditionalRoot . 'draft/';
-		$activeDir = $conditionalRoot . 'active/';
-		$minifyCSS = !empty($this->preferences['minify_css']);
-		$minifyJS = !empty($this->preferences['minify_js']);
-
-		// get a list of the active files before copying over
-		$origActiveFiles = $this->getDirectoryFileList($activeDir);
-
-		// copy the global files
-		$globals = array('styles.css', 'styles.scss', 'scripts.js');
-
-		foreach ($globals as $file){
-
-			$draft_file = $root . 'draft-' . $file;
-			$published_file = $root . 'active-' . $file;
-			$ext = $this->get_extension($file);
-
-			// copy the draft file if it exists
-			if (file_exists($draft_file)){
-
-				$doMinify = $ext === 'css' && $minifyCSS || $ext === 'js' && $minifyJS;
-
-				// Minify if user preference
-				if ($doMinify){
-
-					if (!$this->minify($draft_file, $ext, $published_file)){
-
-						$this->log(
-							esc_html__('File not minified', 'microthemer'),
-							'<p>' . sprintf(
-								esc_html__('Asset failed to minify and publish: %s', 'microthemer'),
-								$this->root_rel($published_file)
-							) . '</p>',
-							'error'
-						);
-					}
-				}
-
-				// Simply copy the file
-				else {
-
-					if (!copy($draft_file, $published_file)){
-
-						$this->log(
-							esc_html__('File not published', 'microthemer'),
-							'<p>' . sprintf(
-								esc_html__('Asset failed to publish: %s', 'microthemer'),
-								$this->root_rel($published_file)
-							) . '</p>',
-							'error'
-						);
-					}
-				}
-
-
+	function getRevisionData($revision_id){
+		$revisionData = array();
+		if ($revision_id && is_numeric($revision_id)) {
+			$revision = $this->getRevisionForIndexedDB($revision_id);
+			if ($revision){
+				$revision['settings'] = $this->options;
+				$revisionData['revision_id'] = $revision_id;
+				$revisionData['revision'] = &$revision;
 			}
+		}
+		return $revisionData;
+	}
 
-			// if the draft file doesn't exist, but the published one does, clean the published file
-			elseif (file_exists($published_file)){
-				//echo 'we should del pub: ' . $published_file;
-				unlink($published_file);
+	function getRelevantPreferences(&$addTo, &$addFrom) {
+		$prefKeys = [
+			'mq_device_focus',
+			'pg_focus'
+		];
+
+		foreach ($prefKeys as $key) {
+			if (array_key_exists($key, $addFrom)) {
+				$addTo[$key] = $addFrom[$key];
 			}
 		}
 
-		// copy the conditional draft folder to the conditional active folder
-		$this->copyFolder($draftDir, $activeDir, $minifyCSS, $minifyJS);
-
-		// delete any lingering conditional files that are no longer needed in the published directory
-		foreach ($origActiveFiles as $activeFile){
-			if (!file_exists($draftDir . $activeFile)){
-				unlink($activeDir . $activeFile);
-			}
-		}
-
-		// update the published preferences
-		$this->savePreferences(array(
-			'num_unpublished_saves' => 0,
-			'asset_loading_published' => $this->preferences['asset_loading'],
-			'global_stylesheet_required_published' => $this->preferences['global_stylesheet_required'],
-			'load_js_published' => $this->preferences['load_js'],
-		));
-
-		return json_encode(array(
-			'num_unpublished_saves' => 0,
-			//'html' => '<div id="microthemer-notice">' . $this->display_log() . '</div>' // todo show in UI
-		));
-
+		//return $addTo;
 	}
 
 
+	function publishSettings(){
 
-	// Resest the options.
+		$this->update_assets('customised', '', array('active' => 1));
+
+		$pref_array = array(
+			'num_unpublished_saves' => 0,
+			'asset_loading_published' => &$this->preferences['asset_loading'],
+			'global_stylesheet_required_published' => &$this->preferences['global_stylesheet_required'],
+			'load_js_published' => $this->preferences['load_js'],
+		);
+
+		// Publish content modifications if allowed
+		if ($this->hasContentSubscription()){
+
+			// Update the database
+			$this->contentMethod('publishHTMLTable', array(), true);
+
+			// Copy (and minify user JS and NPM)
+			$this->contentMethod('publishJavaScript', array(), true);
+
+			// Copy the draft npm dependencies
+			$pref_array['npm_dependencies_published'] = &$this->preferences['npm_dependencies'];
+		}
+
+		// update the published preferences
+		$this->savePreferences($pref_array);
+
+		//$this->log('Test error', 'An issue occurred!');
+
+		$response = array(
+			'num_unpublished_saves' => 0,
+			'notify_amender_subscription_needed' => $this->supportContent() && !$this->hasContentSubscription() ? 1 : 0,
+		);
+
+		if (!empty($this->globalmessage)){
+			$response['html'] = '<div id="microthemer-notice">' . $this->display_log() . '</div>';
+		}
+
+		return json_encode($response);
+
+	}
+
+	// Reset the options.
 	function resetUiOptions(){
+
+		// Delete the main UI settings
 		delete_option($this->optionsName);
-		$this->getOptions(); // reset the defaults
+
+		// Reset the defaults
+		$this->getOptions();
+
+		// Reset certain preferences
 		$pref_array = array();
 		$pref_array['active_theme'] = 'customised';
 		$pref_array['theme_in_focus'] = '';
@@ -259,6 +335,10 @@ trait SettingsTrait {
 		$pref_array['g_url_with_subsets'] = '';
 		$pref_array['hover_inspect'] = 1;
 		$this->savePreferences($pref_array);
+
+		// Reset the snippets (folder_mods will be overwritten on next save)
+		$this->contentMethod('deleteDraftSnippets');
+
 		return true;
 	}
 
@@ -283,6 +363,9 @@ trait SettingsTrait {
 		// tag version the settings were saved at so e.g. css units can be imported correctly for legacy data
 		$this->options['non_section']['mt_version'] = $this->version;
 
+		// we don't want to store the snippets cache twice. It gets added when getting the $options.
+		unset($this->options['non_section']['meta']['snippets_cache']);
+
 		// update DB
 		update_option($this->optionsName, $this->options);
 
@@ -303,7 +386,7 @@ trait SettingsTrait {
 
 			// do safety check to make sure newer settings haven't been applied in another tab
 			// allow passed last save time to be 15 seconds out due to quirk of resave I haven't fully understood
-			if ( intval($last_save_time + 10) < intval($this->options['non_section']['last_save_time']) ){
+			if ( intval($last_save_time + 15) < intval($this->options['non_section']['last_save_time']) ){
 
 				$this->log(
 					esc_html__('Multiple tabs/users issue', 'microthemer'),
@@ -715,7 +798,7 @@ trait SettingsTrait {
 
 		// min_widths for resizable panels are stored alongside user custom sizes
 		// but this may need to be refined at various intervals
-		$layout_adjust_version = 3;// increase this number when
+		$layout_adjust_version = 8;// increase this number when
 		if (
 			empty($this->preferences['layout_adjust_version'])
 			|| $this->preferences['layout_adjust_version'] !== $layout_adjust_version
@@ -726,7 +809,7 @@ trait SettingsTrait {
 			$this->preferences['layout']['inspection_columns']['min_column_sizes'] = array(300, 310);
 
 			// update minimum size for left columns
-			$min_left = array(200, 200, 180);
+			$min_left = array(282, 282, 282);
 			$this->preferences['layout']['left']['min_column_sizes'] = $min_left;
 			foreach ($min_left as $index => $min_size){
 				if ($this->preferences['layout']['left']['column_sizes'][$index] < $min_size){
@@ -734,6 +817,23 @@ trait SettingsTrait {
 				}
 			}
 
+			// introduce new ai panel
+			unset($this->preferences['layout']['right']['items']['wizard']);
+			$this->preferences['layout']['right']['items']['ai'] = array(
+				'size' => 252,
+				'size_category' => 'sm'
+			);
+
+			// update minimum size for right columns
+			$min_right = array(252, 252);
+			$this->preferences['layout']['right']['min_column_sizes'] = $min_right;
+			foreach ($min_right as $index => $min_size){
+				if ($this->preferences['layout']['right']['column_sizes'][$index] < $min_size){
+					$this->preferences['layout']['right']['column_sizes'][$index] = $min_size;
+				}
+			}
+
+			//wp_die('We convert: ' . $layout_adjust_version);
 
 			$this->savePreferences(
 				array(
@@ -758,38 +858,39 @@ trait SettingsTrait {
 
 
 	// update active-styles.css
-	function update_assets($activated_from, $context = '') {
+	function update_assets($activated_from, $context = '', $assetTypes = array('draft' => 1)) {
 
 		// as an interim, MT will continue to load dependencies in the global stylesheet
 		// e.g. key frames, GFonts, event JS - this will take some time but can be supported
 		$globalStylesheetRequired = 0;
+		$contentTrial = $this->supportContent() && !$this->hasContentSubscription();
+		$doPublish = !empty($assetTypes['active']) || !empty($this->preferences['auto_publish_mode']);
+
+		// Ensure that we publish at the same time if auto-publish is set
+		if ($doPublish){
+			$assetTypes['active'] = 1;
+		}
 
 		// cache previous asset loading for change analysis
 		$prev_asset_loading = $this->preferences['asset_loading'];
-
-		// get path to active-styles.css
-		//$act_styles = $this->micro_root_dir.'active-styles.css';
+		if (!isset($prev_asset_loading['html_mods'])){
+			$prev_asset_loading['html_mods'] = array();
+		}
 
 		// check for micro-themes folder and create if it doesn't exist
 		$this->setup_micro_themes_dir();
-
-		// bail if stylesheet isn't writable
-		/*if (file_exists($act_styles) && !is_writable($act_styles) ) {
-			$this->log(
-				esc_html__('Write stylesheet error', 'microthemer'),
-				'<p>' . esc_html__('WordPress does not have "write" permission for: ', 'microthemer')
-				. '<span title="'.$act_styles.'">'. $this->root_rel($act_styles) . '</span>
-						. '.$this->permissionshelp.'</p>'
-			);
-			return false;
-		}*/
 
 		// setup vars
 		$asset = array(
 			'global' => array(
 				'data' => '',
+				'data_active' => '',
 				'scss_data' => '',
-				'js_data' => ''
+				'scss_data_active' => '',
+				//'js_data' => '',
+				//'js_data_active' => '',
+				'html' => array(),
+				'html_mods' => array(),
 			),
 			'conditional' => array(),
 
@@ -805,9 +906,21 @@ trait SettingsTrait {
 				'conditional' => array(),
 
 				// ordered folder logic
-				'logic' => array()
+				'logic' => array(),
+
+				// HTML modifications
+				'html_mods' => array(), // all mod junctures (global or conditional)
 			),
+			'assetTypes' => $assetTypes,
+			'separatePublishData' => $contentTrial && $doPublish,
+			'contentTrial' => $contentTrial,
+			'doPublish' => $doPublish,
 		);
+
+		// Create store of CSS / JS snippets for insertion
+		if ($this->supportContent()){
+			$this->contentMethod('storeCSSSnippets', array(&$asset));
+		}
 
 		$title = '/*  MICROTHEMER STYLES  */' . "\n\n";
 
@@ -836,7 +949,7 @@ trait SettingsTrait {
 				}
 			}
 
-			// server-side scss or no scss support
+			// No scss support
 			else {
 				$custom_code.= $custom_code_comment . $this->options['non_section']['hand_coded_css'] ."\n";
 			}
@@ -915,8 +1028,12 @@ trait SettingsTrait {
 		$asset['preference']['global_g_fonts'] = !empty($g_fonts['g_fonts_used']) ? 1: 0;
 		$asset['preference']['global_css'] = $globalStylesheetRequired ? 1: 0;
 		$asset['preference']['global_js'] = $load_js ? 1: 0;
+
 		$asset['global']['js_data'] = $js_data;
 		$this->asset_loading_change = $this->checkAssetLoadingChange($asset['preference'], $prev_asset_loading);
+
+		// not sure if I need this
+		$this->html_mods_changed = $asset['preference']['html_mods'] != $prev_asset_loading['html_mods'];
 
 		// core preference values
 		$pref_array = array(
@@ -936,7 +1053,7 @@ trait SettingsTrait {
 		}
 
 		// track number of unpublished saves
-		if (empty($this->preferences['auto_publish_mode'])){
+		if (!$doPublish){
 			$pref_array['num_unpublished_saves'] = ++$this->preferences['num_unpublished_saves'];
 		}
 
@@ -970,7 +1087,7 @@ trait SettingsTrait {
 			);
 		}
 
-		$this->updateAssetFiles($asset, $globalStylesheetRequired);
+		$this->updateAssetFiles($asset, $assetTypes, $globalStylesheetRequired);
 
 	}
 
@@ -1064,30 +1181,146 @@ trait SettingsTrait {
 		return count($change) ? $change : false;
 	}
 
-	function updateAssetFiles($asset, $globalStylesheetRequired){
+	function getAssetDataKey($defaultKey, $assetType, $asset){
+		$activeDataKey = $defaultKey . '_active';
+		return $assetType === 'active' && $asset['separatePublishData']
+			? $activeDataKey
+			: $defaultKey;
+	}
 
+	function updateAssetFiles($asset, $assetTypes, $globalStylesheetRequired){
+
+		// HTML modification
+
+		$staleMods = array();
+		$insertOrUpdate = array();
+
+		// We only clean up mods if draft is being checked - otherwise we delete erroneously
+		if (!empty($assetTypes['draft'])){
+			$existingMods = $this->contentMethod('getExistingMods', array(0));
+			if ($existingMods){
+				foreach ($existingMods as $row){
+					$staleMods[$row['slug']] = 1;
+				}
+			}
+		}
+
+		// prepare any Global HTML for DB delete
+		if (count($asset['global']['html'])){
+			$slug = 'mt_collective_global';
+			$insertOrUpdate[$slug] = json_encode($asset['global']['html']);
+			unset($staleMods[$slug]);
+		}
+
+		// CSS paths
 		$root = $this->micro_root_dir;
-		$conditionalDir = $root . 'mt/conditional/draft/';
-		$global_css =  $root . 'draft-styles.css';
-		$global_scss =  $root . 'draft-styles.scss';
-		$global_js =  $root . 'draft-scripts.js';
+		$minifyCSS = !empty($this->preferences['minify_css']);
+		$minifyJS = !empty($this->preferences['minify_js']);
 
 		// The Gutenberg FSE editor will not load CSS in the iframe if the file does not contain
 		// .wp-block. So ensure all MT CSS has this.
-		$fseFix = $this->supportAdminAssets() ?  '.wp-block {} /*  (.wp-block {} ensures MT files load in Gutenberg editor) */' . "\n" : '';
+		$fseFix = $this->supportAdminAssets()
+			?  '.wp-block {} /*  (.wp-block {} ensures MT files load in Gutenberg editor) */' . "\n\n"
+			: '';
+		$globalAssets = array(
+			'scss' => array(
+				'file' => 'styles.scss',
+				'key' => 'scss_data',
+				'write' => !empty($asset['global']['scss_data']),
+				'minify' => false
+			),
+			'css' => array(
+				'file' => 'styles.css',
+				'key' => 'data',
+				'write' => $globalStylesheetRequired,
+				'minify' => $minifyCSS
+			),
+			'js' => array(
+				'file' => 'scripts.js',
+				'key' => 'js_data',
+				'write' => !empty($asset['global']['js_data']),
+				'minify' => $minifyJS
+			)
+		);
 
-		// we only minified published assets, if that preferences is set (on by default)
-		/*$minifyCSS = !empty($this->preferences['minify_css']);
-		$minifyJS = !empty($this->preferences['minify_js']);*/
-		$minifyCSS = false;
-		$minifyJS = false;
+		// write any global Sass, CSS, or JS for draft/active
+		foreach ($assetTypes as $assetType => $array){
+			foreach ($globalAssets as $dataType => $config){
+				$file = $root . $assetType . '-' . $config['file'];
+				$prefix = $dataType === 'css' ? $fseFix : '';
+				$minify = $assetType === 'active' && $config['minify'];
+				$dataKey = $this->getAssetDataKey($config['key'], $assetType, $asset);
 
-		// write any global styles
-		if ($globalStylesheetRequired){
-			$this->write_file($global_css, $fseFix . $asset['global']['data'], $minifyCSS, 'css');
-		} elseif (file_exists($global_css)) {
-			unlink($global_css);
+				// Write to or remove file
+				if ( $config['write']){
+					$this->write_file(
+						$file, $prefix . $asset['global'][$dataKey], $minify, $dataType
+					);
+				} elseif (file_exists($file)) {
+					unlink($file);
+				}
+			}
 		}
+
+		// write any conditional styles
+		if (count($asset['conditional'])){
+
+			foreach ($assetTypes as $assetType => $array){
+
+				$conditionalDir = $root . 'mt/conditional/'.$assetType.'/';
+
+				// list of existing files to compare with current files, and possibly cleaned
+				$previousFiles = $this->getDirectoryFileList($conditionalDir);
+				$currentFiles = array();
+
+				foreach ($asset['conditional'] as $folderSlug => $condSty){
+
+					// prepare any HTML mods for DB delete
+					if ($assetType === 'draft'){
+						if (!empty($condSty['html']) && is_array($condSty['html']) && count($condSty['html'])){
+							$insertOrUpdate[$folderSlug] = json_encode($condSty['html']);
+							unset($staleMods[$folderSlug]);
+						}
+					}
+
+					// CSS
+					$dataKey = $this->getAssetDataKey('data', $assetType, $asset);
+					if (!empty($condSty[$dataKey])){
+						$name = $folderSlug . '.css';
+						$file = $conditionalDir . $name;
+						$currentFiles[] = $name;
+						$minify = $minifyCSS && $assetType === 'active';
+						/*$this->log($folderSlug . ': '.$assetType, '<pre>'.print_r([
+								$asset['separatePublishData'], $folderSlug, $assetType, $dataKey, $condSty, $asset
+							], 1).'</pre>');*/
+
+						$this->write_file($file, $fseFix . $condSty[$dataKey], $minify, 'css');
+					}
+
+				}
+
+				// clean up any files that are no longer conditional / renamed
+				$redundantFiles = array_diff($previousFiles, $currentFiles);
+				foreach ($redundantFiles as $fileName){
+					unlink($conditionalDir . $fileName);
+				}
+
+			}
+
+		}
+
+		// maybe update the mods in the database
+		if (!empty($assetTypes['draft'])){
+			$this->contentMethod('maybeUpdateHTMLTable', array('folder_mod', $insertOrUpdate, $staleMods));
+		}
+
+
+		//$this->maybeUpdateHTMLTable($insertOrUpdate, $staleMods, 0);
+
+		// publish settings if auto-publish is on
+		/*if (!empty($this->preferences['auto_publish_mode'])){
+			$this->publishSettings();
+		}*/
 
 		/* debug
 		 * $this->log('An update', json_encode([
@@ -1096,54 +1329,12 @@ trait SettingsTrait {
 			'file' => $global_css
 		]));*/
 
-		// if Sass is enabled, write to global .scss file which holds all Sass (which has a single scope)
-		if ($this->preferences['allow_scss']){
-			$this->write_file($global_scss, $asset['global']['scss_data']);
-		}
-
-		// Write to global JavaScript file, or delete it
-		if ($asset['global']['js_data']){
-			$this->write_file($global_js, $asset['global']['js_data'], $minifyJS, 'js');
-		} elseif (file_exists($global_js)) {
-			unlink($global_js);
-		}
-
-		// write any conditional styles
-		if (count($asset['conditional'])){
-
-			// list of existing files to compare with current files, and possibly cleaned
-			$previousFiles = $this->getDirectoryFileList($conditionalDir);
-			$currentFiles = array();
-
-			foreach ($asset['conditional'] as $folderSlug => $condSty){
-
-				if (empty($condSty['data'])){
-					continue;
-				}
-
-				$name = $folderSlug . '.css';
-				$file = $conditionalDir . $name;
-				$currentFiles[] = $name;
-
-				$this->write_file($file, $fseFix . $condSty['data'], $minifyCSS, 'css');
-			}
-
-			// clean up any files that are no longer conditional / renamed
-			$redundantFiles = array_diff($previousFiles, $currentFiles);
-			foreach ($redundantFiles as $fileName){
-				unlink($conditionalDir . $fileName);
-			}
-		}
-
-		// publish settings if auto-publish is on
-		if (!empty($this->preferences['auto_publish_mode'])){
-			$this->publishSettings();
-		}
-
 	}
 
+
+
 	// transform MT form settings into stylesheet data
-	function convert_ui_data($ui_data, &$asset, $con, $mq_key = '1') {
+	function convert_ui_data(&$ui_data, &$asset, $con, $mq_key = '1') {
 
 		$tab = $sec_breaks = $mq_line = "";
 		$sassToo = $this->client_scss();
@@ -1196,21 +1387,29 @@ trait SettingsTrait {
 
 					// update the asset_loading preference data
 					$asset['preference']['conditional'][$section_name] = $emptyFolder ? 'empty' : 1;
-					$asset['preference']['logic'][] = array_merge(
-						$this->options[$section_name]['this']['logic'],
-						array(
-							'slug' => $section_name,
-							//'isEmpty' => $emptyFolder
-						)
-					);
 
 					// Prepare asset data keys if the folder is not empty
 					if (!$emptyFolder){
+
+						$asset['preference']['logic'][] = array_merge(
+							$this->options[$section_name]['this']['logic'],
+							array(
+								'slug' => $section_name,
+							)
+						);
+
 						$asset['conditional'][$section_name] = array(
 							'data' => '',
+							'data_active' => '',
 							'scss_data' => '',
-							'js_data' => '',
-							'mq_opened' => 0
+							'scss_data_active' => '',
+							//'js_data' => '',
+							//'js_data_active' => '',
+							'mq_opened' => 0,
+							'html' => array(),
+							"html_mods" => array(),
+							'snippets' => array(),
+							//'auto_script_deps' => array(),
 						);
 					}
 				}
@@ -1239,7 +1438,7 @@ trait SettingsTrait {
 				$dataToUpdate['mq_opened'] = 1;
 			}
 
-			// flag if the folder is disabled and
+			// flag if the folder is disabled
 			$sectionIsDisabled = !empty($this->options[$section_name]['this']['disabled']);
 			if ($sectionIsDisabled){
 				$display_section_name.= ' ('.$this->dis_text.')';
@@ -1275,6 +1474,11 @@ trait SettingsTrait {
 				}
 				$label_array = explode('|', $sub_array['label']);
 				$css_label = $label_array[0];
+				$selectorCode = !empty($label_array[1]) ? $label_array[1] : null;
+				$xpath = !empty($this->options[$section_name][$css_selector]['xpath'])
+					? $this->options[$section_name][$css_selector]['xpath']
+					: '';
+
 				$sel_disabled = false;
 				if (!empty($sub_array['tab']['disabled']) ||
 				    !empty($this->options[$section_name][$css_selector]['disabled'])) {
@@ -1291,21 +1495,85 @@ trait SettingsTrait {
 					continue;
 				}
 
+				// Format HTML modification instruction
+				$html = null;
+				if (!empty($sub_array['styles']['html'])){
+
+					// get the juncture
+					/*$juncture = isset($sub_array['styles']['html']['juncture']['value'])
+						? $sub_array['styles']['html']['juncture']['value']
+						: 'serverHTMLReady';*/
+
+					// register that some Mods have been applied on the site (if none, we skip HTML parsing)
+					$asset['preference']['html_mods']['all'] = 1; // all mod junctures
+
+					// Flag that the Folder is applying mods
+					if ($sectionLoading === 'conditional'){
+						$asset['preference']['html_mods']['conditional'][$section_name]['folder'] = 1;
+					} else {
+						$asset['preference']['html_mods']['global']['folder'] = 1;
+					}
+
+					// Flag that the folder references snippets
+					$snippetCollection = array(
+						'css' => '',
+					);
+					if (isset($sub_array['styles']['html']['snippet_id']['value'])){
+
+						//$this->log('cssSnippets', '<pre>'.print_r([$sub_array['styles']['html']['snippet_id']['value'], $asset['snippets']['css']], 1).'</pre>');
+
+						foreach($sub_array['styles']['html']['snippet_id']['value'] as $snippet_id){
+							if ($sectionLoading === 'conditional'){
+								$asset['preference']['html_mods']['conditional'][$section_name]['snippets'][$snippet_id] = 1;
+							} else {
+								$asset['preference']['html_mods']['global']['snippets'][$snippet_id] = 1;
+							}
+
+							// Generate Snippet CSS string
+							foreach ($snippetCollection as $type => $value){
+								if (!empty($asset['snippets'][$type][$snippet_id])){
+									$snippetCollection[$type].= "$tab/*^^ $type snippet ($snippet_id) ^^*/\n$tab"
+									               . $asset['snippets'][$type][$snippet_id] . "\n\n";
+								}
+							}
+
+						}
+					}
+
+					// prepare data for updateStyleData()
+					$html = array(
+						'mq_key' => $mq_key === '1' ? 'all-devices' : $mq_key,
+						'mq_query' => !empty($mq_query) ? $mq_query : '',
+						'sectionSlug' => $section_name,
+						'selectorSlug' => $css_selector,
+						'selectorCode' => $selectorCode,
+						'xpath' => $xpath,
+						'mod' => $this->convertModArrayFormat($sub_array['styles']['html'], $sub_array),
+						'snippetCollection' => $snippetCollection
+					);
+
+				}
+
+
+				$string = !empty($sub_array['compiled_css'])
+					? $this->normalise_tabs(
+						$this->normalise_line_breaks($sub_array['compiled_css']), $tab
+					)
+					: false;
+				$string2 = $sassToo && !empty($sub_array['raw_scss'])
+					? $this->normalise_tabs(
+						$this->normalise_line_breaks($sub_array['raw_scss']), $tab, true
+					)
+					: false;
+
 				// add selector data
 				$this->updateStyleData(
 					$sassToo,
 					$asset,
 					$dataToUpdate,
-					$this->normalise_tabs(
-						$this->normalise_line_breaks($sub_array['compiled_css']), $tab
-					),
-					($sassToo
-						? $this->normalise_tabs(
-							$this->normalise_line_breaks($sub_array['raw_scss']), $tab, true
-						)
-						: null
-					)
-
+					$string,
+					$string2,
+					$html
 				);
 
 			}
@@ -1340,17 +1608,78 @@ trait SettingsTrait {
 		//return $asset;
 	}
 
-	// update the css and possible sass data strings
-	function updateStyleData($sassToo, &$asset, &$dataToUpdate, $string, $string2 = false){
+	function convertModArrayFormat($modData, $sub_array){
+		$mods = array();
+		foreach ($modData as $prop => $data){
+			foreach ($data as $key => $values){
+				foreach ($values as $index => $value){
 
-		$dataToUpdate['data'].= $string;
+					// Check if tab is disabled
+					$isDisabled = !empty($sub_array['pg_disabled']['changehtml'][$index]);
+
+					// don't use $key so we remove value final nested level
+					if (!$isDisabled && !is_null($value)){
+						$mods[$index][$prop] = $value;
+					}
+
+				}
+			}
+		}
+		return $mods;
+	}
+
+	// update the css and possible sass data strings
+	function updateStyleData($sassToo, &$asset, &$dataToUpdate, $string, $string2 = false, $html = null){
+		
+		if ($string !== false){
+
+			$dataToUpdate['data'].= $string;
+
+			if ($asset['separatePublishData']){
+				$dataToUpdate['data_active'].= $string;
+			}
+		}
 
 		// for now, we still add all SCSS to a single global file.
 		// This kind of makes sense because the Sass is processed in a single global scope,
 		// Even if the output CSS is distributed between separate files
 		if ($sassToo){
-			$asset['global']['scss_data'].= ($string2 ?: $string);
+			$resolvedString = ($string2 ?: $string);
+			if ($resolvedString !== false){
+				$asset['global']['scss_data'].= $resolvedString;
+				if ($asset['separatePublishData']){
+					$dataToUpdate['scss_data_active'].= $resolvedString;
+				}
+				/*if (!empty($html['snippetCollection']['css'])) {
+					$dataToUpdate['scss_data'].= $html['snippetCollection']['css'];
+				}*/
+			}
 		}
+
+		// Add any HTML data
+		if ($html){
+			$dataToUpdate['html'][$html['sectionSlug']][$html['mq_key']]['mq_query'] = $html['mq_query'];
+			$dataToUpdate['html'][$html['sectionSlug']][$html['mq_key']]['selectors'][$html['selectorSlug']] = array(
+				'selectorCode' => $html['selectorCode'],
+				'xpath' => $html['xpath'],
+				'mods' => $html['mod']
+			);
+
+			foreach ($html['snippetCollection'] as $type => $content){
+				if ($content){
+					if ($type === 'css'){
+						$dataToUpdate['data'].= $content;
+					}
+				}
+			}
+
+
+
+			/*else {
+				$this->log('cssSnippets NOT added', $html['cssSnippets']);
+			}*/
+		}
+
 
 	}
 

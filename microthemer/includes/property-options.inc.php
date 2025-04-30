@@ -497,7 +497,7 @@ $row_gap_config = array(
 // the property options
 $propertyOptions = array();
 
-// Custom code
+// Custom CSS code
 $propertyOptions['code']['css'] = array(
 	'short_label' => esc_html__('Editor', 'microthemer'),
 	'label' => esc_attr__('Editor', 'microthemer'),
@@ -528,6 +528,272 @@ $propertyOptions['code']['css'] = array(
 		),
 	)
 );
+
+// New HTML modification
+
+
+// Modification action
+$propertyOptions['html']['action'] = array(
+	'short_label' => esc_html_x('Action', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Modification action', 'noun', 'microthemer'),
+	'pg_label' => esc_attr__('Amender', 'microthemer'),
+	'sub_label' => esc_html__('Change', 'microthemer'),
+	'text_before' => '<span class="toggle-action-aspect"><span>action</span> <span>aspect</span></span>',
+	'sub_slug' => 'changehtml',
+	'field-class' => 'conditional-field',
+	'input-class' => 'size-4',
+	'type' => 'combobox',
+	'defVal' => 'none',
+	// ref
+	'ref_desc' => "<p>The modification action to take on the elements.</p>",
+);
+
+
+// Action/aspect preset that get's set if the user makes an adjustment
+/*$propertyOptions['html']['preset'] = array(
+	'short_label' => esc_html_x('Action-Aspect Preset', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Action-Aspect Preset', 'noun', 'microthemer'),
+	'field-class' => 'hidden',
+	'input-class' => 'html-preset',
+	'ref_desc' => "<p>Hidden input for storing preset</p>",
+);*/
+
+// Move
+$propertyOptions['html']['move_to_display'] = array(
+	'short_label' => esc_html_x('Move to display field', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Move to display field', 'noun', 'microthemer'),
+	'field-class' => 'hidden', // hidden
+	'input-class' => 'move-to-display-input',
+	// ref
+	'ref_desc' => "<p>Hidden input for storing display state</p>",
+);
+
+// Dynamic name attribute move_to_selector (default) | move_to_relative
+$propertyOptions['html']['move_to_selector'] = array(
+	'short_label' => esc_html_x('Move to (selector)', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Move to', 'noun', 'microthemer'),
+	'field-class' => 'conditional-field binary-display-field',
+	'input-class' => 'size-4',
+	//'type' => 'combobox',
+	'defVal' => 'none',
+	'sug_values' => array(
+		'this' => 1
+	),
+	// ref
+	'ref_desc' => "<p>A selector to define where to move the element to</p>",
+);
+
+$propertyOptions['html']['move_to_relative'] = array(
+	'short_label' => esc_html_x('Move to (relative)', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Move to (relative)', 'noun', 'microthemer'),
+	'field-class' => 'conditional-field binary-display-field',
+	'input-class' => 'size-4',
+	//'type' => 'combobox',
+	'defVal' => 'none',
+	'select_options' => array(
+		'parent().parent()',
+		'closest(.container).find(.item)',
+		'previous',
+		'next',
+	),
+	'sug_values' => array(
+		'this' => 1
+	),
+	// ref
+	'ref_desc' => "<p>jQuery-style relative element selection.</p>",
+);
+
+$propertyOptions['html']['move_action'] = array(
+	'short_label' => esc_html_x('Destination action', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Destination action', 'noun', 'microthemer'),
+	'field-class' => 'conditional-field',
+	'input-class' => 'size-4',
+	'type' => 'combobox',
+	'defVal' => 'append',
+	// ref
+	'ref_desc' => "<p>The move action</p>",
+);
+
+$propertyOptions['html']['move_relative_dom'] = array(
+	'short_label' => esc_html_x('Move relative', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Move relative', 'noun', 'microthemer'),
+	'field-class' => 'hidden',
+	'input-class' => 'size-4',
+	'type' => 'combobox',
+	// ref
+	'ref_desc' => "<p>Store relative dom expression</p>",
+);
+
+$propertyOptions['html']['lazy_id'] = array(
+	'short_label' => esc_html_x('Lazy Id', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Lazy Id', 'noun', 'microthemer'),
+	'field-class' => 'hidden',
+	'input-class' => 'size-4',
+	'type' => 'combobox',
+	// ref
+	'ref_desc' => "<p>The id for lazy loading</p>",
+);
+
+// Modification aspect
+$propertyOptions['html']['aspect'] = array(
+	'short_label' => esc_html__('Aspect',  'microthemer'),
+	'label' => esc_html__('Modification aspect',  'microthemer'),
+	//'dynamic_fields' => 'aspect',
+	'field-class' => 'conditional-field',
+	'input-class' => 'size-4 mod-aspect',
+	'type' => 'combobox',
+	'defVal' => 'html',
+	// ref
+	'ref_desc' => "<p>Which aspect of the element to modify.</p>",
+);
+
+// Modification find pattern
+$propertyOptions['html']['find'] = array(
+	'short_label' => esc_html_x('Find', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Search string / pattern', 'noun', 'microthemer'),
+	'field-class' => 'conditional-field',
+	'input-class' => 'size-4',
+	'type' => 'textarea',
+	'defVal' => 'none',
+	'sug_values' => array(
+		'this' => 1
+	),
+	// ref
+	'ref_desc' => "<p>The text string or /regex/ pattern to search for.</p>",
+);
+
+// Modification new tag
+$propertyOptions['html']['tag'] = array(
+	'short_label' => esc_html_x('Tag', 'noun', 'microthemer'),
+	'label' => esc_attr_x('HTML Tag', 'noun', 'microthemer'),
+	'field-class' => 'conditional-field',
+	'input-class' => 'size-4',
+	//'type' => 'combobox',
+	'defVal' => 'div',
+	'sug_values' => array(
+		'this' => 1
+	),
+	// ref
+	'ref_desc' => "<p>The HTML tag for use with parent or child wrappers.</p>",
+);
+
+// Modification attribute - just use aspect (unless some reason why we need this)
+$propertyOptions['html']['attribute'] = array(
+	'short_label' => esc_html__('Attribute',  'microthemer'),
+	'label' => esc_html__('Modification attribute',  'microthemer'),
+	//'dynamic_fields' => 'attribute',
+	'field-class' => 'hidden',
+	'input-class' => 'size-4',
+	'type' => 'combobox',
+	// ref
+	'ref_desc' => "<p>Hidden, but keeping for combo data.</p>",
+);
+
+$propertyOptions['html']['xpath'] = array(
+	'short_label' => esc_html_x('xPath', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Modification xpath', 'noun', 'microthemer'),
+	'field-class' => 'hidden',
+	'input-class' => 'mt-resolved-xpath',
+	'type' => 'combobox',
+	// ref
+	'ref_desc' => "<p>Hidden field that stores the converted xpath.</p>",
+);
+
+// Modification text - for e.g. classes or other small text-only values that don't need to be snippet templates
+// stored in micro_content DB table
+$propertyOptions['html']['text'] = array(
+	'short_label' => esc_html_x('Text', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Modification text', 'noun', 'microthemer'),
+	//'sub_label' => esc_html__('Content', 'microthemer'), // fine to just have all options under 'Change'
+	//'sub_slug' => 'newhtml',
+	'field-class' => 'field-is-full-width conditional-field',
+	'input-class' => 'size-4',
+	'type' => 'combobox',
+	'defVal' => '',
+	// ref
+	'ref_desc' => "<p>The text content.</p>",
+);
+
+// Modification template - run a function - I'm hiding it, do I need it?
+$propertyOptions['html']['run_function'] = array(
+	'short_label' => esc_html_x('Function to run', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Function to run', 'noun', 'microthemer'),
+	'field-class' => 'hidden field-is-full-width',
+	'input-class' => 'size-4 mt-function-to-run',
+	'type' => 'combobox',
+	'defVal' => 'none',
+	// ref
+	'ref_desc' => "<p>Select which function to run.</p>",
+);
+
+// Modification template - reference an MT snippet
+$propertyOptions['html']['snippet_id'] = array(
+	'short_label' => esc_html_x('Load a Snippet', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Load a Snippet', 'noun', 'microthemer'),
+	'field-class' => 'hidden', // hidden
+	'input-class' => 'size-4 mt-snippet-id',
+	//'type' => 'combobox',
+	// ref
+	'ref_desc' => "<p>Hidden field to store the snippet id</p>",
+);
+
+// Modification value - new (snippet) content
+$propertyOptions['html']['snippet'] = array(
+	'short_label' => esc_html_x('Snippet Code', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Snippet Code', 'noun', 'microthemer'),
+	'field-class' => 'field-is-full-width conditional-field',
+	'input-class' => 'tvr-editor-hidden',
+	'type' => 'textarea',
+	'defVal' => '',
+	// ref
+	'ref_desc' => "<p>The code snippet to be used on the page.</p>",
+);
+
+// Modification template - reference an MT snippet
+/*$propertyOptions['html']['load_snippet'] = array(
+	'short_label' => esc_html_x('Load snippet', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Load snippet', 'noun', 'microthemer'),
+	'field-class' => 'field-is-full-width conditional-field',
+	'input-class' => 'size-4 mt-load-snippet',
+	'type' => 'combobox',
+	'defVal' => 'Search snippets',
+	// ref
+	'ref_desc' => "<p>Load a previously created code snippet.</p>",
+);*/
+
+// Modification juncture
+$propertyOptions['html']['juncture'] = array(
+	'short_label' => esc_html__('Event',  'microthemer'),
+	'label' => esc_html__('Modification event', 'microthemer'),
+	/*'sub_label' => esc_html__('Target', 'microthemer'),
+	'sub_slug' => 'targethtml',*/
+	'field-class' => 'field-is-full-width',
+	'input-class' => 'size-4',
+	//'type' => 'combobox',
+	'defVal' => 'DOMContentLoaded',
+	'sug_values' => array(
+		'this' => 1
+	),
+	'ref_desc' => "<p>Choose when the modification should be applied.</p>",
+);
+
+// Modification selector
+$propertyOptions['html']['selector'] = array(
+	'short_label' => esc_html_x('Selector', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Modification selector', 'noun', 'microthemer'),
+	'field-class' => 'field-is-full-width',
+	'input-class' => 'selector-override',
+	//'dynamic_fields' => 'selector',
+	//'type' => 'combobox',
+	'defVal' => '',
+	'sug_values' => array(
+		'this' => 1
+	),
+	// ref
+	'ref_desc' => "<p>A CSS selector that targets elements for modification.</p>",
+);
+
+
 
 // font
 // ------------------------------------------------------------

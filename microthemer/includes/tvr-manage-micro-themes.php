@@ -112,7 +112,7 @@ require_once('common-inline-assets.php');
 	                            'class' => 'quick-import show-parent-dialog',
 	                            'rel' => 'import-from-pack',
 	                            'data-pack-name' => $pack,
-	                            'title' => sprintf(esc_attr__('Import %s into the Microthemer interface', 'microthemer'), $name)
+	                            'title' => sprintf(esc_attr__('Import %s into the interface', 'microthemer'), $name)
                             ));
                             ?>
 

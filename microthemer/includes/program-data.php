@@ -26,7 +26,7 @@ $this->permissionshelp = esc_html__('Please see this help article for changing d
 $this->edge_mode = array(
 	'available' => false,
 	'edge_forum_url' => 'https://themeover.com/forum/topic/were-trialling-automatic-error-reporting/',
-	'cta' => __("Enable automatic error reporting so we can make Microthemer error free!", 'microthemer'),
+	'cta' => __("Enable automatic error reporting!", 'microthemer'),
 	'config' => array(
 		'error_reporting_trial' => 1
 	),
@@ -205,6 +205,74 @@ $this->folder_item_types = array(
 	),*/
 );
 
+// AI data
+$contentTypes = array(
+	'css' => esc_html__('CSS', 'microthemer'),
+	'html' => esc_html__('HTML', 'microthemer'),
+	//'js' => esc_html__('JS', 'microthemer'),
+);
+
+$this->aiData = array(
+	'contentTypes' => $contentTypes,
+	'previousScratchpad' => array(
+		'replace' => esc_html__('Replace', 'microthemer'),
+		'add' => esc_html__('Add to', 'microthemer'),
+	),
+	'tabs' => array_merge($contentTypes, array(
+		'css' => esc_html__('CSS', 'microthemer'),
+		'html' => esc_html__('HTML', 'microthemer'),
+		'js' => esc_html__('JS', 'microthemer'),
+	)),
+	'defaultTab' => $defaultTab = $this->hasCSSSubscription() ? 'css' : 'html',
+	'actions' => array(
+		// Generate new content for the page CSS / HTML / JS
+		'generate' => array(
+			'label' => esc_html__('Update page elements', 'microthemer'),
+			'scope' =>  array(
+				esc_html__('Selected element(s)', 'microthemer'),
+				esc_html__('Whole page', 'microthemer')
+			),
+			'commit' =>  array(
+				'type' => array(
+					'css' => array(
+						esc_html__('UI selector(s)', 'microthemer'),
+						esc_html__('Code snippet', 'microthemer')
+					),
+					'html' => array(
+						esc_html__('Gutenberg block(s)', 'microthemer'),
+						esc_html__('Code snippet', 'microthemer')
+					)
+				),
+				'location' => array(
+					'folder' => array(
+						'label' => esc_html__('Add to folder', 'microthemer'),
+					),
+					'sub_folder' => array(
+						'label' => esc_html__('As sub-folder', 'microthemer'),
+					),
+				)
+			)
+		),
+
+		// Act on Microthemer's CSS / HTML / JS settings via an internal API
+		// Open AI will generate an array of functions to call
+		'edit' => array(
+			'label' => 'Edit '.$this->appName.' settings',
+			'scope' => array(
+				esc_html__('Current item', 'microthemer'),
+				esc_html__('Current folder', 'microthemer'),
+				esc_html__('All folders', 'microthemer'),
+			)
+		),
+
+	),
+
+	'advanced' => array(
+		'title' => esc_html__('AI assistant settings', 'microthemer')
+	)
+
+);
+
 
 
 // to_autocomplete_arr
@@ -300,13 +368,13 @@ $this->css_filters = array(
 			// note, if changing key text - must update js_i18n_overlay.cur_pid_filter
 			'page-id' => array(
 				'text' => esc_html__('page-id', 'microthemer'),
-				'tip' => esc_attr__('Microthemer will add the page/post id, thus targeting only the current page.', 'microthemer'),
+				'tip' => esc_attr__('Add the page/post id, thus targeting only the current page.', 'microthemer'),
 				'common' => 1
 			),
 			// note, if changing key text - must update js_i18n_overlay.cur_pid_filter
 			'page-name' => array(
 				'text' => esc_html__('page-name', 'microthemer'),
-				'tip' => esc_attr__('Microthemer will add the page/post slug, an alternative way to target only the current page. But will need updating if you change the URL of the page.', 'microthemer'),
+				'tip' => esc_attr__('Add the page/post slug, an alternative way to target only the current page. This will need updating if you change the URL of the page.', 'microthemer'),
 			),
 			// allow custom prefix for selectors
 			'custom-prefix' => array(
@@ -627,6 +695,13 @@ $default_asset_loading_config = array(
 	'global_g_fonts' => 0,
 	'conditional' => array(),
 	'logic' => array(),
+
+	// may not be defined for updaters
+	"html_mods" => array(
+		'global' => array(),
+		'conditional' => array(),
+		'all' => array()
+	),
 );
 
 // Initial Setup Preference Options
@@ -641,8 +716,8 @@ $this->initial_preference_options = array(
 		'explain' => __('Enable this option if you want to write raw Sass code in the custom code editors or use Sass variables and mixins etc in the GUI fields. Disable this option if you want the CSS code you write to be interchangeably editable with the GUI fields' , 'microthemer')
 	),
 	'mt_dark_mode' => array(
-		'label' => __('Use a dark theme for the Microthemer interface', 'microthemer'),
-		'explain' => __('Microthemer defaults to your light vs dark PC system preference, but you can switch MT\'s UI theme', 'microthemer')
+		'label' => __('Use a dark theme for the interface', 'microthemer'),
+		'explain' => __('Choose between a light vs dark theme', 'microthemer')
 	)
 );
 
@@ -674,8 +749,18 @@ $this->default_preferences = array(
 	"autofocus_editor" => 0,
 	"wireframe_mode" => 0,
 	"code_font_size" => 14,
+	"current_revision" => 0,
 	"allow_scss" => 0, // if enabled by default, invalid css/scss will prevent stylesheet update.
-	"add_block_classes_all" => 0,
+	"npm_dependencies" => (object) array(),
+	"npm_dependencies_published" => (object) array(), // published
+	"npm_dependencies_in_use" => (object) array(),
+	"npm_dependencies_detect" => 1,
+	"npm_default_local" => 0,
+	"npm_addon_files" => array(),
+	"ai_admin_access" => 0,
+	"ai_can" => 'edit',
+	"tailwind" => 0,
+	"default_amender_event" => 'DOMContentLoaded',
 	"sync_browser_tabs" => 1, // change for Gutenberg
 	"specificity_preference" => 1, // 1 = high, 0 = low
 	"wp55_jquery_version" => 0,
@@ -721,26 +806,27 @@ $this->default_preferences = array(
 	"expand_device_tabs" => 0,
 	"dock_wizard_right" => 0,
 	"dock_settings_right" => 0,
+	"dock_ai_right" => 0,
 	"detach_preview" => 0,
 	"layout" => array(
 		'preset' => 's', // maybe set this dynamically
 		'left' => array(
 			'items' => array(
 				'folders' => array(
-					'size' => 252, // 229
+					'size' => 282, // 229
 					'size_category' => 'sm',
 				),
 				'styles' => array(
-					'size' => 252,
+					'size' => 282,
 					'size_category' => 'sm'
 				),
 				'editor' => array(
-					'size' => 252,
+					'size' => 282,
 					'size_category' => 'sm'
 				),
 			),
-			'min_column_sizes' => array(252, 252, 180),
-			'column_sizes' => array(252, 252, 220),
+			'min_column_sizes' => array(282, 282, 282),
+			'column_sizes' => array(282, 282, 282),
 			'num_items_docked' => 0,
 			'num_columns' => 1,
 			'effective_num_columns' => 1,
@@ -752,20 +838,23 @@ $this->default_preferences = array(
 		'right' => array(
 			'items' => array(
 				'settings' => array(
-					'size' => 205,
+					'size' => 252,
 					'size_category' => 'sm'
 				),
-				'wizard' => array(
+				/*'wizard' => array(
 					'size' => 205,
+					'size_category' => 'sm'
+				),*/
+				'ai' => array(
+					'size' => 252,
 					'size_category' => 'sm'
 				),
 			),
-			'min_column_sizes' => array(205, 205),
-			'column_sizes' => array(205, 205),
+			'min_column_sizes' => array(252, 252),
+			'column_sizes' => array(252, 252),
 			'num_items_docked' => 0,
 			'num_columns' => 1,
-			'active_settings' => 'general',
-			'effective_num_columns' => 0,
+			'effective_num_columns' => 1,
 			'top_panel' => array(
 				'current' => false,
 				'previous' => false,
@@ -887,12 +976,22 @@ $this->page_class_prefix_options = array(
 // preferences that should not be reset if user resets global preferences
 $this->default_preferences_dont_reset_or_export = array(
 
+	"original_install" => $this->getAppName(0),
+	"content_addon" => 0,
+	"css_addon" => 0,
+
 	// Subscription contingent
 	"buyer_email" => '',
 	"buyer_validated" => false,
 	'retro_sub_check_done' => false,
 	"subscription" => $this->subscription_defaults,
 	"subscription_checks" => $this->subscription_check_defaults,
+
+	"amender_buyer_email" => '',
+	'amender_buyer_validated' => 1,
+	'amender_retro_sub_check_done' => false,
+	"amender_subscription" => $this->subscription_defaults,
+	"amender_subscription_checks" => $this->subscription_check_defaults,
 
 	// Site contingent
 	"version" => $this->version,
@@ -929,6 +1028,7 @@ $this->default_preferences_dont_reset_or_export = array(
 		$this->micro_root_url . 'active-styles.css'
 	),
 	"num_saves" => 0, // keep track of saves for caching purposes
+	"tailwind_num_saves" => 0,
 	"num_unpublished_saves" => 0,
 	"code_tabs" => $this->custom_code,
 
@@ -1184,6 +1284,189 @@ $system_fonts = array(
 $this->system_fonts = $this->to_autocomplete_arr($system_fonts);
 
 
+$addActions = array(
+	'add',
+	'append',
+	'prepend',
+	'insert before',
+	'insert after',
+);
+$this->modification = array(
+	'juncture' => $this->to_autocomplete_arr(array(
+		__('Server-side', 'microthemer') => array(
+			'serverHTMLReady',
+		),
+		__('Client-side', 'microthemer') => array(
+			'DOMContentLoaded',
+			'inview',
+			'inview_once',
+			'mouseenter',
+			'mouseover',
+			'mouseleave',
+			'mouseout',
+			'mousedown',
+			'click',
+			'focus',
+			'input',
+			'select',
+			'change',
+			'blur',
+		),
+	)),
+
+	'action' => $this->to_autocomplete_arr(array(
+		__('Add', 'microthemer') => $addActions,
+		__('Rearrange', 'microthemer') => array(
+			'replace',
+			'replace substring',
+			'lazyload',
+			'move',
+			'remove',
+		),
+		__('Run', 'microthemer') => array(
+			'run',
+		),
+
+	)),
+
+	// attributes are concatenated on the JS side for the menu
+	'aspect' => $this->to_autocomplete_arr(array(
+		__('General', 'microthemer') => array(
+			array(
+				'label' => 'text',
+				'value' => 'text',
+				'condition' => 'action:add:1'
+			),
+			/*array(
+				'label' => 'blocks',
+				'value' => 'blocks',
+				'condition' => 'action:add:1'
+			),*/
+			array(
+				'label' => 'html',
+				'value' => 'html',
+				'condition' => 'action:add:1'
+			),
+			array(
+				'label' => 'inner html',
+				'value' => 'inner html',
+				'condition' => 'action:add:0'
+			),
+			array(
+				'label' => 'parent wrapper',
+				'value' => 'parent wrapper',
+			),
+			array(
+				'label' => 'child wrapper',
+				'value' => 'child wrapper',
+			),
+
+			// raw CSS code in any format - will be added to <head> as style tag
+			array(
+				'label' => 'css',
+				'value' => 'css',
+				'condition' => 'action:add:1'
+			),
+
+			// Raw JS code in any format - will be added before closing <body> as script tag following deps
+			array(
+				'label' => 'js',
+				'value' => 'js',
+				'condition' => 'action:add:1'
+			),
+
+			// For running single functions in response to events
+			array(
+				'label' => 'function',
+				'value' => 'function',
+				'condition' => 'action:add:1'
+			),
+		),
+		/*__('Integrations', 'microthemer') => array(
+			array(
+				'label' => 'wp pattern',
+				'value' => 'wp pattern',
+			),
+			array(
+				'label' => 'wp navigation',
+				'value' => 'wp navigation',
+			),
+			array(
+				'label' => 'bricks template',
+				'value' => 'bricks template',
+			),
+			array(
+				'label' => 'acf field',
+				'value' => 'acf field',
+			),
+		),*/
+	)),
+
+	'move_action' => $this->to_autocomplete_arr(array(
+		__('Add', 'microthemer') => $addActions,
+	)),
+
+	'attribute' => $this->to_autocomplete_arr(array(
+		'Multiple attributes' => array(
+			'attributes string'
+		),
+		__('Common attributes', 'microthemer') => array(
+			'alt',
+			'class',
+			'height',
+			'href',
+			'id',
+			'rel',
+			'src',
+			'style',
+			'target',
+			'title',
+			'width',
+		),
+		/*__('Form attributes', 'microthemer') => array(
+			'autocomplete',
+			'checked',
+			'for',
+			'name',
+			'required',
+			'selected',
+			'type',
+			'value'
+		),
+		__('JavaScript event attributes', 'microthemer') => array(
+			'onblur',
+			'onchange',
+			'onclick',
+			'onfocus',
+			'oninput',
+			'onload',
+			'onmouseover',
+			'onmouseout',
+			'onmousemove',
+			'onselect'
+		),
+		'Alpine.js attributes' => array(
+			'x-data',
+			'x-bind',
+			'x-on',
+			'x-text',
+			'x-html',
+			'x-model',
+			'x-show',
+			'x-transition',
+			'x-for',
+			'x-if',
+			'x-init',
+			'x-effect',
+			'x-ref',
+			'x-cloak',
+			'x-ignore',
+		),*/
+	))
+);
+
+
+
 // enq_js
 $this->enq_js_structure = array( // structure
 	'slug' => 'enq_js',
@@ -1284,7 +1567,7 @@ $this->menu = array(
 
 			'initial_setup' => array(
 				'name' => esc_html__('Setup', 'microthemer'),
-				'title' => esc_attr__('Microthemer Setup', 'microthemer'),
+				'title' => $this->appNameFull . ' ' . esc_attr__('Setup', 'microthemer'),
 				'dialog' => 1,
 				'class' => 'mt-initial-setup',
 				'icon_name' => 'box-open'
@@ -1304,7 +1587,7 @@ $this->menu = array(
 			'generated' => array(
 				//'new_set' => 1,
 				'name' => esc_html__('Generated code', 'microthemer'),
-				'title' => esc_attr__('View the code Microthemer generates', 'microthemer'),
+				'title' => sprintf(esc_attr__('View the code %s generates', 'microthemer'), $this->appName),
 				'dialog' => 1,
 				'class' => 'display-css-code',
 				'icon_name' => 'view-code',
@@ -1407,7 +1690,7 @@ $this->menu = array(
 			'sync_browser_tabs' => array(
 				//'icon_title' => '',
 				'name' => esc_html__('Sync browser tabs', 'microthemer'),
-				'title' => esc_attr__("Auto-refresh Microthemer CSS in other browser tabs", 'microthemer'),
+				'title' => sprintf(esc_attr__("Auto-refresh %s CSS in other browser tabs", 'microthemer'), $this->appName),
 				'class' => 'sync-browser-tabs',
 				'toggle' => !empty($this->preferences['sync_browser_tabs']),
 				'data-pos' => esc_attr__('Enable synced browser tabs', 'microthemer'),
@@ -1714,6 +1997,8 @@ $this->menu = array(
 
 						// RIGHT
 
+
+
 						// dock_settings_right
 						'dock_settings_right' => array(
 							'new_set' => esc_html__('Right sidebar', 'microthemer'),
@@ -1723,6 +2008,18 @@ $this->menu = array(
 							'toggle' => !empty($this->preferences['dock_settings_right']),
 							'data-pos' => esc_attr__('Dock program settings right', 'microthemer'),
 							'data-neg' => esc_attr__('Undock program settings', 'microthemer'),
+							'data_attr' => array(
+								'layout-preset' => 'view'
+							)
+						),
+
+						'dock_ai_right' => array(
+							'name' => esc_html__('Dock AI right', 'microthemer'),
+							'title' => esc_attr__("Dock AI assistant right", 'microthemer'),
+							'class' => 'toggle-dock-ai-right',
+							'toggle' => !empty($this->preferences['dock_ai_right']),
+							'data-pos' => esc_attr__('Dock AI assistant right', 'microthemer'),
+							'data-neg' => esc_attr__('Undock AI assistant', 'microthemer'),
 							'data_attr' => array(
 								'layout-preset' => 'view'
 							)
@@ -1752,7 +2049,7 @@ $this->menu = array(
 						),
 
 						// Num right columns
-						/*'right_sidebar_columns' => array(
+						'right_sidebar_columns' => array(
 							'name' => esc_html__('Number of columns', 'microthemer'),
 							'title' => esc_attr__("Display right docked content in one or more columns", 'microthemer'),
 							'class' => 'right-sidebar-layout has-select-menu',
@@ -1761,7 +2058,7 @@ $this->menu = array(
 								'layout-preset' => 'view',
 								'aspect' => 'right_sidebar_columns'
 							)
-						),*/
+						),
 					)
 				),
 			),
@@ -1780,15 +2077,15 @@ $this->menu = array(
 				'dialog' => 1
 			),
 			'import' => array(
-				'name' => esc_html__('Import CSS', 'microthemer'),
+				'name' => esc_html__('Import Settings', 'microthemer'),
 				'title' => esc_attr__("Import from a design pack or CSS stylesheet", 'microthemer'),
 				'class' => 'import-from-pack',
 				'icon_name' => 'import',
 				'dialog' => 1
 			),
 			'export' => array(
-				'name' => esc_html__('Export CSS', 'microthemer'),
-				'title' => esc_attr__("Export your CSS to a design pack", 'microthemer'),
+				'name' => esc_html__('Export Settings', 'microthemer'),
+				'title' => esc_attr__("Export your settings to a design pack", 'microthemer'),
 				'class' => 'export-to-pack',
 				'icon_name' => 'export',
 				'dialog' => 1
@@ -1809,21 +2106,12 @@ $this->menu = array(
 	),
 
 	'support' => array(
-		'name' => esc_html__('Help', 'microthemer'),
+		'name' => esc_html__('Microthemer Help', 'microthemer'),
 		'icon_class' => 'help-icon',
 		'sub' => array(
-			/*'start_tips' => array(
-				'name' => esc_html__('Getting started tips', 'microthemer'),
-				'title' => esc_attr__("Quick tips on how to use Microthemer", 'microthemer'),
-				'class' => 'program-docs',
-				'data_attr' => array(
-					'docs-index' => 1
-				),
-				'dialog' => 1
-			),*/
 			'video' => array(
-				'name' => esc_html__('Getting started video', 'microthemer'),
-				'title' => esc_attr__("Quick start and in-depth video rolled into one",
+				'name' => esc_html__('Microthemer video', 'microthemer'),
+				'title' => esc_attr__("Microthemer basic workflow",
 					'microthemer'),
 				'class' => 'demo-video',
 				'icon_name' => 'play',
@@ -1840,7 +2128,7 @@ $this->menu = array(
 				'item_link' => 'https://themeover.com/v6-to-v7-3-main-changes/'
 			),
 			'docs' => array(
-				'name' => esc_html__('Documentation', 'microthemer'),
+				'name' => esc_html__('Microthemer Docs', 'microthemer'),
 				'title' => esc_attr__("Learn how to use Microthemer", 'microthemer'),
 				'class' => 'online-docs',
 				'icon_name' => 'help',
@@ -1858,21 +2146,37 @@ $this->menu = array(
 				),
 				'dialog' => 1
 			),
-			// https://themeover.com/install-and-setup/
-			/*'responsive' => array(
-				'name' => esc_html__('Responsive tutorial', 'microthemer'),
-				'title' => esc_attr__("Learn the basics and CSS layout and responsive design", 'microthemer'),
-				'class' => 'responsive-tutorial',
-				'link_target' => '_blank',
-				'item_link' => 'https://themeover.com/html-css-responsive-design-wordpress-microthemer/'
-			),*/
 			'forum' => array(
-				'name' => esc_html__('Forum', 'microthemer'),
+				'name' => esc_html__('Microthemer Forum', 'microthemer'),
 				'title' => esc_attr__("Get help in the forum", 'microthemer'),
 				'class' => 'support-forum',
 				'icon_name' => 'forum',
 				'link_target' => '_blank',
 				'item_link' => 'https://themeover.com/forum/'
+			),
+		)
+	),
+
+	'amender_support' => array(
+		'name' => esc_html__('Amender Help', 'microthemer'),
+		'icon_class' => 'help-icon',
+		'sub' => array(
+			'video' => array(
+				'name' => esc_html__('Amender video', 'microthemer'),
+				'title' => esc_attr__("Amender basic workflow",
+					'microthemer'),
+				'class' => 'demo-video',
+				'icon_name' => 'play',
+				'link_target' => '_blank',
+				'item_link' => $this->amender_demo_video
+			),
+			'forum' => array(
+				'name' => esc_html__('Amender Forum', 'microthemer'),
+				'title' => esc_attr__("Get help in the forum", 'microthemer'),
+				'class' => 'support-forum',
+				'icon_name' => 'forum',
+				'link_target' => '_blank',
+				'item_link' => 'https://themeover.com/forum/amender'
 			),
 		)
 	),
@@ -1910,7 +2214,7 @@ $this->menu = array(
 			),
 			'outside' => array(
 				'name' => esc_html__('Edit page directly', 'microthemer'),
-				'title' => esc_attr__("Edit the page outside of Microthemer", 'microthemer'),
+				'title' => esc_attr__("Edit the page outside of", 'microthemer') . ' ' . $this->appName,
 				'class' => 'edit-page-directly',
 				'icon_name' => 'wordpress',
 				'item_link' => $this->preferences['preview_url'],

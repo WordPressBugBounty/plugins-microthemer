@@ -223,11 +223,7 @@ require_once('common-inline-assets.php');
 			<div id='edit-attachments' class='manage-content-wrap hidden'>
 				<div class="explain">
 					<div class="heading"><?php esc_html_e('About This Feature', 'microthemer'); ?></div>
-					<p><?php esc_html_e('Upload a screenshot image file 896px wide and 513px tall called "screenshot.gif/jpg/png" to give your design pack a nice thumbnail. It\'s important to upload a full-size thumbnail in the dimensions 896 x 513 or larger. Microthemer will crop your image to 896 x 513 if you upload a larger image. It will also automatically create a smaller version called screenshot-small.gif/jpg/png.','microthemer'); ?></p>
-					<p><?php echo wp_kses(
-							__('<b>Important Note:</b> As of version 3 Microthemer now uses the WordPress media manager for storing background images. It\'s therefore not necessary or advised to upload background images here. It\'s much better to upload them from the Microthemer UI page, when you select a background image for inclusion in your design.', 'microthemer'),
-							array( 'b' => array() )
-						); ?></p>
+					<p><?php esc_html_e('Upload a screenshot image file 896px wide and 513px tall called "screenshot.gif/jpg/png" to give your design pack a nice thumbnail. It\'s important to upload a full-size thumbnail in the dimensions 896 x 513 or larger. Images will be cropped to 896 x 513 if you upload a larger image.','microthemer'); ?></p>
 					<p><?php esc_html_e('Any images your design pack links to will be included in your design pack if you choose to download it as a zip file. When you install a design pack zip file, all the images will be copied to the WordPress media library. Image file paths will be updated accordingly.', 'microthemer'); ?></p>
 				</div>
 				<div class="heading"><?php esc_html_e('Design Pack Files', 'microthemer'); ?></div>
@@ -370,7 +366,7 @@ require_once('common-inline-assets.php');
 		<div class="explain">
 			<div class="heading"><?php esc_html_e('About this file', 'microthemer'); ?></div>
 			<div class="explain-config">
-				<p><?php esc_html_e('This is the configuration file which contains all of the Microthemer settings for this design pack. It is created automatically when you export your work. When you import a design pack into the Microthemer UI the style settings, media queries, and any custom CSS code are loaded from this file.', 'microthemer'); ?></p>
+				<p><?php esc_html_e('This is the configuration file which contains all of the settings for this design pack. It is created automatically when you export your work. When you import a design pack, the style settings, media queries, and any custom CSS code are loaded from this file.', 'microthemer'); ?></p>
 				<p><?php esc_html_e('You\'re not likely to want to manually edit this file. But occasionally programmers download it, do some find and replace adjustments, and then re-upload it using the "Upload File" button at the top of the design pack files table.', 'microthemer'); ?></p>
 			</div>
 			<div class="explain-meta">

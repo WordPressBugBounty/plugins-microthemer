@@ -61,5 +61,6 @@ if (!empty($p['clean_uninstall'])){
     delete_option($options_name);
     global $wpdb;
     $wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . 'micro_revisions');
+	$wpdb->query("DROP TABLE IF EXISTS " . $wpdb->prefix . 'micro_content');
     mt_destroy_dir( micro_themes_dir_best_guess() );
 }

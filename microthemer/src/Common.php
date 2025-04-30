@@ -83,6 +83,7 @@ class Common {
 				'withVal' => true,
 			),
 
+			// MT params
 			array(
 				'param' => 'mt_nonlog',
 				'withVal' => false,
@@ -91,6 +92,21 @@ class Common {
 				'param' => 'mto2_edit_link',
 				'withVal' => true,
 			),
+
+			// Amender
+			array(
+				'param' => 'dyn_amends',
+				'withVal' => false,
+			),
+			array(
+				'param' => 'debug_amends',
+				'withVal' => false,
+			),
+			array(
+				'param' => 'no_amends',
+				'withVal' => false,
+			),
+
 			array(
 				'param' => 'elementor-preview',
 				'withVal' => true,
@@ -398,7 +414,11 @@ class Common {
 	public static function updateLiveTemplateData($micro_root_dir){
 
 		Common::$live_post_content = stripslashes($_POST['live_post_content']);
-		Common::$live_template = stripslashes($_POST['live_template']);
+
+		if (isset($_POST['live_template'])){
+			Common::$live_template = stripslashes($_POST['live_template']);
+		}
+
 
 		if (Helper::$doDebug){
 			Helper::debug('updateLiveTemplateData');

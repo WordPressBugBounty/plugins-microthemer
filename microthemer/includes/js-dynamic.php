@@ -32,6 +32,11 @@ $data.= 'TvrMT.data.prog.combo.custom_paths = ' . json_encode($this->preferences
 // the last 30 page logic items
 $data.= 'TvrMT.data.prog.combo.recent_logic = ' . json_encode($this->preferences['recent_logic']) . ';' . "\n\n";
 
+// npm libraries - npm_version_input
+$data.= 'TvrMT.data.prog.combo.npm_dependencies = ' . json_encode(array()) . ';' . "\n\n";
+$data.= 'TvrMT.data.prog.combo.current_npm_dependencies = ' . json_encode(array()) . ';' . "\n\n";
+$data.= 'TvrMT.data.prog.combo.npm_version_input = ' . json_encode(array()) . ';' . "\n\n";
+
 // path to the icon font
 $data.= 'TvrMT.data.dyn.icon_font_face_style = ' . json_encode( array('css' => $this->load_icon_font(true)) ) . ';' ."\n\n";
 //'icon_font_face_style' => $this->load_icon_font(true),
@@ -100,6 +105,15 @@ $data.= 'TvrMT.data.dyn.micro_root_url = "' . $this->micro_root_url . '";' . "\n
 // the default site pages list (posts and pages limited to 30, more results collected on search)
 $data.= 'TvrMT.data.dyn.site_pages = ' . json_encode($this->get_site_pages()) . ';' . "\n\n";
 
+// get a list of snippet names and cache the most recently updated
+$data.= 'TvrMT.data.dyn.snippets = ' . json_encode((object) array(
+		//'names' => (object) $this->contentMethod('getAllSnippetNames'),
+		'cache' => (object) $this->supportContent()
+			? $this->contentMethod('getSnippetCache', array('getSnippetsOfType'))
+			: array(), // merge snippets loading on the current page with this
+		'deleted' => (object) array() // for sending to the server-side script
+	)) . ';' . "\n\n";
+
 // the default site pages list (posts and pages limited to 30, more results collected on search)
 //$data.= 'TvrMT.data.dyn.site_pages = ' . json_encode($this->get_site_pages()) . ';' . "\n\n";
 
@@ -107,14 +121,19 @@ $data.= 'TvrMT.data.dyn.site_pages = ' . json_encode($this->get_site_pages()) . 
 //$data.= 'TvrMT.data.dyn.placeholderURLs = ' . json_encode($this->get_placeholder_urls()) . ';' . "\n\n";
 
 // dynamic menus: enq_js, mqs, custom code, animation, preset
-
+$current_user = wp_get_current_user();
 $data.= 'TvrMT.data.dyn.ui_config = ' . json_encode(array(
 	'mt_nonlog_nonce' => wp_create_nonce('mt_nonlog_check'), // note this won't work with browser sync enabled
 	'mt_builder_redirect_nonce' => wp_create_nonce('mt_builder_redirect_check'), // note this won't work with browser sync enabled
 	'preview_item_id' => $this->get_preview_item_id(),
 	'reporting' => $this->reporting,
 	'errorsRequiringData' => $this->errorsRequiringData,
-)) . ';' . "\n\n";
+	'locale' => $this->locale,
+	'user_display_name' => !empty($current_user->display_name) ? $current_user->display_name : '',
+	'supportContent' => $this->supportContent(),
+	'supportGUICSS' => $this->supportGUICSS(),
+	'appName' => $this->appName
+	)) . ';' . "\n\n";
 
 
 

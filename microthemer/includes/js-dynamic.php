@@ -132,7 +132,8 @@ $data.= 'TvrMT.data.dyn.ui_config = ' . json_encode(array(
 	'user_display_name' => !empty($current_user->display_name) ? $current_user->display_name : '',
 	'supportContent' => $this->supportContent(),
 	'supportGUICSS' => $this->supportGUICSS(),
-	'appName' => $this->appName
+	'appName' => $this->appName,
+	'plugin_version' => $this->version
 	)) . ';' . "\n\n";
 
 

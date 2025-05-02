@@ -79,6 +79,14 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.4.1.0 (May 2nd, 2024) =
+
+# Change
+* AI model options removed - that was left visible by mistake. They are just for testing models during my development of MT.
+
+# Bugs Fixed
+* The AI message was repeated in the chat if resending after a connection error.
+
 = 7.4.0.9 (April 30th, 2024) =
 
 # Enhancements

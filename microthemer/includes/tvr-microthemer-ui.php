@@ -651,8 +651,8 @@ require_once('common-inline-assets.php');
                     // AI assistant
                     echo $this->ui_toggle(
 	                    'ai_assistant',
-	                    esc_attr__('Expand AI assistant', 'microthemer'),
-	                    esc_attr__('Close AI assistant', 'microthemer'),
+	                    esc_attr__('AI assistant', 'microthemer'),
+	                    esc_attr__('AI assistant', 'microthemer'),
 	                    0,
 	                    'ai-expand-toggle ' . $this->iconFont('chatbot-icon', array('onlyClass' => 1)),
 	                    'mt-ai-assistant',
@@ -1221,38 +1221,36 @@ require_once('common-inline-assets.php');
                             <option value="edit" selected>Add & Edit</option>
                         </select>
 
+                        <label>AI model:</label>
 
+                        <select id="ai-model" name="model" class="mt-select">
+                            <optgroup label="Open AI">
+                                <option value="gpt-4o-turbo">gpt-4o-turbo</option>
+                                <option value="gpt-4o-mini">gpt-4o-mini</option>
+                                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                            </optgroup>
+                            <optgroup label="Anthropic">
+                                <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
+                                <option value="claude-3-5-haiku" >claude-3-5-haiku</option>
+                            </optgroup>
+                            <optgroup label="Google">
+
+                                <option value="gemini-2.5-pro-preview-03-25">gemini-2.5-pro-preview-03-25</option>
+                                <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp</option>
+                                <option value="gemini-2.5-flash-preview-04-17">gemini-2.5-flash-preview-04-17</option>
+
+                                <option value="gemini-2.0-flash-001" selected>gemini-2.0-flash</option>
+                                <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+                                <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
+
+                                <option value="gemini-2.0-flash-thinking-exp">gemini-2.0-flash-thinking-exp</option>
+                                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                                <option value="gemini-1.5-flash" >gemini-1.5-flash</option>
+                                <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b</option>
+                            </optgroup>
+                        </select>
 
                     </div>
-
-                    <label>AI model:</label>
-
-                    <select id="ai-model" name="model" class="mt-select">
-                        <optgroup label="Open AI">
-                            <option value="gpt-4o-turbo">gpt-4o-turbo</option>
-                            <option value="gpt-4o-mini">gpt-4o-mini</option>
-                            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-                        </optgroup>
-                        <optgroup label="Anthropic">
-                            <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
-                            <option value="claude-3-5-haiku" >claude-3-5-haiku</option>
-                        </optgroup>
-                        <optgroup label="Google">
-
-                            <option value="gemini-2.5-pro-preview-03-25">gemini-2.5-pro-preview-03-25</option>
-                            <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp</option>
-                            <option value="gemini-2.5-flash-preview-04-17">gemini-2.5-flash-preview-04-17</option>
-
-                            <option value="gemini-2.0-flash-001" selected>gemini-2.0-flash</option>
-                            <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
-                            <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
-
-                            <option value="gemini-2.0-flash-thinking-exp">gemini-2.0-flash-thinking-exp</option>
-                            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                            <option value="gemini-1.5-flash" >gemini-1.5-flash</option>
-                            <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b</option>
-                        </optgroup>
-                    </select>
 
                     <textarea id="tvr-ai-prompt" class="tvr-ai-prompt" name="ai_prompt" placeholder="<?php echo $this->supportContent() ? 'Request a website change' : 'Request a style change'; ?>"></textarea>
                     <span id="ai-send-prompt" class="tvr-button ai-send-prompt">Send</span>

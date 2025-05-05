@@ -500,7 +500,7 @@ trait FileTrait {
 
 	// Get a flat list of relative paths of files in directory and sub-directory
 	function getDirectoryFileList($directory, $relativePath = '') {
-		$fileList = [];
+		$fileList = array();
 		$items = scandir($directory);
 
 		foreach ($items as $item) {

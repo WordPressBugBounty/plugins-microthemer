@@ -5,7 +5,7 @@ Plugin URI: https://themeover.com/microthemer
 Text Domain: microthemer
 Domain Path: /languages
 Description: Microthemer is a powerful AI & visual CSS editor that cares about site performance.
-Version: 7.4.1.0
+Version: 7.4.1.2
 Author: Themeover
 Author URI: https://themeover.com
 */
@@ -40,11 +40,11 @@ if (!function_exists('initiateMicrothemer')){
 
 			// Only run admin code for a logged in Administrator
 			if (current_user_can('administrator')){
-				new Microthemer\Admin();
+				new \Microthemer\Admin();
 			}
 
 			// Public ajax
-			new Microthemer\AjaxPublic();
+			new \Microthemer\AjaxPublic();
 
 		}
 
@@ -53,12 +53,12 @@ if (!function_exists('initiateMicrothemer')){
 
 			// logged in Administrator viewing the frontend - include editing assets
 			if (current_user_can('administrator')){
-				new Microthemer\AssetAuth('edit');
+				new \Microthemer\AssetAuth('edit');
 			}
 
 			// Non-admin viewing the site - just load minimal CSS assets
 			else {
-				new Microthemer\AssetLoad();
+				new \Microthemer\AssetLoad();
 			}
 
 		}

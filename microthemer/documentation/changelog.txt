@@ -1,6 +1,16 @@
 CHANGELOG
 
-= 7.4.1.0 (May 2nd, 2024) =
+= 7.4.1.2 (May 5th, 2025) =
+
+# Bugs Fixed
+* There was a trailing comma in PHP code that could cause an issue for older PHP versions.
+
+= 7.4.1.1 (May 5th, 2025) =
+
+# Bugs Fixed
+* The changelog was referencing 2024 for 2025 updates.
+
+= 7.4.1.0 (May 2nd, 2025) =
 
 # Change
 * AI model options removed - that was left visible by mistake. They are just for testing models during my development of MT.
@@ -8,7 +18,7 @@ CHANGELOG
 # Bugs Fixed
 * The AI message was repeated in the chat if resending after a connection error.
 
-= 7.4.0.9 (April 30th, 2024) =
+= 7.4.0.9 (April 30th, 2025) =
 
 # Enhancements
 * Instant undo falls back to a server revision if not available in the browser cache.
@@ -19,29 +29,29 @@ CHANGELOG
 * AI retry could sometimes re-apply changes to the previously selected element.
 * Media query tabs were not dynamically added if the AI created a new breakpoint.
 
-= 7.4.0.8 (April 24th, 2024) =
+= 7.4.0.8 (April 24th, 2025) =
 
 # Enhancements
 * AI can detect pseudo elements ::before and ::after.
 
-= 7.4.0.7 (April 23rd, 2024) =
+= 7.4.0.7 (April 23rd, 2025) =
 
 # Enhancements
 * Better AI support for responsive styling.
 
-= 7.4.0.6 (April 22nd, 2024) =
+= 7.4.0.6 (April 22nd, 2025) =
 
 # Enhancements
 * AI assistant now available in the main release.
 * More room for chat / sketchpad with new chat icon at top right.
 
-= 7.4.0.5 beta (April 20th, 2024) =
+= 7.4.0.5 beta (April 20th, 2025) =
 
 # Enhancements
 * Improved effectiveness at complex tasks involving multiple elements.
 * Improved integration with Microthemer's stock animations.
 
-= 7.4.0.4 beta (April 18th, 2024) =
+= 7.4.0.4 beta (April 18th, 2025) =
 
 # Enhancements
 - Improvements to the reliability and simplicity of CSS selectors the AI assistant generates.
@@ -49,7 +59,7 @@ CHANGELOG
 # Bugs fixed
 - Saving settings could get stuck on very fast servers due to a timing bug.
 
-= 7.4.0.3 beta (April 10th, 2024) =
+= 7.4.0.3 beta (April 10th, 2025) =
 
 # Change
 - Regular auto-save system applies to AI edits too, with easy undo.
@@ -62,37 +72,37 @@ CHANGELOG
 * Undo icon next to each AI reply for easily jumping back one or more steps.
 * AI conversation and code sketchpad persist across page refresh and can be retrieved from history.
 
-= 7.4.0.2 beta (Dec 11th, 2024) =
+= 7.4.0.2 beta (Dec 11th, 2025) =
 
 # Enhancements
 * The AI can help debug styles not working due to CSS rule conflicts.
 * "New Task" button added below the chat to clear the history and start a new task.
 * Auto-scroll to the top of the AI's message.
 
-= 7.4.0.1 beta (Dec 5th, 2024) =
+= 7.4.0.1 beta (Dec 5th, 2025) =
 
 # Enhancements
 * Improved the AI assistant's awareness of previous messages in the conversation.
 
-= 7.4.0.0 beta (Dec 3rd, 2024) =
+= 7.4.0.0 beta (Dec 3rd, 2025) =
 
 # Enhancements
 * New AI assistant panel can help with styling and debugging.
 * Media library insert popup now has a size menu next to the "Insert Image" button.
 
-= 7.3.2.8 (Feb 26th, 2024) =
+= 7.3.2.8 (Feb 26th, 2025) =
 
 # Bugs fixed
 * The color picker value was getting lost if manually typing a color value name, hex, or rgb.
 * When using variable colors, the top part of the color input was white instead of the variable color.
 * Reordering a draft selector before saving it triggered an error.
 
-= 7.3.2.7 (Jan 17th, 2024) =
+= 7.3.2.7 (Jan 17th, 2025) =
 
 # Bugs fixed
 * The previous update caused an error with "or" conditions in the folder logic, causing folders to not load.
 
-= 7.3.2.6 (Jan 14th, 2024) =
+= 7.3.2.6 (Jan 14th, 2025) =
 
 # Bugs fixed
 * Logical folder conditions could return the wrong result if the word "and" was in the page title text used for human reference.
@@ -100,7 +110,7 @@ CHANGELOG
 * Microthemer could create multiple folders for the same page if the page title changed.
 * Selecting a different folder from the top toolbar during targeting was overwritten if the "Auto folder" checkbox was enabled.
 
-= 7.3.2.5 (Jan 9th, 2024) =
+= 7.3.2.5 (Jan 9th, 2025) =
 
 # Bugs fixed
 * When point and click editing of the admin interface was enabled, a JS error could be triggered when saving a Post or Page.

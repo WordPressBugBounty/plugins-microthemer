@@ -49,7 +49,7 @@ class AjaxPublic {
 		$results = $wpdb->get_results($sql);
 
 		// Prepare the data for the response
-		$response = ['store' => []];
+		$response = array('store' => []);
 		foreach ($results as $row) {
 			$response['store'][$row->slug][] = json_decode($row->content);
 		}

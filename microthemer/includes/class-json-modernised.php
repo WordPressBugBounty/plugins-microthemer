@@ -24,7 +24,7 @@ class Moxiecode_JSONReader {
 	private $_value;
 	private $_token;
 	private $_location = JSON_IN_BETWEEN;
-	private $_lastLocations = [];
+	private $_lastLocations = array();
 	private $_needProp = false;
 
 	public function __construct(string $data) {
@@ -241,8 +241,8 @@ class Moxiecode_JSON
 {
 
 	// Properties explicitly declared
-	private array $data = [];
-	private array $parents = [];
+	private array $data = array();
+	private array $parents = array();
 	private mixed $cur = null; // Reference to the current working object/array
 
 	public function __construct()
@@ -258,8 +258,8 @@ class Moxiecode_JSON
 
 	private function readValue(Moxiecode_JSONReader $reader): mixed
 	{
-		$this->data = [];
-		$this->parents = [];
+		$this->data = array();
+		$this->parents = array();
 		$this->cur = &$this->data;
 		$key = null;
 		$loc = JSON_IN_ARRAY;
@@ -309,7 +309,7 @@ class Moxiecode_JSON
 	private function addArray(?string $key): void
 	{
 		$this->parents[] = &$this->cur;
-		$array = [];
+		$array = array();
 
 		if ($key) {
 			$this->cur[$key] = &$array;
@@ -364,7 +364,7 @@ class Moxiecode_JSON
 	private function _encodeArray(array $input): string
 	{
 		$isIndexed = array_keys($input) === range(0, count($input) - 1);
-		$elements = [];
+		$elements = array();
 
 		foreach ($input as $key => $value) {
 			if ($isIndexed) {

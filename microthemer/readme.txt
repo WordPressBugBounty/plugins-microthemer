@@ -79,7 +79,12 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
-= 7.4.1.0 (May 2nd, 2024) =
+= 7.4.1.2 (May 5th, 2025) =
+
+# Bugs Fixed
+* There was a trailing comma in PHP code that could cause an issue for older PHP versions.
+
+= 7.4.1.0 (May 2nd, 2025) =
 
 # Change
 * AI model options removed - that was left visible by mistake. They are just for testing models during my development of MT.
@@ -87,7 +92,7 @@ I've been happily developing Microthemer and supporting users of varying technic
 # Bugs Fixed
 * The AI message was repeated in the chat if resending after a connection error.
 
-= 7.4.0.9 (April 30th, 2024) =
+= 7.4.0.9 (April 30th, 2025) =
 
 # Enhancements
 * Instant undo falls back to a server revision if not available in the browser cache.
@@ -98,28 +103,28 @@ I've been happily developing Microthemer and supporting users of varying technic
 * AI retry could sometimes re-apply changes to the previously selected element.
 * Media query tabs were not dynamically added if the AI created a new breakpoint.
 
-= 7.4.0.8 (April 24th, 2024) =
+= 7.4.0.8 (April 24th, 2025) =
 
 # Enhancements
 * AI can detect pseudo elements ::before and ::after.
 
-= 7.4.0.8 (April 24th, 2024) =
+= 7.4.0.8 (April 24th, 2025) =
 
 # Enhancements
 * AI can detect pseudo elements ::before and ::after.
 
-= 7.4.0.7 (April 23rd, 2024) =
+= 7.4.0.7 (April 23rd, 2025) =
 
 # Enhancements
 * Better AI support for responsive styling.
 
-= 7.4.0.6 (April 22nd, 2024) =
+= 7.4.0.6 (April 22nd, 2025) =
 
 # Enhancements
 * AI assistant now available in the main release.
 * More room for chat / sketchpad with new chat icon at top right.
 
-= 7.4.0.4 beta (April 18th, 2024) =
+= 7.4.0.4 beta (April 18th, 2025) =
 
 # Enhancements
 - Improvements to the reliability and simplicity of CSS selectors the AI assistant generates.
@@ -127,7 +132,7 @@ I've been happily developing Microthemer and supporting users of varying technic
 # Bugs fixed
 - Saving settings could get stuck on very fast servers due to a timing bug.
 
-= 7.4.0.3 beta (April 10th, 2024) =
+= 7.4.0.3 beta (April 10th, 2025) =
 
 # Change
 - Regular auto-save system applies to AI edits too, with easy undo.

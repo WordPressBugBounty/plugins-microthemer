@@ -198,7 +198,8 @@ trait SettingsTrait {
 					? json_encode($this->serialised_post['user_action'])
 					: null;
 				$revision_id = $this->updateRevisions(
-					$this->options, $user_action, 1, 0, 0, $this->supportContent(),
+					$this->options, $user_action, 1, 0, 0,
+					$this->supportContent()
 				);
 				if (!$revision_id) {
 					$this->log('','','error', 'revisions');

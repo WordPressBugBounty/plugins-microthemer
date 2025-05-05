@@ -5,7 +5,7 @@ Plugin URI: https://themeover.com/microthemer
 Text Domain: microthemer
 Domain Path: /languages
 Description: Microthemer is a powerful AI & visual CSS editor that cares about site performance.
-Version: 7.4.1.2
+Version: 7.4.1.3
 Author: Themeover
 Author URI: https://themeover.com
 */

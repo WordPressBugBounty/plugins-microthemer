@@ -79,6 +79,11 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.4.1.3 (May 5th, 2025) =
+
+# Bugs Fixed
+* Uncaught TypeError: e.replace is not a function.
+
 = 7.4.1.2 (May 5th, 2025) =
 
 # Bugs Fixed

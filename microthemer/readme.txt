@@ -79,6 +79,12 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.4.1.4 (May 8th, 2025) =
+
+# Bugs Fixed
+* AI code editor was not resizing the text area dynamically when drag-adjusting the column width.
+* Removed some code that may have been triggering a false positive malware warning in CPGuard. CPGuard was deleting a core Microthemer file, which caused a fatal error in the admin area. CPGuard have recognised the false positive and updated their scanner rules too.
+
 = 7.4.1.3 (May 5th, 2025) =
 
 # Bugs Fixed

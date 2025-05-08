@@ -12463,14 +12463,7 @@ DateCreated: '.date('Y-m-d').'
 
 		$options            = array();
 		$options['timeout'] = 10;
-
-		// Disable SSL verification specifically for themeover.test
-		if (TVR_DEV_MODE && str_starts_with( $uri, 'https://themeover.test/' ) ) {
-			$options['sslverify'] = false;
-			$response = wp_remote_get($uri, $options);
-		} else {
-			$response = wp_safe_remote_get( $uri, $options );
-		}
+		$response = wp_safe_remote_get( $uri, $options );
 
 		if ( is_wp_error( $response ) ) {
 			error_log( 'wp_remote_fopen error: ' . $response->get_error_message() );

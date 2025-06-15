@@ -181,13 +181,25 @@ trait SettingsTrait {
 				//$user_action.= esc_html__(' (regular)', 'microthemer');
 			}
 
-			// Save snippets in DB if set
-			if (!empty($this->serialised_post['snippet_cache']) || !empty($this->serialised_post['snippets_deleted'])){
-				$this->contentMethod('addUpdateOrDeleteSnippets', array(
-					&$this->serialised_post['snippet_cache'],
-					&$this->serialised_post['snippets_deleted']
+			// Restore snippets stored in indexedDB
+			if (!empty($this->serialised_post['restoreSnippets'])){
+				$this->contentMethod('restoreSnippets', array(
+					&$this->serialised_post['restoreSnippets'],
+					false
 				));
 			}
+
+			else {
+				// Save snippets in DB if set
+				if (!empty($this->serialised_post['snippet_cache']) || !empty($this->serialised_post['snippets_deleted'])){
+					$this->contentMethod('addUpdateOrDeleteSnippets', array(
+						&$this->serialised_post['snippet_cache'],
+						&$this->serialised_post['snippets_deleted']
+					));
+				}
+			}
+
+
 
 			// update active-styles.css
 			$this->update_assets($theme);
@@ -553,10 +565,14 @@ trait SettingsTrait {
 			case 'array_merge_recursive_distinct':
 
 				// tip for myself, this causes 500 error otherwise
-				if (!is_array($config['data'])){
+				if (!is_array($item) || !is_array($config['data'])){
 					$this->log(
-						esc_html__('Merge data is not an array: ', 'microthemer'),
-						'<pre>Update package: '  . print_r($config, true) . '</pre>'
+						esc_html__('Merge data or item is not an array: ', 'microthemer'),
+						'<pre>Update package: '  . print_r(array(
+							'item' => $item,
+							'data' => $data,
+							'config' => $config
+						), true) . '</pre>'
 					);
 					return $false;
 				}

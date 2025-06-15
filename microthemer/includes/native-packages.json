@@ -99,6 +99,16 @@
     "isInstalled": "1",
     "size": "42.38"
   },
+  "chart.js/auto": {
+    "value": "chart.js/auto",
+    "rel": "chart.js",
+    "isAlt": "1",
+    "size": "199.68",
+    "cdn": "chart.js@4.4.9/auto/+esm",
+    "local": "chart.js/auto.js",
+    "version": "4.4.9",
+    "importSyntax": "{ Chart }"
+  },
   "gsap": {
     "value": "gsap",
     "cdn": "gsap@3.13.0/+esm",

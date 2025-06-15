@@ -79,6 +79,11 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.4.1.5 (June 15th, 2025) =
+
+# Bugs Fixed
+* PHP code for loading assets manually failed because a file was not copied to /wp-content/micro-themes.
+
 = 7.4.1.4 (May 8th, 2025) =
 
 # Bugs Fixed

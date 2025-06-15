@@ -710,9 +710,8 @@ require_once('common-inline-assets.php');
                 </div>
 
                 <?php
-                echo $this->show_me;
+                //echo $this->show_me;
 				?>
-
 
 			</div>
 
@@ -1259,8 +1258,8 @@ require_once('common-inline-assets.php');
                         <?php
                         echo $this->iconFont('mic', array(
                             'id' => 'tvr-ai-mic',
-                            'class' => 'tvr-ai-mic hidden',
-                            'title' => esc_attr__("Dictate to AI", 'microthemer'),
+                            'class' => 'tvr-ai-mic',
+                            'title' => esc_attr__("Talk to AI", 'microthemer'),
                         ));
                         ?>
                     </div>

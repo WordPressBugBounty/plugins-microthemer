@@ -142,6 +142,7 @@ $this->display_log();
 	            )
             ),
 
+            // when amender is released
             /*'addons' => array(
 	            'label' => __('Addons', 'microthemer'),
 	            'items' => array(

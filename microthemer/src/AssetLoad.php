@@ -20,8 +20,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 	class AssetLoad {
 
-		use TimerTrait,
-			FrontAndBackTrait;
+		use FrontAndBackTrait;
 
 		protected $isBlockEditorScreen;
 		var $logicSettings = array();

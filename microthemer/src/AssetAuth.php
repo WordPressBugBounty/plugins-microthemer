@@ -234,6 +234,10 @@ class AssetAuth extends AssetLoad {
 
 		wp_enqueue_script( 'tvr_mcth_frontend');
 
+		// Print theme variables to inline JSON object for Tailwind and AI usage
+		$this->contentMethod('renderThemeVariablesConfig');
+
+		// Load tailwind JIT if enabled
 		$this->contentMethod('maybeLoadTailwindProcessor', array(&$p, $jsPath));
 
 		// the previous system of hooking this separately did not work on the wp-login.php page

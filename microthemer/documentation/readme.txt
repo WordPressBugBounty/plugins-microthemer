@@ -10,7 +10,7 @@ Microthemer is installed in the same way as any other WordPress plugin. The simp
 - When the plugin has finished installing, click the "Activate Plugin" link.
 
 # 2. Read the documentation and tutorials
-Learn how to use Microthemer here: http://themeover.com/support/
+Learn how to use Microthemer here: https://themeover.com/support/
 
 # 3. Get help
 You can get free support from Themeover's support forum: http://themeover.com/forum/

@@ -548,15 +548,19 @@ $propertyOptions['html']['action'] = array(
 	'ref_desc' => "<p>The modification action to take on the elements.</p>",
 );
 
+// Modification aspect
+$propertyOptions['html']['aspect'] = array(
+	'short_label' => esc_html__('Aspect',  'microthemer'),
+	'label' => esc_html__('Modification aspect',  'microthemer'),
+	//'dynamic_fields' => 'aspect',
+	'field-class' => 'conditional-field',
+	'input-class' => 'size-4 mod-aspect',
+	'type' => 'combobox',
+	'defVal' => 'html',
+	// ref
+	'ref_desc' => "<p>Which aspect of the element to modify.</p>",
+);
 
-// Action/aspect preset that get's set if the user makes an adjustment
-/*$propertyOptions['html']['preset'] = array(
-	'short_label' => esc_html_x('Action-Aspect Preset', 'noun', 'microthemer'),
-	'label' => esc_attr_x('Action-Aspect Preset', 'noun', 'microthemer'),
-	'field-class' => 'hidden',
-	'input-class' => 'html-preset',
-	'ref_desc' => "<p>Hidden input for storing preset</p>",
-);*/
 
 // Move
 $propertyOptions['html']['move_to_display'] = array(
@@ -572,7 +576,7 @@ $propertyOptions['html']['move_to_display'] = array(
 $propertyOptions['html']['move_to_selector'] = array(
 	'short_label' => esc_html_x('Move to (selector)', 'noun', 'microthemer'),
 	'label' => esc_attr_x('Move to', 'noun', 'microthemer'),
-	'field-class' => 'conditional-field binary-display-field',
+	'field-class' => 'conditional-field binary-display-field field-is-full-width',
 	'input-class' => 'size-4',
 	//'type' => 'combobox',
 	'defVal' => 'none',
@@ -586,7 +590,7 @@ $propertyOptions['html']['move_to_selector'] = array(
 $propertyOptions['html']['move_to_relative'] = array(
 	'short_label' => esc_html_x('Move to (relative)', 'noun', 'microthemer'),
 	'label' => esc_attr_x('Move to (relative)', 'noun', 'microthemer'),
-	'field-class' => 'conditional-field binary-display-field',
+	'field-class' => 'conditional-field binary-display-field field-is-full-width',
 	'input-class' => 'size-4',
 	//'type' => 'combobox',
 	'defVal' => 'none',
@@ -634,18 +638,6 @@ $propertyOptions['html']['lazy_id'] = array(
 	'ref_desc' => "<p>The id for lazy loading</p>",
 );
 
-// Modification aspect
-$propertyOptions['html']['aspect'] = array(
-	'short_label' => esc_html__('Aspect',  'microthemer'),
-	'label' => esc_html__('Modification aspect',  'microthemer'),
-	//'dynamic_fields' => 'aspect',
-	'field-class' => 'conditional-field',
-	'input-class' => 'size-4 mod-aspect',
-	'type' => 'combobox',
-	'defVal' => 'html',
-	// ref
-	'ref_desc' => "<p>Which aspect of the element to modify.</p>",
-);
 
 // Modification find pattern
 $propertyOptions['html']['find'] = array(

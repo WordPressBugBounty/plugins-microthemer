@@ -139,11 +139,13 @@ trait FileTrait {
 		$orig_files = array(
 			'/js-min/animation-events.js',
 			'/stock/stock.zip',
+			'/src/autoload.php',
 			'/src/AssetLoad.php',
 			'/src/Logic.php',
 			'/src/Helper.php',
 
 			'/src/FrontAndBackTrait.php',
+			'/src/TimerTrait.php',
 			'/src/Content/AssetLoadContent.php',
 			'/src/Content/HTML.php',
 			'/src/Content/ContentHelper.php',
@@ -156,10 +158,12 @@ trait FileTrait {
 		$new_files = array(
 			'animation-events.js',
 			'stock.zip',
+			'autoload.php',
 			'AssetLoad.php',
 			'Logic.php',
 			'Helper.php',
 			'FrontAndBackTrait.php',
+			'TimerTrait.php',
 			'Content/AssetLoadContent.php',
 			'Content/HTML.php',
 			'Content/ContentHelper.php',

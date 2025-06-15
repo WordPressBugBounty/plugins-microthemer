@@ -106,7 +106,10 @@ class Common {
 				'param' => 'no_amends',
 				'withVal' => false,
 			),
-
+			array(
+				'param' => 'time_amends',
+				'withVal' => false,
+			),
 			array(
 				'param' => 'elementor-preview',
 				'withVal' => true,

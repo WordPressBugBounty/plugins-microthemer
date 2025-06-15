@@ -326,7 +326,7 @@ class Admin {
 		          .'&mt_version='.$this->version;
 
 		 //Get local URL
-        $this->show_me = $base_url . '?' . $params;
+        //$this->show_me = $base_url . '?' . $params;
        // return 'https://themeover.test/wp-content/tvr-auto-update/validate.php'.'?'.$params;
 
 		return $base_url.'?'.$params;
@@ -1418,7 +1418,7 @@ class Admin {
 			//array('h' => 'tvr_emmet', 'f' => 'lib/emmet/emmet.js'),
 			//array('h' => 'tvr_ace_emmet', 'f' => 'lib/ace4/ace/ext-emmet.js'),
 
-			array('h' => 'tvr_gsap', 'f' => 'lib/gsap/gsap.min.js'),
+			//array('h' => 'tvr_gsap', 'f' => 'lib/gsap/gsap.min.js'), // not in use yet
 			/*array('h' => 'tvr_widget', 'f' => '../src/js/mt-widget.js'),
 					array('h' => 'tvr_transform', 'f' => '../src/js/mt-transform.js'),*/
 			array('h' => 'tvr_gridstack', 'f' => 'lib/gridstack/gridstack.js'),
@@ -3214,7 +3214,7 @@ class Admin {
                     'class' => 'package-readme-link',
                     'title' => esc_attr__('View Readme info', 'microthemer'),
                     'tag' => 'a',
-                    'href' => "https://www.jsdelivr.com/package/npm/{value}",
+                    'href' => "https://www.jsdelivr.com/package/npm/{rel}",
                     'target' => "_blank"
                 )).'
             </div>
@@ -3263,7 +3263,7 @@ class Admin {
 
 	function snippet_dependency_row(){
 		return '
-        <div class="snippet-dependency-row" data-package="{value}">
+        <div class="snippet-dependency-row" data-package="{value}" data-rel="{rel}">
           
             <div class="snippet-import-field">
                  <input type="text" class="snippet-dep-adjust snippet-import-input" placeholder="{importSyntaxPlaceholder}" value="{manualImportSyntax}" />
@@ -3289,7 +3289,7 @@ class Admin {
 
 	function detected_package_item(){
         return '
-        <li class="detected-pacakge-item" data-package="{packName}">
+        <li class="detected-pacakge-item" data-package="{packName}" data-rel="{rel}">
             <div class="detected-package-result">
                 <span class="mt-loader-icon hidden"></span>
                 '.
@@ -4501,7 +4501,7 @@ class Admin {
 	        ? serialize($this->contentMethod('getSnippets', array(-1, 0, ARRAY_A)))
 	        : '';
         $dataToSize = $serialized_data . $serialized_preferences;
-		$data_size = round(strlen($dataToSize)/1000).'KB';
+		$data_size = round(strlen($dataToSize)/1024).'KB';
 		// $wpdb->insert (columns and data should not be SQL escaped): https://developer.wordpress.org/reference/classes/wpdb/insert/
 		$rows_affected = $wpdb->insert( $table_name, array(
 			'time' => current_time('mysql', false), // use blogs local time - doesn't work on Nelson's site
@@ -4631,7 +4631,102 @@ class Admin {
 		return $since;
 	}
 
-	// Get Revisions for displaying in table
+	/**
+	 * The definitive renderer. Renders the HTML for a new-format (version 2) history item,
+	 * including complex icons, tooltips, and colored boxes.
+	 * @param array $ua The decoded user action data array.
+	 * @return array An array containing the final HTML pieces.
+	 */
+	function render_new_history_item($ua) {
+		// These variables will be used to build the final output.
+		$icon_html = '';
+		$action_html_content = ''; // The content INSIDE the wrapper span
+		$wrapper_tooltip_attr = '';
+		$wrapper_main_class = 'history-item history_property';
+		$extra_td_class = '';
+
+		// 1. Build Icon HTML
+		if (!empty($ua['icons']) && is_array($ua['icons'])) {
+			$all_icon_spans = [];
+			foreach ($ua['icons'] as $icon_data) {
+				// ESCAPING: `esc_attr` makes the class attribute safe.
+				$icon_class = isset($icon_data['iconClass']) ? esc_attr($icon_data['iconClass']) : '';
+				// ESCAPING: `esc_html` makes any inner text safe.
+				$inner_content = isset($icon_data['innerContent']) ? esc_html($icon_data['innerContent']) : '';
+				$all_icon_spans[] = '<span class="h-i no-click ' . $icon_class . '">' . $inner_content . '</span>';
+			}
+			$icon_html = implode(' ', $all_icon_spans);
+		}
+
+		// 2. Build the display breadcrumbs
+		$display_crumbs_html = '';
+		if (!empty($ua['displayItems']) && is_array($ua['displayItems'])) {
+			$item_spans = [];
+			foreach ($ua['displayItems'] as $item) {
+				// ESCAPING: `esc_html` makes each breadcrumb item safe before wrapping in a span.
+				$item_spans[] = '<span>' . esc_html($item) . '</span>';
+			}
+			$display_crumbs_html = '<span class="his-items">' . implode('<span> » </span>', $item_spans) . '</span>';
+		}
+
+		// 3. Build the value HTML
+		$value_html = '';
+		if (isset($ua['val']) && $ua['val'] !== '') {
+			// ESCAPING: `htmlspecialchars` makes the raw user value safe to display.
+            //wp_die('history rev <pre>' . print_r($ua, true) . '</pre>');
+
+			$safe_val = htmlspecialchars($ua['val']);
+			$value_html = '<span class="his-val">' . $safe_val . '</span>';
+
+			if (!empty($ua['color'])) {
+				// ESCAPING: `esc_attr` makes the color value safe for use in a `style` attribute.
+				$safe_color = esc_attr($ua['color']);
+				$trans_bg_url = '/wp-content/plugins/microthemer/images/trans-big-dark.png';
+				$style_attr = 'style="background-image: linear-gradient(0deg, ' . $safe_color . ', ' . $safe_color . '), url(' . $trans_bg_url . ')"';
+				$color_box_span = '<span class="colored-box" ' . $style_attr . '></span>';
+				$color_val_span = '<span class="colored-val">' . $safe_val . '</span>';
+				$value_html = '<span class="his-val">' . $color_box_span . $color_val_span . '</span>';
+			}
+		}
+
+		// 4. Combine crumbs and value to create the inner content
+		// All pieces are already escaped at this point.
+		if (!empty($value_html)) {
+			$colon = '<span> : </span>';
+			$isValFirst = isset($ua['valFirst']) && ($ua['valFirst'] === true || $ua['valFirst'] === 'true');
+			$action_html_content = $isValFirst ? $value_html . $colon . $display_crumbs_html : $display_crumbs_html . $colon . $value_html;
+		} else {
+			$action_html_content = $display_crumbs_html;
+		}
+
+		// 5. Build the wrapper span's attributes
+		if (!empty($ua['pathTT']) && !empty($ua['fullPathItems']) && is_array($ua['fullPathItems'])) {
+			$tooltip_crumbs = [];
+			foreach ($ua['fullPathItems'] as $crumb) {
+				// ESCAPING: `esc_html` makes each part of the tooltip data safe.
+				$tooltip_crumbs[] = esc_html($crumb);
+			}
+			if (isset($ua['val'])) {
+				$tooltip_crumbs[] = ': ' . esc_html($ua['val']);
+			}
+			$tooltip_content = implode(' » ', $tooltip_crumbs);
+			// ESCAPING: `esc_attr` makes the final tooltip content safe for the title attribute.
+			$wrapper_tooltip_attr = 'title="' . esc_attr($tooltip_content) . '"';
+			$wrapper_main_class .= ' has-path-tt';
+			$extra_td_class = ' has-path-tt';
+		}
+
+		// Construct the final HTML string. The `$action_html_content` is already safe.
+		$final_action_html = '<span class="' . $wrapper_main_class . '" ' . $wrapper_tooltip_attr . '>' . $action_html_content . '</span>';
+
+		return array(
+			'icon_html'   => $icon_html,
+			'action_html' => $final_action_html, // This is the complete, safe-to-render wrapper span
+			'main_class'  => $extra_td_class
+		);
+	}
+
+    // New get revisions code
 	function getRevisions($summary = false) {
 
 		$rev_table = '';
@@ -4640,15 +4735,15 @@ class Admin {
 		$this->maybeCreateOrUpdateRevsTable();
 
 		// get the full array of revisions
-
 		global $wpdb;
 		$table_name = $wpdb->prefix . "micro_revisions";
 		$limit = $summary ? ' limit 10' : '';
-		//$revs = $wpdb->get_results("select id, user_action, data_size, date_format(time, '%D %b %Y %H:%i') as datetime
+		//$revs = $wpdb->get_results("select id, user_action, data_size, date_format(time, '%D %b %Y %H:%i') as datetime");
 		/*$revs = $wpdb->get_results("select id, user_action, data_size, unix_timestamp(time) as unix_timestamp
 				from $table_name order by id desc");*/
 		$revs = $wpdb->get_results("select id, user_action, data_size, time, saved from $table_name order by id desc".$limit);
 		$total_rows = $wpdb->num_rows;
+
 		// if no revisions, explain
 		if ($total_rows == 0) {
 			return '<span class="no-revisions-table">' .
@@ -4660,51 +4755,40 @@ class Admin {
 
 		if ($summary){
 			$summary_class = ' summary-revisions-table';
-			$rev_table.= '
-                    <div class="lastest-revisions-heading new-set-heading">'
-			             .esc_html__('Latest revisions', 'microthemer')
-			             .'</div>';
+			$rev_table .= '
+                <div class="lastest-revisions-heading new-set-heading">'
+			              .esc_html__('Latest revisions', 'microthemer')
+			              .'</div>';
 		}
 
-
-		$rev_table.=
+		$rev_table .=
 			'
-				<table class="revisions-table'.$summary_class.'">
-				<thead>
-				<tr>
-					<th class="rev-size">' . esc_html__('Size', 'microthemer') . '</th>
-					<th class="rev-time">' . esc_html__('Time', 'microthemer') . '</th>
-					<th class="rev-action" colspan="2">' . esc_html__('User Action', 'microthemer') . '</th>
-					<th class="rev-restore">' . esc_html__('Restore', 'microthemer') . '</th>
-					<th class="rev-save">' . esc_html__('Save', 'microthemer') . '</th>
-				
-				</tr>
-				</thead>';
+            <table class="revisions-table'.$summary_class.'">
+            <thead>
+            <tr>
+                <th class="rev-size">' . esc_html__('Size', 'microthemer') . '</th>
+                <th class="rev-time">' . esc_html__('Time', 'microthemer') . '</th>
+                <th class="rev-action" colspan="2">' . esc_html__('User Action', 'microthemer') . '</th>
+                <th class="rev-restore">' . esc_html__('Restore', 'microthemer') . '</th>
+                <th class="rev-save">' . esc_html__('Save', 'microthemer') . '</th>
+            
+            </tr>
+            </thead>';
 
 		$i = 0;
 		foreach ($revs as $rev) {
-
-			// adjust unix timestamp for blog's GMT timezone offset - no this doesn't make sense
-			//$local_timestamp = $this->adjust_unix_timestamp_for_local($rev->unix_timestamp);
-
-			//$local_timestamp = $rev->unix_timestamp;
-
 			$local_timestamp = strtotime($rev->time);
 			$time_ago = $this->human_time_diff($local_timestamp);
+			$user_action_json = $rev->user_action;
 
-			//$time_ago = $this->getTimeSince($rev->timestamp);
-			// get traditional save or new history which will be in json obj
-			$user_action = $rev->user_action;
-			$rev_icon = $main_class = '';
+			$rev_icon = '';
+			$main_class = '';
 			$legacy_new_class = 'legacy-hi';
+			$tooltip_attr = '';
+			$action_display_html = 'Unknown Action';
 
-			/*if ($user_action){
-						wp_die('string chars', json_encode($user_action));
-					}*/
-
-			// fix a bug with line-breaks getting into the history json, making it invalid
-			if (preg_match("/[\n\r]+\t+/", $user_action)){
-				$user_action = preg_replace("/[\n\r]+\t+/", '', $user_action);
+			if (preg_match("/[\n\r]+\t+/", $user_action_json)) {
+				$user_action_json = preg_replace("/[\n\r]+\t+/", '', $user_action_json);
 			}
 
 			// (escHistory)
@@ -4712,100 +4796,85 @@ class Admin {
 			//wp_die('history rev <pre>' . print_r(json_decode($rev->user_action, true), true) . '</pre>');
 			//$this->log('user action', $rev->user_action, 'warning', false);
 
-			if (strpos($user_action, '{"') !== false){
-
-				//wp_die('history rev <pre>' . print_r(json_decode($rev->user_action, true), true) . '</pre>');
-
-				$ua = $this->json('decode', $user_action); //  json_decode($rev->user_action, true);
-
+			if (strpos($user_action_json, '{"') !== false) {
+				//wp_die('history rev <pre>' . print_r([$rev], true) . '</pre>');
+				$ua = $this->json('decode', $user_action_json);
 				//wp_die('history rev <pre>' . print_r($ua, true) . '</pre>');
 
-				$legacy_new_class = 'new-hi';
-				$user_action = $this->unescape_cus_quotes($ua['html'], true);
-				$rev_icon = $ua['icon_html'];
-				$main_class = $ua['main_class'];
+				if (isset($ua['data_version']) && $ua['data_version'] == 2) {
+					// NEW FORMAT
+					$legacy_new_class = 'new-hi refactored-hi';
+					$rendered = $this->render_new_history_item($ua);
+					$rev_icon = $rendered['icon_html'];
+					// $action_display_html is assigned the pre-built, safe HTML wrapper span.
+					$action_display_html = $rendered['action_html'];
+					$main_class = $rendered['main_class'];
+				}
+				else if (is_array($ua)) {
+					// OLD FORMAT
+					$legacy_new_class = 'new-hi';
+					$action_display_html = !empty($ua['html'])
+						? $this->unescape_cus_quotes($ua['html'], true)
+						: (!empty($ua['targ_and_val']) ? $this->unescape_cus_quotes($ua['targ_and_val'], true) : 'unknown');
+
+					$rev_icon = !empty($ua['icon_html']) ? $ua['icon_html'] : '';
+					$main_class = !empty($ua['main_class']) ? $ua['main_class'] : '';
+
+					preg_match('/<span class="his-val">(.+?)<\/span>/s', $action_display_html, $history_val_match);
+					if ($history_val_match && !preg_match('/^<span class="colored-box"/', $history_val_match[1]) ){
+						//wp_die('history_val <pre>' . print_r($history_val_match, true) . '</pre>');
+						$action_display_html = str_replace(
+							$history_val_match[1],
+							htmlentities($history_val_match[1]),
+							$action_display_html
+						);
+					}
+				}
+			} else if (!empty($user_action_json)) {
+				// Very old plain text format
+				$action_display_html = esc_html($user_action_json);
 			}
 
-			// saved lock icon
 			$rev_is_saved = !empty($rev->saved);
 			$save_rev_pos = esc_html__('Permanently save restore point', 'microthemer');
 			$save_rev_neg = esc_html__('Unsave restore point', 'microthemer');
 			$rev_is_saved_class = $rev_is_saved ? ' revision-is-saved' : '';
 			$rev_save_title = $rev_is_saved ? $save_rev_neg : $save_rev_pos;
 			$saved_icon = '<span class="save-revision'.$rev_is_saved_class.'" 
-					data-pos="'.$save_rev_pos.'" data-neg="'.$save_rev_neg.'" title="'.$rev_save_title.'"
-					rel="'.$rev->id.'"></span>';
+                data-pos="'.$save_rev_pos.'" data-neg="'.$save_rev_neg.'" title="'.$rev_save_title.'"
+                rel="'.$rev->id.'"></span>';
 
 			$niceDate = date('l jS \of F Y H:i:s', $local_timestamp);
-			$timeOutput = $summary
-				? $niceDate
-				: sprintf(esc_html__('%s ago', 'microthemer'), $time_ago);
-
+			$timeOutput = $summary ? $niceDate : sprintf(esc_html__('%s ago', 'microthemer'), $time_ago);
 			// todo need to have live JS time ago
-
 			//$timeOutput = sprintf(esc_html__('%s ago', 'microthemer'), $time_ago);
-
-			// remove any HTML from history val, which should be CSS, unless it's a colored box (escHistory)
-			preg_match('/<span class="his-val">(.+?)<\/span>/', $user_action, $history_val_match);
-			if ($history_val_match && !preg_match('/^<span class="colored-box"/', $history_val_match[1]) ){
-				//wp_die('history_val <pre>' . print_r($history_val_match, true) . '</pre>');
-				$user_action = str_replace(
-					$history_val_match[1],
-					htmlentities($history_val_match[1]),
-					$user_action
-				);
-			}
-
 
 			//<td class="rev-num">'.$total_rows.'</td>
 			//<td class="rev-size">'.$rev->data_size.'</td>
-			$rev_table.= '
-					<tr class="'.$legacy_new_class.$rev_is_saved_class.'">
-						<td class="rev-size">'.$rev->data_size.'</td>
-						<td class="rev-time tvr-help" title="'.$niceDate.'">'.$timeOutput.'</td>
-						<td class="rev-icon '.$main_class.'" title="'.$timeOutput.'">'.$rev_icon.'</td>
-						<td class="rev-action '.$main_class.'">'.$user_action.'</td>
-						<td class="rev-restore">';
 
-			// current item
-			//if ($i == 0) {
+			// --- FINAL, CORRECTED HTML STRUCTURE ---
+			$rev_table .= '
+                <tr class="'.$legacy_new_class.$rev_is_saved_class.'">
+                    <td class="rev-size">'.$rev->data_size.'</td>
+                    <td class="rev-time tvr-help">'.$timeOutput.'</td>
+                    <td class="rev-icon '.$main_class.'" title="'.$niceDate.'">'.$rev_icon.'</td>
+                    <td class="rev-action '.$main_class.'">'.$action_display_html.'</td>
+                    <td class="rev-restore">';
+
 			if ($rev->id == $this->preferences['current_revision']) {
 				$restoreActionText = esc_html__('Current', 'microthemer');
-				$rev_table.= $summary
-					? $this->iconFont('check-circle', array(
-						'class' => 'current-revision-tick mt-fixed-color',
-						'title' => $restoreActionText
-
-					))
-					: $restoreActionText;
-			}
-
-			// restorable item
-			else {
-
+				$rev_table .= $summary ? $this->iconFont('check-circle', array('class' => 'current-revision-tick mt-fixed-color', 'title' => $restoreActionText)) : $restoreActionText;
+			} else {
 				$restoreClass = 'restore-link';
 				$restoreRel = 'mt_action=restore_rev&tvr_rev='.$rev->id;
 				$restoreText = esc_html__('Restore', 'microthemer');
-
-				if ($summary){
-					$rev_table.= $this->iconFont('undo', array(
-						'class' => $restoreClass,
-						'title' => $restoreText,
-						'rel' => $restoreRel
-					));
-				} else {
-					$rev_table.='<span class="'.$restoreClass.' link" rel="'.$restoreRel.'">'.$restoreText.'</span>';
-				}
+				$rev_table .= $summary ? $this->iconFont('undo', array('class' => $restoreClass, 'title' => $restoreText, 'rel' => $restoreRel)) : '<span class="'.$restoreClass.' link" rel="'.$restoreRel.'">'.$restoreText.'</span>';
 			}
 
-			$rev_table.='
-					    </td>
-                         <td class="rev-save">'.$saved_icon.'</td>
-					</tr>';
-			--$total_rows;
+			$rev_table .= '</td><td class="rev-save">'.$saved_icon.'</td></tr>';
 			++$i;
 		}
-		$rev_table.= '</table>';
+		$rev_table .= '</table>';
 
 		/*if ($summary){
 					$rev_table.= '<div class="show-dialog view-older-revisions link" rel="display-revisions">'.esc_html__('Older revisions', 'microthemer').'</div>';
@@ -4813,6 +4882,8 @@ class Admin {
 
 		return $rev_table;
 	}
+
+
 
 	// update a single preference
 	function update_preference($key, $value){
@@ -10200,9 +10271,9 @@ class Admin {
 	            <div class="amender-inspect-buttons">
 	                <div class="label">Amends: </div>
 	                <div class="amender-inspect-wrap">
-                        <div class="amender-inspect-button active" data-mtc="mod.MThtml.inspectButtonClicked" data-view="normal" title="Apply amendments normally">normal</div>
-                        <div class="amender-inspect-button" data-mtc="mod.MThtml.inspectButtonClicked" data-view="data" title="Review page amendments">review</div>
-                        <div class="amender-inspect-button" data-mtc="mod.MThtml.inspectButtonClicked" data-view="none" title="View page without amendments">none</div>
+                        <div id="normal-amends-tab" class="amender-inspect-button active" data-mtc="mod.MThtml.inspectButtonClicked" data-view="normal" title="Apply amendments normally">normal</div>
+                        <div id="review-amends-tab" class="amender-inspect-button" data-mtc="mod.MThtml.inspectButtonClicked" data-view="data" title="Review page amendments">review</div>
+                        <div id="no-amends-tab" class="amender-inspect-button" data-mtc="mod.MThtml.inspectButtonClicked" data-view="none" title="View page without amendments">none</div>
 	                </div>
 	                '.$this->iconFont('sync-alt', array(
                         'class' => 'html-content-refresh',
@@ -10312,10 +10383,10 @@ class Admin {
 
 		// do all-devices fields
 		$html = '
-				<div '.$id.' class="property-fields property-'.$property_group_name.'
-				property-fields-'. $key . ' ' . $conditional_classes. ' ' . $show_class.'">
-				<div class="pg-inner">
-					';
+        <div '.$id.' class="property-fields property-'.$property_group_name.'
+        property-fields-'. $key . ' ' . $conditional_classes. ' ' . $show_class.'">
+        <div class="pg-inner">
+            ';
 
 
 		// option to go back to properties
@@ -10330,6 +10401,11 @@ class Admin {
 		$property_group_array = array_merge($this->propertyoptions[$property_group_name], $property_group_array);
 
 		$this->group_spacer_count = 0;
+
+        // With Amender, we want to wrap the fields in div that is separately scrollable
+		if ($property_group_name === 'html'){
+			$html.= '<div class="tvr-scrollable-fields scrollable-area">';
+		}
 
 		// output individual property fields
 		foreach ($property_group_array as $property => $value) {
@@ -10358,8 +10434,13 @@ class Admin {
 			);
 		}
 
+		// Close scrollable fields
+        if ($property_group_name === 'html'){
+			$html.= '</div>';
+		}
+
 		$html.= '
-				</div></div>';
+		</div></div>';
 
 		return $html;
 	}

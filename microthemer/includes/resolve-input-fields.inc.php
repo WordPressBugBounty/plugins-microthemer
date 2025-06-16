@@ -630,7 +630,7 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 
 		$input_wrap_html = '';
 
-		if ($property === 'snippet'){
+		if ($property === 'text' || $property === 'snippet'){
 			$html.= $this->snippet_dependency_table();
 		}
 

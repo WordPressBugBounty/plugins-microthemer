@@ -79,6 +79,11 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.4.1.7 (June 16th, 2025) =
+
+# Bugs Fixed
+* Possible PHP error.
+
 = 7.4.1.6 (June 16th, 2025) =
 
 # Bugs Fixed

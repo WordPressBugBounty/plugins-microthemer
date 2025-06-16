@@ -4637,7 +4637,7 @@ class Admin {
 	 * @param array $ua The decoded user action data array.
 	 * @return array An array containing the final HTML pieces.
 	 */
-	function render_new_history_item($ua) {
+	function render_new_history_item($ua, $rev) {
 		// These variables will be used to build the final output.
 		$icon_html = '';
 		$action_html_content = ''; // The content INSIDE the wrapper span
@@ -4669,9 +4669,13 @@ class Admin {
 			$display_crumbs_html = '<span class="his-items">' . implode('<span> » </span>', $item_spans) . '</span>';
 		}
 
+        /*if (is_array($ua['val'])){
+	        wp_die('history rev <pre>' . print_r([$rev, $ua], true) . '</pre>');
+        }*/
+
 		// 3. Build the value HTML
 		$value_html = '';
-		if (isset($ua['val']) && $ua['val'] !== '') {
+		if (isset($ua['val']) && $ua['val'] !== '' && !is_array($ua['val'])) {
 			// ESCAPING: `htmlspecialchars` makes the raw user value safe to display.
             //wp_die('history rev <pre>' . print_r($ua, true) . '</pre>');
 
@@ -4804,7 +4808,7 @@ class Admin {
 				if (isset($ua['data_version']) && $ua['data_version'] == 2) {
 					// NEW FORMAT
 					$legacy_new_class = 'new-hi refactored-hi';
-					$rendered = $this->render_new_history_item($ua);
+					$rendered = $this->render_new_history_item($ua, $rev);
 					$rev_icon = $rendered['icon_html'];
 					// $action_display_html is assigned the pre-built, safe HTML wrapper span.
 					$action_display_html = $rendered['action_html'];

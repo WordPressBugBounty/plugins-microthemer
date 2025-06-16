@@ -79,6 +79,11 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.4.1.6 (June 16th, 2025) =
+
+# Bugs Fixed
+* Existing computed CSS values were not shown over the input fields in the previous release.
+
 = 7.4.1.5 (June 15th, 2025) =
 
 # Bugs Fixed

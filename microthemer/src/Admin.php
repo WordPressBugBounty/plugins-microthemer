@@ -584,7 +584,9 @@ class Admin {
 			// check for returned message to give clue about problem
 			if (!empty($response['message'])){
 
-				$title = $title_prefix . ' - ' . $response['message'];
+				//$response['message'] = 'Message <b>Fom another</b> site';
+
+				$title = $title_prefix . ' - ' . strip_tags($response['message']);
 
 				switch ($response['message']) {
 
@@ -648,7 +650,6 @@ class Admin {
 
 						break;
 
-
 					case "connection error":
 					case "proxy connection error":
 					case "subscription check failed":
@@ -670,6 +671,11 @@ class Admin {
                                 connections to domains not on a trusted whitelist (e.g. sites that are not 
                                 wordpress.org). Ask your web host about temporarily unblocking themeover.com.</p>';
 						break;
+                    default:
+                        // If is not an MT response, but it includes a message
+                        $explain = '<p>Please reference the following IP address if you need to <a target="_blank" href="https://themeover.com/support/contact/">contact support</a></p>
+                        <p>IP Address: <b>'.esc_html(file_get_contents("http://ipecho.net/plain")).'</b></p>';
+                        break;
 
 				}
 

@@ -79,6 +79,11 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.4.1.8 (June 21st, 2025) =
+
+# Bugs Fixed
+* IP address was not shown when certain firewall issues prevented activation.
+
 = 7.4.1.7 (June 16th, 2025) =
 
 # Bugs Fixed

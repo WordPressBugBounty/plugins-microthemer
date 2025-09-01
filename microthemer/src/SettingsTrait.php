@@ -289,37 +289,66 @@ trait SettingsTrait {
 
 	function publishSettings(){
 
-		$this->update_assets('customised', '', array('active' => 1));
+		$microthemerActive = $this->supportGUICSS();
 
-		$pref_array = array(
-			'num_unpublished_saves' => 0,
-			'asset_loading_published' => &$this->preferences['asset_loading'],
-			'global_stylesheet_required_published' => &$this->preferences['global_stylesheet_required'],
-			'load_js_published' => $this->preferences['load_js'],
+		// They cannot publish Amender if no subscription
+		$unableToPublishAmender = $this->supportContent() && !$this->hasContentSubscription();
+
+		// They cannot publish anything if they are just using Amender free trial without Microthemer
+		$unableToPublishAnything = $unableToPublishAmender && !$microthemerActive;
+
+		$canPublishSomething = !$unableToPublishAnything;
+
+		// We can publish all settings if they have an amender subscription or they are just using Microthemer
+		$canPublishEverything = $this->hasContentSubscription() || !$this->supportContent();
+
+		$response = array(
+			'num_unpublished_saves' => $canPublishEverything
+				? 0
+				: $this->preferences['num_unpublished_saves'],
+			'notify_amender_subscription_needed' => $unableToPublishAmender
+				? 1
+				: 0,
 		);
 
-		// Publish content modifications if allowed
-		if ($this->hasContentSubscription()){
+		// If they can publish Microthemer or Amender changes, update assets
+		if ($canPublishSomething){
 
-			// Update the database
-			$this->contentMethod('publishHTMLTable', array(), true);
+			$this->update_assets('customised', '', array('active' => 1));
 
-			// Copy (and minify user JS and NPM)
-			$this->contentMethod('publishJavaScript', array(), true);
+			$pref_array = array(
+				'num_unpublished_saves' => $response['num_unpublished_saves'],
+				'asset_loading_published' => &$this->preferences['asset_loading'],
+				'global_stylesheet_required_published' => &$this->preferences['global_stylesheet_required'],
+				'load_js_published' => $this->preferences['load_js'],
+			);
 
-			// Copy the draft npm dependencies
-			$pref_array['npm_dependencies_published'] = &$this->preferences['npm_dependencies'];
+			// Publish content modifications if allowed
+			if ($this->hasContentSubscription()){
+
+				// Update the database
+				$this->contentMethod('publishHTMLTable', array(), true);
+
+				// Copy (and minify user JS and NPM)
+				$this->contentMethod('publishJavaScript', array(), true);
+
+				// Copy the draft npm dependencies
+				$pref_array['npm_dependencies_published'] = &$this->preferences['npm_dependencies'];
+			}
+
+			// update the published preferences
+			$this->savePreferences($pref_array);
+
 		}
-
-		// update the published preferences
-		$this->savePreferences($pref_array);
 
 		//$this->log('Test error', 'An issue occurred!');
 
-		$response = array(
+		/*$response = array(
 			'num_unpublished_saves' => 0,
-			'notify_amender_subscription_needed' => $this->supportContent() && !$this->hasContentSubscription() ? 1 : 0,
-		);
+			'notify_amender_subscription_needed' => $this->supportContent() && !$this->hasContentSubscription()
+				? 1
+				: 0,
+		);*/
 
 		if (!empty($this->globalmessage)){
 			$response['html'] = '<div id="microthemer-notice">' . $this->display_log() . '</div>';
@@ -347,6 +376,12 @@ trait SettingsTrait {
 		$pref_array['g_url'] = '';
 		$pref_array['g_url_with_subsets'] = '';
 		$pref_array['hover_inspect'] = 1;
+		$pref_array['lastMultiTab']['html'] = array(
+			'index' => 0,
+			'action' => 'replace',
+			'aspect' => 'text',
+		);
+		$pref_array['npm_dependencies_in_use'] = (object) array();
 		$this->savePreferences($pref_array);
 
 		// Reset the snippets (folder_mods will be overwritten on next save)

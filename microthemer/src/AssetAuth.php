@@ -258,9 +258,16 @@ class AssetAuth extends AssetLoad {
 
 			// ensure that folderLoading config has been set
 			// it won't be if stylesheet_order has a value
-			if (!$this->folderLoadingChecked && isset($asset_loading['logic'])){
+			if (!$this->folderLoadingChecked){
+
 				//echo 'getCondAssets ';
-				$this->conditionalAssets($asset_loading['logic'], false, true);
+				if (isset($asset_loading['logic'])){
+					$this->conditionalAssets($asset_loading['logic'], false, true);
+				}
+
+				// Now we have folderLoading config, queue scripts and maybe hook HTML mods
+				$this->contentMethod('initContentAmendments');
+
 			}
 
             // Get the folder loading status of any draft folder too
@@ -507,7 +514,7 @@ class AssetAuth extends AssetLoad {
 	        'result' => 1,
 	        'resultString' => 'true',
 	        'logic' => 'Not set',
-	        'analysis' => 'No logic has been defined, so this folder will load globally (on the frontend)',
+	        'analysis' => 'Either no logic or no folder settings have been defined, so this folder will load globally (on the frontend)',
 	        'num_statements' => 0,
 	        'load' => 'Yes'
         );

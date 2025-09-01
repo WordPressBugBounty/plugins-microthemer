@@ -79,7 +79,96 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
-= 7.4.1.8 (June 21st, 2025) =
+= 7.5.1.4 (Sept 1st, 2025) =
+
+# Change (Amender)
+* The delete snippet icon has moved to the snippet search menu, for each snippet item listed.
+* Instead of the delete icon, there is a start new snippet icon (without overwriting the current snippet).
+
+# Enhancement (Amender)
+* The state of expanded vs collapsed snippet options persists across page refresh.
+* A notification displays when editing a synced snippet, with an option to detach it.
+
+# Bugs fixed (Amender)
+* Stale Amender snippets could linger in the wp_micro_content database table when publishing settings.
+* Empty snippets could accumulate without being cleaned.
+
+= 7.5.1.3 (August 25th, 2025) =
+
+# Bugs fixed (Amender)
+* Removing a parentWrapper discarded siblings of the selected element.
+
+= 7.5.1.2 (August 24th, 2025) =
+
+# Bugs fixed (Microthemer & Amender)
+* JS error when duplicating a folder or selector.
+
+= 7.5.1.1 (August 20th, 2025) =
+
+# Bugs fixed (Microthemer & Amender)
+* When updating folder logic for a folder with no styles or settings, the save button would endlessly spin.
+
+= 7.5.1.0 (August 15th, 2025) =
+
+# Enhancement (Amender)
+* Added a shortcut to enable Microthemer as an addon for Amender.
+
+= 7.5.0.9 (August 15th, 2025) =
+
+# Bugs fixed (Amender)
+* Background videos could default to low resolution with certain files.
+
+= 7.5.0.8 (August 14th, 2025) =
+
+# Enhancement (Amender)
+* Responsive videos are also supported now, reducing file size on mobile but maintaining clarity on high resolution screens.
+* Static Cloudflare CDN urls are used for stock images and video for maximum performance.
+
+= 7.5.0.7 (August 6th, 2025) =
+
+# Enhancement (Amender)
+* The AI assistant can now use stock images and videos to insert or replace media responsively using "srcset". This includes adding background videos to sections.
+
+# Bugs fixed (Microthemer)
+* Possible PHP error on versions older than PHP 8: "unexpected '=>' (T_DOUBLE_ARROW)" in class-json-modernised.php on line 45.
+
+= 7.5.0.6 (July 31st, 2025) =
+
+# Bugs fixed (Microthemer & Amender)
+* JavaScript error using the AI assistant if Sass support was enabled via the preferences.
+
+= 7.5.0.5 (July 28th, 2025) =
+
+# Bugs fixed (Microthemer)
+* PHP Fatal error upon install: Uncaught Error: Undefined constant "TVR_CONTENT_EDITOR".
+
+= 7.5.0.4 (July 27th, 2025) =
+
+# Bugs fixed (Amender)
+* Undo did not work for remove parent/childWrapper.
+* Lazy load did not work on WP multisite.
+
+= 7.5.0.2 (July 25th, 2025) =
+
+# Enhancement (Amender)
+* WordPress dashboard plugin updates enabled for Amender.
+
+= 7.5.0.1 (July 25th, 2025) =
+
+# Bugs fixed (Microthemer & Amender)
+* The plugin for loading assets when deactivating the editor was not working. It has now been renamed "Microloader", going back to a previous system. It works for Amender content changes as well as CSS.
+
+# Bugs fixed (Amender)
+* Amender did not run global changes if no conditional changes were also present.
+* The Publish button remained inactive even after an Amender license was supplied.
+* The red unlock icon persisted after Amender activation.
+
+= 7.5.0.0 (July 24th, 2025) =
+
+# Enhancement
+* Amender (beta): content editing addon or standalone plugin with support for GSAP, THREE.js, Alpine.js and Chart.js.
+
+= 7.4.1.8 (June 16th, 2025) =
 
 # Bugs Fixed
 * IP address was not shown when certain firewall issues prevented activation.

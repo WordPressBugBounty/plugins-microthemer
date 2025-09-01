@@ -77,6 +77,9 @@ $this->preferences['detach_preview'] ? $ui_class.= ' detach_preview' : false;
 !empty($this->preferences['tape_measure_slider']) ? $ui_class.= ' tape_measure_slider' : false;
 !empty($this->preferences['show_setup_screen_first_time']) ? $ui_class.= ' show_setup_screen_first_time' : false;
 !empty($this->preferences['show_setup_screen_first_time']) ? $ui_class.= ' show_setup_screen_first_time' : false;
+!empty($this->preferences['show_snippet_adv']) ? $ui_class.= ' show_snippet_adv' : false;
+!empty($this->preferences['mt_rich_text']) ? $ui_class.= ' mt_rich_text' : false;
+!empty($this->preferences['mt_rich_text_code']) ? $ui_class.= ' mt_rich_text_code' : false;
 
 // signal if error reporting is disabled
 $repPerm = $this->preferences['reporting']['permission'];
@@ -111,12 +114,10 @@ foreach ($this->css_filters as $key => $arr){
 }
 
 // Signal plugin capabilities
-$corePlugin = $this->isFullEditor()
-    ? 'core-microthemera'
-    : ($this->isContentEditor()
-        ? 'core-amender'
-        : 'core-microthemer'
-    );
+$corePlugin = $this->isContentEditor()
+	? 'core-amender'
+	: 'core-microthemer'
+;
 
 $ui_class.= ' ' . $corePlugin;
 if (!$this->supportContent()){
@@ -671,7 +672,9 @@ require_once('common-inline-assets.php');
                     ));
 
                     // unlock MT
-                    if (!$this->preferences['buyer_validated'] || !$this->preferences['amender_buyer_validated']){
+                    if ( ($this->supportGUICSS() && !$this->preferences['buyer_validated'])
+                        || ($this->supportContent() && !$this->preferences['amender_buyer_validated'])
+                    ){
 	                    echo $this->icon('unlock-alt', array(
 		                    'class' => 'license-action mt-fixed-color unlock-pro-version show-dialog',
 		                    'rel' => 'mt-initial-setup',
@@ -1212,6 +1215,7 @@ require_once('common-inline-assets.php');
                 <div class="ai-prompt-form ai-option-group">
 
                     <div class="hidden">
+
                         <label>AI can:</label>
 
                         <select id="ai-can" name="ai_can" class="mt-select">
@@ -1222,32 +1226,7 @@ require_once('common-inline-assets.php');
 
                         <label>AI model:</label>
 
-                        <select id="ai-model" name="model" class="mt-select">
-                            <optgroup label="Open AI">
-                                <option value="gpt-4o-turbo">gpt-4o-turbo</option>
-                                <option value="gpt-4o-mini">gpt-4o-mini</option>
-                                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-                            </optgroup>
-                            <optgroup label="Anthropic">
-                                <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
-                                <option value="claude-3-5-haiku" >claude-3-5-haiku</option>
-                            </optgroup>
-                            <optgroup label="Google">
-
-                                <option value="gemini-2.5-pro-preview-03-25">gemini-2.5-pro-preview-03-25</option>
-                                <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp</option>
-                                <option value="gemini-2.5-flash-preview-04-17">gemini-2.5-flash-preview-04-17</option>
-
-                                <option value="gemini-2.0-flash-001" selected>gemini-2.0-flash</option>
-                                <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
-                                <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp</option>
-
-                                <option value="gemini-2.0-flash-thinking-exp">gemini-2.0-flash-thinking-exp</option>
-                                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                                <option value="gemini-1.5-flash" >gemini-1.5-flash</option>
-                                <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b</option>
-                            </optgroup>
-                        </select>
+                        <select id="ai-model" name="model" class="mt-select"></select>
 
                     </div>
 
@@ -1276,9 +1255,9 @@ require_once('common-inline-assets.php');
 			            <?php
 
                         // must be CSS if we do not support HTML and JS
-                        $defaultTab = !$this->supportContent()
-                            ? 'css'
-                            : $this->aiData['defaultTab'];
+                        $defaultTab = $this->supportContent() && !empty($this->options['non_section']['meta']['aiSketchpadFocus'])
+                            ? $this->options['non_section']['meta']['aiSketchpadFocus']
+                            : 'css';
 
                         echo '<input class="ai-focus" type="hidden" name="ai_focus_tab" value="'.$defaultTab.'" />';
 
@@ -1489,6 +1468,13 @@ require_once('common-inline-assets.php');
 
 
                 // Advanced AI options
+                $aiTest = TVR_DEV_MODE
+                    ? '<div id="test-ai-output-wrap">
+                            <div>Test AI Response:</div>
+                            <textarea id="test-ai-output"></textarea>
+                            <span id="test-ai-output-button" class="tvr-button" data-mtc="mod.MTai.testAIResponse">Submit</span>
+                        </div>'
+                    : '';
 	            echo $this->context_menu_content(array(
 		            'base_key' => 'ai-advanced',
 		            'title' => esc_html__('AI settings', 'microthemer'),
@@ -1506,7 +1492,8 @@ require_once('common-inline-assets.php');
 							            .$this->toggle('ai_admin_access', array(
 								            'toggle' => !empty($this->preferences['ai_admin_access']),
 								            'toggle_id' => 'ai_admin_access',
-							            )).'</div>'
+							            )).'</div>
+							            ' . $aiTest
 
 					            ),
 					            /*'api_key' => array(
@@ -1751,6 +1738,7 @@ require_once('common-inline-assets.php');
                         </div>
                         ';
                     }
+                    $licenseShown = esc_attr__("License key shown in 'My Downloads'", 'microthemer');
 
                     // Microthemer license
                     $validated = !empty($this->preferences['buyer_validated']);
@@ -1761,8 +1749,8 @@ require_once('common-inline-assets.php');
 		                    ? '<a href="https://themeover.com/my-account/" target="_blank">Renew your subscription</a> to get the latest version of Microthemer. Then re-submit your license key.'
 		                    : esc_html__('Microthemer has been successfully unlocked.', 'microthemer')
                         )
-	                    : 'Optionally enter your <a href="https://themeover.com/my-account/" target="_blank">'
-	                      . esc_html__('license key', 'microthemer').'</a> if you have purchased a <a href="https://themeover.com/microthemer-pricing/" target="_blank">premium plan</a>';
+	                    : 'Optionally enter your <a href="https://themeover.com/my-account/?contentView=microthemer" target="_blank">'
+	                      . esc_html__('license key', 'microthemer').'</a> if you have purchased a <a href="https://themeover.com/pricing/?contentView=microthemer" target="_blank">premium plan</a>';
                     $differentKey = $validated && !$capped
 	                    ? '<p class="setup-section-intro">Unlock using a <span class="link reveal-unlock">'. esc_html__('different license key', 'microthemer').'.</span>
                         </p>'
@@ -1777,7 +1765,7 @@ require_once('common-inline-assets.php');
                     $inputLine = '
                     <ul class="form-field-list license-key-setup">
                          <li>
-                            <label class="text-label" title="'. esc_attr__("License key shown in 'My Downloads'", 'microthemer').'">'.
+                            <label class="text-label" title="'. $licenseShown.'">'.
                                  esc_html__('License key', 'microthemer').'
                             </label>
                             <input id="license-key-input" type="text" autocomplete="off" name="tvr_preferences[buyer_email]"
@@ -1801,10 +1789,13 @@ require_once('common-inline-assets.php');
 		                    'skip' => !$this->supportContent(),
 		                    'title' => 'Amender License',
 		                    'content' => '
+                            <p class="setup-section-intro">
+                                Optionally enter your <a href="https://themeover.com/my-account/?contentView=amender" target="_blank">license key</a> if you have purchased a <a href="https://themeover.com/pricing/?contentView=amender" target="_blank">premium plan</a>
+                            </p>
 		                    <div id="tvr_validate_form_amender">
 		                        <ul class="form-field-list license-key-setup">
                                      <li>
-                                        <label class="text-label">'.
+                                        <label class="text-label" title="'. $licenseShown.'">'.
                                             esc_html__('License key', 'microthemer').'
                                         </label>
                                         <input id="license-key-input" type="text" autocomplete="off" name="tvr_preferences[amender_buyer_email]"
@@ -1841,7 +1832,7 @@ require_once('common-inline-assets.php');
 		                    'content' => '<p class="setup-section-intro">Take the Amender tour, and reach out if you need help.</p>
                             <div class="support-buttons">
                                 <a target="_blank" href="https://themeover.com/introducing-amender/">Video docs</a>
-                                <a target="_blank" href="https://themeover.com/action/">Option reference</a>
+                                
                                 <a target="_blank" href="https://themeover.com/forum/">Support forum</a>
                                 <a target="_blank" href="https://www.facebook.com/groups/microthemer">Facebook group</a>
                             </div>'
@@ -2500,7 +2491,20 @@ require_once('common-inline-assets.php');
 				</ul>
 				<ul id="available-folders" class="checkboxes"></ul>
 
-				<div class="heading"><?php esc_html_e('Custom code', 'microthemer'); ?></div>
+                <?php
+                    if ($this->supportContent()){
+	                    echo '
+                        <div class="heading amender-snippets-export">
+                            <input type="checkbox" name="export_sections[active_snippets]" value="1" checked="checked" />' .
+                            $this->iconFont('tick-box-unchecked', array(
+                                'class' => 'fake-checkbox all-snippets-toggle on',
+                            )) . '
+                            <span>' . esc_html__('All Amender Snippets', 'microthemer') . '</span>
+                        </div>';
+                    }
+                ?>
+
+				<div class="heading"><?php esc_html_e('Global custom code', 'microthemer'); ?></div>
 				<ul id="custom-css" class="checkboxes">
 					<?php
 					foreach ($this->custom_code_flat as $key => $arr) {
@@ -2668,7 +2672,7 @@ require_once('common-inline-assets.php');
                         <p>Amender is not a page builder in its current form. It is designed to make customisations in those hard to reach places. Think of it like a "child theme" for your modern WordPress stack. Changes are made on the fly, without touching any files, so you can keep using (and now customizing) the tools you love.</p>
                         <p>Furthermore, you only pay for Amender when you want to publish your changes - when you know it solves your problem(s).</p>
                         <p class="addon-install-cta">
-                            <span class="tvr-button install-addon" data-addon="amender">Install Amender (free)</span>
+                            <span class="tvr-button install-addon" data-addon="amender">Install Amender (beta)</span>
                             <a target="_blank" href="https://themeover.com/amender/" title="Buy an Amender license">Go Pro</a>
                         </p>
                     </div>
@@ -2676,7 +2680,7 @@ require_once('common-inline-assets.php');
 
                 <div class="tvr-addon microthemer-addon-content hidden">
                     <div class="tvr-addon-summary microthemer-summary">
-                        <p><a target="_blank" href="https://themeover.com/">Microthemer</a> provides input fields, menus, and sliders for applying CSS styles visually. You can edit 15 selectors with the free version. Go pro for unlimited selectors and more advanced properties: CSS grid, flexbox, transition, transform, animation, shapes, and masks.</p>
+                        <p><a target="_blank" href="https://themeover.com/">Microthemer</a> provides input fields, menus, and sliders for applying CSS styles visually. You can add and publish 15 selectors with the free version. Go pro for unlimited selectors and more advanced properties: CSS grid, flexbox, transition, transform, animation, shapes, and masks.</p>
                         <p class="addon-install-cta">
                             <span class="tvr-button install-addon" data-addon="microthemer">Install Microthemer (free)</span>
                             <a target="_blank" href="https://themeover.com/" title="Buy a Microthemer license">Go Pro</a>

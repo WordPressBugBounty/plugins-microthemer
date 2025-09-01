@@ -223,7 +223,7 @@ $this->aiData = array(
 		'html' => esc_html__('HTML', 'microthemer'),
 		'js' => esc_html__('JS', 'microthemer'),
 	)),
-	'defaultTab' => $defaultTab = $this->hasCSSSubscription() ? 'css' : 'html',
+	'defaultTab' => 'css', //$defaultTab = $this->hasCSSSubscription() ? 'css' : 'html',
 	'actions' => array(
 		// Generate new content for the page CSS / HTML / JS
 		'generate' => array(
@@ -709,7 +709,9 @@ $this->initial_preference_options = array(
 	'css_important' => array(
 		'label' => __('Always add !important to CSS styles', 'microthemer'),
 		'label_no' => '(configure manually)',
-		'explain' => __('Always add the "!important" CSS declaration to CSS styles. This largely solves the issue of having to understand how CSS specificity works. But if you prefer, you can disable this functionality and still apply "!important" on a per style basis by clicking the [i] icons that will appear to the right of every style input.', 'microthemer')
+		'explain' => !$this->supportContent()
+			? __('Always add the "!important" CSS declaration to CSS styles. This largely solves the issue of having to understand how CSS specificity works. But if you prefer, you can disable this functionality and still apply "!important" on a per style basis by clicking the [i] icons that will appear to the right of every style input.', 'microthemer')
+			: 'Auto-add !important to CSS styles added directly to the root code editor (< >)'
 	),
 	'allow_scss' => array(
 		'label' => __('Enable Sass (at cost of syncing editor with UI fields)', 'microthemer'),
@@ -751,6 +753,14 @@ $this->default_preferences = array(
 	"code_font_size" => 14,
 	"current_revision" => 0,
 	"allow_scss" => 0, // if enabled by default, invalid css/scss will prevent stylesheet update.
+	"lastMultiTab" => array(
+		'html' => array(
+			'index' => 0,
+			'action' => 'replace',
+			'aspect' => 'text',
+		)
+		// todo - background, text_shadow & box_shadow (as separate), transition, animation, transform
+	),
 	"npm_dependencies" => (object) array(),
 	"npm_dependencies_published" => (object) array(), // published
 	"npm_dependencies_in_use" => (object) array(),
@@ -760,6 +770,9 @@ $this->default_preferences = array(
 	"ai_admin_access" => 0,
 	"ai_can" => 'edit',
 	"tailwind" => 0,
+	"mt_rich_text" => 0,
+	"mt_rich_text_code" => 0,
+	"show_snippet_adv" => 0,
 	"default_amender_event" => 'DOMContentLoaded',
 	"sync_browser_tabs" => 1, // change for Gutenberg
 	"specificity_preference" => 1, // 1 = high, 0 = low
@@ -988,7 +1001,7 @@ $this->default_preferences_dont_reset_or_export = array(
 	"subscription_checks" => $this->subscription_check_defaults,
 
 	"amender_buyer_email" => '',
-	'amender_buyer_validated' => 1,
+	'amender_buyer_validated' => false,
 	'amender_retro_sub_check_done' => false,
 	"amender_subscription" => $this->subscription_defaults,
 	"amender_subscription_checks" => $this->subscription_check_defaults,
@@ -1288,8 +1301,8 @@ $addActions = array(
 	'add',
 	'append',
 	'prepend',
-	'insert before',
-	'insert after',
+	'insertBefore',
+	'insertAfter',
 );
 $this->modification = array(
 	'juncture' => $this->to_autocomplete_arr(array(
@@ -1318,8 +1331,8 @@ $this->modification = array(
 		__('Add', 'microthemer') => $addActions,
 		__('Rearrange', 'microthemer') => array(
 			'replace',
-			'replace substring',
-			'lazyload',
+			'replaceSubstring',
+			'lazyLoad',
 			'move',
 			'remove',
 		),
@@ -1348,17 +1361,9 @@ $this->modification = array(
 				'condition' => 'action:add:1'
 			),
 			array(
-				'label' => 'inner html',
-				'value' => 'inner html',
+				'label' => 'innerHTML',
+				'value' => 'innerHTML',
 				'condition' => 'action:add:0'
-			),
-			array(
-				'label' => 'parent wrapper',
-				'value' => 'parent wrapper',
-			),
-			array(
-				'label' => 'child wrapper',
-				'value' => 'child wrapper',
 			),
 
 			// raw CSS code in any format - will be added to <head> as style tag
@@ -1377,11 +1382,23 @@ $this->modification = array(
 
 			// For running single functions in response to events
 			array(
-				'label' => 'function',
-				'value' => 'function',
+				'label' => 'jsFunction',
+				'value' => 'jsFunction',
 				'condition' => 'action:add:1'
 			),
 		),
+		__('Wrappers', 'microthemer') => array(
+
+			array(
+				'label' => 'parentWrapper',
+				'value' => 'parentWrapper',
+			),
+			array(
+				'label' => 'childWrapper',
+				'value' => 'childWrapper',
+			),
+		),
+
 		/*__('Integrations', 'microthemer') => array(
 			array(
 				'label' => 'wp pattern',
@@ -1404,11 +1421,15 @@ $this->modification = array(
 
 	'move_action' => $this->to_autocomplete_arr(array(
 		__('Add', 'microthemer') => $addActions,
+		__('Replace', 'microthemer') => array(
+			'replace',
+			'replaceSubstring',
+		),
 	)),
 
 	'attribute' => $this->to_autocomplete_arr(array(
 		'Multiple attributes' => array(
-			'attributes string'
+			'attributesString'
 		),
 		__('Common attributes', 'microthemer') => array(
 			'alt',

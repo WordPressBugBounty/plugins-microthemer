@@ -558,21 +558,26 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 		// start the field div
 		$html.= $field_wrap_html;
 
-		// css property text label
-		/*$html.= '
-		<div class="tvr-input-top">';
-
-
-
-			$html.=	'<span class="mt-property-label">'. $prop_data['short_label'] .'</span>
- 			'. $this->icon_control(false, 'important', $important_val, 'property', $section_name,
-				        $css_selector, $key, $property_group_name, $this->subgroup, $property).'
-		</div>';*/
+		// Rich text toggle
+		$richTextToggle = '';
+		if ($property === 'text'){
+			$richTextToggle = '
+			<div id="rich-text-toggle-wrap">
+				<span>'. esc_html__('Rich text', 'microthemer').'</span>
+				'.$this->toggle('mt_rich_text', array(
+					'toggle' => 0,
+					'toggle_id' => 'rich-text-toggle',
+					'data-pos' => esc_attr__('Enable rich text editor', 'microthemer'),
+					'data-neg' => esc_attr__('Disable rich text editor', 'microthemer'),
+				)).'
+			</div>';
+		}
 
 		$html.=	'
 		<span class="mt-property-label">
 			<span class="mt-property-text-label">'. $prop_data['short_label'] .'</span>
 			<span class="mt-prop-unit" data-forpopup="units"></span>
+			'.$richTextToggle.'
 		</span>';
 
 
@@ -628,11 +633,16 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 		// start variable line fields wrap
 		$html.= $variable_line ? '<div class="mt-variable-line"><div class="mt-vl-inner">' : '';
 
+
+		if ($property === 'snippet' || $property === 'text'){
+			$html.= $this->snippetHeader(); // . $this->htmlContentActionsMenu();
+		}
+
 		$input_wrap_html = '';
 
-		if ($property === 'text' || $property === 'snippet'){
+		/*if ($property === 'text' || $property === 'snippet'){
 			$html.= $this->snippet_dependency_table();
-		}
+		}*/
 
 		$input_wrap_html.= '<span class="tvr-input-wrap tvr-field-input-wrap '.$man_class . '">';
 
@@ -699,9 +709,19 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 
 			elseif ($property === 'snippet' || $property === 'text'){
 
-				$input_wrap_html.= '<textarea rel="'.$property.'" class="property-input '.$input_class.' '.$property.'-textarea"
+				$input_wrap_html.= '<textarea rel="'.$property.'" id="mt-'.$property.'-editor" class="property-input '.$input_class.' '.$property.'-textarea"
 			name="tvr_mcth'.$mq_stem.'['.$section_name.']['.$css_selector.'][styles]['.$property_group_name.']['. $property.']'.$name_suffix.'"></textarea>';
 
+			}
+
+			// Toggle for enable
+			else if ($property === 'enable'){
+				$input_wrap_html.= $property_input . $this->toggle('enable_modification', array(
+					'toggle' => 0,
+					'toggle_id' => 'enable-modification',
+					'data-pos' => esc_attr__('Enable removal', 'microthemer'),
+					'data-neg' => esc_attr__('Disable removal', 'microthemer'),
+				));
 			}
 
 			else {
@@ -715,11 +735,33 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 
 			if ($property === 'snippet'){
 				$input_wrap_html.= '<pre id="snippet-code" class="snippet-code"></pre>';
+			}
+
+			if ($property === 'snippet' || $property === 'text' ){
 				$input_wrap_html.= '
 				<div class="snippet-choice">
-					<div class="snippet-choice-inner">
-						<span class="snippet-choice-option tvr-button" data-option="original">Edit original</span>
-						<span class="snippet-choice-option tvr-button tvr-blue" data-option="clone">Create clone</span>
+					<div class="snippet-choice-inner load-snippet-inner">
+						<span class="snippet-choice-option tvr-button" data-option="original" title="Edit original snippet (synced)">
+							'.$this->iconFont('chain', array(
+                              'adjacentText' => array(
+                                  'text' => 'Edit synced snippet',
+                                  'class' => 'mti-text'
+                              ),
+                            )).'
+						</span>
+						<span class="snippet-choice-option snippet-choice-clone tvr-button tvr-blue" data-option="clone" title="Detach as duplicate snippet (unsynced)">
+							'.$this->iconFont('copy', array(
+								'adjacentText' => array(
+									'text' => 'Detach as duplicate',
+									'class' => 'mti-text'
+								),
+							)).'
+						</span>
+
+					</div>
+					<div class="snippet-choice-inner set-aspect-inner">
+						<span class="snippet-choice-option tvr-button" data-option="change-aspect" title="Change the aspect of the current snippet">Change snippet aspect</span>
+						<span class="snippet-choice-option tvr-button tvr-blue" data-option="create-snippet" title="Create a new snippet">Create new snippet</span>
 					</div>
 				</div>';
 			}
@@ -732,7 +774,7 @@ $field_wrap_html = '<div id="opts-'.$section_name.'-'.$css_selector.'-'.$propert
 		$html.= $input_wrap_html;
 
 		if ($property === 'snippet' || $property === 'text'){
-			$html.= $this->snippetNameField(); // . $this->htmlContentActionsMenu();
+			$html.= $this->snippetFooter(); // . $this->htmlContentActionsMenu();
 		}
 
 		// save input wrap for template/auto-rows/columns

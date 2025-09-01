@@ -143,7 +143,7 @@ $this->display_log();
             ),
 
             // when amender is released
-            /*'addons' => array(
+            'addons' => array(
 	            'label' => __('Addons', 'microthemer'),
 	            'items' => array(
 		            'css_addon' => array(
@@ -155,7 +155,7 @@ $this->display_log();
 			            'explain' => __('Install / uninstall the Amender addon', 'microthemer')
 		            ),
 	            )
-            ),*/
+            ),
 
             'interface' => array(
 	            'label' => __('Interface', 'microthemer'),
@@ -302,9 +302,9 @@ $this->display_log();
             <div class="heading"><?php echo esc_html__('Alternatively, use a plugin', 'microthemer'); ?></div>
             <p class="instruction-text"><?php echo esc_html__('If you are not familiar with editing PHP theme files, or you are using Oxygen Builder, you can also run the above code in the form of a simple plugin. 
             This approach is necessary for Oxygen users because Oxygen disables the theme.', 'microthemer'); ?></p>
-            <p><a href="<?php echo $this->thispluginurl . 'includes/inactive-loading/mt-inactive.zip'; ?>"><?php echo esc_html__('Download plugin', 'microthemer'); ?></a></p>
+            <p><a href="<?php echo $this->thispluginurl . 'includes/inactive-loading/microloader.zip'; ?>"><?php echo esc_html__('Download plugin', 'microthemer'); ?></a></p>
 
-            <p class="instruction-text"><?php echo sprintf(esc_html__('Simply install and activate the "mt-inactive.zip" plugin, and then you can uninstall %s - the CSS will still apply.', 'microthemer'), $this->appName); ?></p>
+            <p class="instruction-text"><?php echo sprintf(esc_html__('Simply install and activate the "microloader.zip" plugin, and then you can uninstall %s - the CSS will still apply.', 'microthemer'), $this->appName); ?></p>
             <br /><br />
 		</div>
 	</div>

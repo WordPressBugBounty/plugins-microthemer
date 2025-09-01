@@ -319,7 +319,7 @@ class CSS extends Minify
             $css = $this->shortenColors($css);
             $css = $this->shortenZeroes($css);
             $css = $this->shortenFontWeights($css);
-            $css = $this->stripEmptyTags($css);
+	        $css = $this->stripEmptyTags($css);
 
             // restore the string we've extracted earlier
             $css = $this->restoreExtractedData($css);
@@ -328,6 +328,9 @@ class CSS extends Minify
             $parents = $source ? array_merge($parents, array($source)) : $parents;
             $css = $this->combineImports($source, $css, $parents);
             $css = $this->importFiles($source, $css);
+
+	        // sebcus - re-run stripEmptyTags, now that comments have been removed.
+	        $css = $this->stripEmptyTags($css);
 
             /*
              * If we'll save to a new path, we'll have to fix the relative paths

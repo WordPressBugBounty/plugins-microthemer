@@ -31,8 +31,10 @@ trait FrontAndBackTrait {
 		return defined('TVR_CONTENT_EDITOR') && !empty(constant('TVR_CONTENT_EDITOR'));
 	}
 
+	// We want to return true when neither constant is defined - when Microloader is running
 	function isFullEditor(){
-		return defined('TVR_FULL_EDITOR') && !empty(constant('TVR_FULL_EDITOR'));
+		return !defined('TVR_CSS_EDITOR') && !defined('TVR_CONTENT_EDITOR');
+		//return defined('TVR_FULL_EDITOR') && !empty(constant('TVR_FULL_EDITOR'));
 	}
 
 	function hasContentDir(){

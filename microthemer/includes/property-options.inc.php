@@ -561,6 +561,19 @@ $propertyOptions['html']['aspect'] = array(
 	'ref_desc' => "<p>Which aspect of the element to modify.</p>",
 );
 
+// Enable (for remove or lazyLoad)
+$propertyOptions['html']['enable'] = array(
+	'short_label' => esc_html__('Enable removal',  'microthemer'),
+	'label' => esc_html__('Enable removal',  'microthemer'),
+	//'dynamic_fields' => 'aspect',
+	'field-class' => 'conditional-field',
+	'input-class' => '',
+	'type' => 'combobox',
+	'defVal' => '',
+	// ref
+	'ref_desc' => "<p>Enable remove / lazyLoad adjustments</p>",
+);
+
 
 // Move
 $propertyOptions['html']['move_to_display'] = array(
@@ -661,12 +674,18 @@ $propertyOptions['html']['tag'] = array(
 	'field-class' => 'conditional-field',
 	'input-class' => 'size-4',
 	//'type' => 'combobox',
-	'defVal' => 'div',
+	'select_options' => array(
+		'div',
+		'span',
+		'strong',
+		'a',
+	),
+	'defVal' => '',
 	'sug_values' => array(
 		'this' => 1
 	),
 	// ref
-	'ref_desc' => "<p>The HTML tag for use with parent or child wrappers.</p>",
+	'ref_desc' => "<p>The HTML tag for use with parent or childWrappers.</p>",
 );
 
 // Modification attribute - just use aspect (unless some reason why we need this)
@@ -707,7 +726,7 @@ $propertyOptions['html']['text'] = array(
 );
 
 // Modification template - run a function - I'm hiding it, do I need it?
-$propertyOptions['html']['run_function'] = array(
+/*$propertyOptions['html']['run_function'] = array(
 	'short_label' => esc_html_x('Function to run', 'noun', 'microthemer'),
 	'label' => esc_attr_x('Function to run', 'noun', 'microthemer'),
 	'field-class' => 'hidden field-is-full-width',
@@ -716,12 +735,12 @@ $propertyOptions['html']['run_function'] = array(
 	'defVal' => 'none',
 	// ref
 	'ref_desc' => "<p>Select which function to run.</p>",
-);
+);*/
 
 // Modification template - reference an MT snippet
 $propertyOptions['html']['snippet_id'] = array(
-	'short_label' => esc_html_x('Load a Snippet', 'noun', 'microthemer'),
-	'label' => esc_attr_x('Load a Snippet', 'noun', 'microthemer'),
+	'short_label' => esc_html_x('Snippet ID', 'noun', 'microthemer'),
+	'label' => esc_attr_x('Snippet ID', 'noun', 'microthemer'),
 	'field-class' => 'hidden', // hidden
 	'input-class' => 'size-4 mt-snippet-id',
 	//'type' => 'combobox',
@@ -745,7 +764,7 @@ $propertyOptions['html']['snippet'] = array(
 /*$propertyOptions['html']['load_snippet'] = array(
 	'short_label' => esc_html_x('Load snippet', 'noun', 'microthemer'),
 	'label' => esc_attr_x('Load snippet', 'noun', 'microthemer'),
-	'field-class' => 'field-is-full-width conditional-field',
+	'field-class' => 'field-is-full-width',
 	'input-class' => 'size-4 mt-load-snippet',
 	'type' => 'combobox',
 	'defVal' => 'Search snippets',
@@ -759,7 +778,7 @@ $propertyOptions['html']['juncture'] = array(
 	'label' => esc_html__('Modification event', 'microthemer'),
 	/*'sub_label' => esc_html__('Target', 'microthemer'),
 	'sub_slug' => 'targethtml',*/
-	'field-class' => 'field-is-full-width',
+	'field-class' => 'field-is-full-width conditional-field',
 	'input-class' => 'size-4',
 	//'type' => 'combobox',
 	'defVal' => 'DOMContentLoaded',
@@ -773,7 +792,7 @@ $propertyOptions['html']['juncture'] = array(
 $propertyOptions['html']['selector'] = array(
 	'short_label' => esc_html_x('Selector', 'noun', 'microthemer'),
 	'label' => esc_attr_x('Modification selector', 'noun', 'microthemer'),
-	'field-class' => 'field-is-full-width',
+	'field-class' => 'field-is-full-width hidden', // conditional-field hide this until it's developed a bit more.
 	'input-class' => 'selector-override',
 	//'dynamic_fields' => 'selector',
 	//'type' => 'combobox',

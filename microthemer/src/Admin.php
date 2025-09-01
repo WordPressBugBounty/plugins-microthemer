@@ -200,7 +200,8 @@ class Admin {
 	    'add_block_classes_all',
         'npm_dependencies',
         'npm_dependencies_published',
-        'default_amender_event'
+        'default_amender_event',
+        'm_queries'
     );
 
 	private $reporting = array(
@@ -649,6 +650,7 @@ class Admin {
 						$explain.= '<ol>' . $domains . '</ol>';
 
 						break;
+
 
 					case "connection error":
 					case "proxy connection error":
@@ -1308,10 +1310,6 @@ class Admin {
 	// add js
 	function add_js() {
 
-		if (!$this->optimisation_test){
-			wp_enqueue_media(); // adds over 1000 lines of code to footer
-		}
-
 		// allow style tag atts to be updated if they are async
 		add_filter( 'script_loader_tag', array(&$this, 'customScriptAtts'), 10, 4 );
 
@@ -1380,6 +1378,12 @@ class Admin {
 
 			$prevScript = $jqi;
 		}
+
+        // If Amender, load TinyMCE
+		$this->contentMethod('loadTinyMCE');
+
+        // Always load media manager (for MT background images, or Amender image upload)
+		wp_enqueue_media();
 
 		// script map
 		$mt_scripts = array(
@@ -3249,11 +3253,12 @@ class Admin {
                 <span>Import</span>
                  '.$this->iconFont('add', array(
                     'class' => 'add-snippet-dependency-icon',
-                    'title' => esc_attr__('Add package', 'microthemer')
+                    'title' => esc_attr__('Add package', 'microthemer'),
+                    'data-label' => esc_attr__('add', 'microthemer')
                 )).'
                 </div>
                 <div class="single-package-column">
-                    <span>Package</span>
+                    <span title="Add any JavaScript packages this snippet needs (optional)">JS dependencies</span>
                     '.$this->iconFont('cog', array(
                         'rel' => 'mt-enqueue-js',
                         'class' => 'show-dialog',
@@ -3276,7 +3281,7 @@ class Admin {
             </div>
             <div class="snippet-package-field">
                 <span class="tvr-input-wrap">
-                    <input type="text" class="snippet-dep-adjust snippet-select-package combobox has-arrows" placeholder="{autoPackName}" value="{manualPackName}" rel="current_npm_dependencies" />
+                    <input type="text" class="snippet-dep-adjust snippet-select-package combobox has-arrows" placeholder="{autoPackName}" data-appto="#style-components" value="{manualPackName}" rel="current_npm_dependencies" />
                     <span class="combo-arrow"></span>
                 </span>
             </div>
@@ -3940,6 +3945,8 @@ class Admin {
 		return str_replace(array( ':', '(', ')' ), '', $pseudo);
 	}
 
+    // todo - we could store published autoload preferences by copying these upon publish
+    // but then it can't conditionally autoload, so may not be worth the trade off.
     function copyToAutoloadValues($fullPreferences){
 
         $autoloadPreferences = array();
@@ -4359,7 +4366,7 @@ class Admin {
 						name VARCHAR(80) DEFAULT '' NOT NULL,
 						slug VARCHAR(255) DEFAULT '' NOT NULL,
 						type VARCHAR(50) DEFAULT '' NOT NULL,
-						sub_type VARCHAR(50) DEFAULT '' NOT NULL,
+						aspect VARCHAR(50) DEFAULT '' NOT NULL,
 						published BOOLEAN DEFAULT 0,
 						content longtext NOT NULL,
 						modified_at datetime DEFAULT current_timestamp() NOT NULL,
@@ -4370,7 +4377,7 @@ class Admin {
     					KEY slug_idx (slug),
     					KEY type_idx (type),
     					KEY published_idx (published),
-                        KEY sub_type_idx (sub_type)
+                        KEY aspect_idx (aspect)
 						) $charset_collate;";
 
 			//wp_die('the table should update' . $sql);
@@ -7048,15 +7055,66 @@ class Admin {
 			}*/
 
 
-    function snippetNameField(){
+    function snippetHeader(){
+	    return '
+        <div class="mt-snippet-header">
+            <div class="sync-snippet-options snippet-header-item" data-sync-state="synced">
+                <span class="snippet-sync-notify">Editing synced snippet:</span>
+                <span class="link detach-snippet" title="Detach as duplicate snippet (unsynced)" data-mtc="mod.MThtml.detachSyncedSnippet">detach</span>
+                <span class="snippet-detached">Detached!</span>
+            </div>
+        </div>';
+    }
+
+    function snippetFooter(){
+
         return '
-        <div class="snippet-name-wrap">
-            <span class="snippet-name-label">Name: </span>
-            <span class="tvr-input-wrap">
+        <div class="mt-snippet-footer">
+        
+             <span class="snippet-name-label" title="Name the snippet (opitonal)">
+                Name: 
+             </span>
+             <span class="tvr-input-wrap snippet-name-input-wrap">
 			    <input type="text" class="snippet-name-input snippet-dep-adjust" placeholder="" />
-			</span>
-        </div>
-        ';
+			 </span>
+           
+			 <span class="snippet-actions-label" title="Snippet actions">Actions: </span>
+			 <span class="snippet-action-row">
+			    '.$this->iconFont('leaf-solid', array(
+                    'class' => "snippet-action",
+                    'data-action' => 'beautify',
+                    'data-mtc' => 'mod.MThtml.snippetAction',
+                    'title' => esc_attr__('Beautify snippet', 'microthemer'),
+                ))
+               .$this->iconFont('file-circle-plus-solid-full', array(
+                    'class' => "snippet-action",
+                    'data-action' => 'new',
+                    'data-mtc' => 'mod.MThtml.snippetAction',
+                    'title' => esc_attr__('Create new snippet (without overwriting current)', 'microthemer'),
+                ))
+               .'
+                  
+			    <span class="tvr-input-wrap tvr-field-input-wrap search-snippets-wrap">
+                    <input type="text" rel="load_snippet" data-appto="#style-components" class="combobox has-arrows mt-load-snippet" placeholder="Search" />
+                    <span class="combo-arrow tvr-field-arrow"></span>
+                    <span class="mt-clear-field"></span>
+                </span>
+             </span>
+			
+			 '.$this->snippet_dependency_table() .'
+ 
+        </div>' .
+
+
+        $this->ui_toggle(
+            'show_snippet_adv',
+	        esc_attr__('Expand snippet options', 'microthemer'),
+	        esc_attr__('Collapse snippet options', 'microthemer'),
+            0,
+            'toggle-snippet-adv '.$this->iconFont('double-chevron-up', array('onlyClass' => 1)),
+            'toggle-snippet-adv'
+        );
+
     }
 
     /*function htmlContentActionsMenu(){
@@ -9848,13 +9906,17 @@ class Admin {
 			}
 
 			$label = $this->property_option_groups[$property_group_name];
+            $tooltip = $label;
+            if ($property_group_name === 'html'){
+	            $tooltip = $label . " (beta)";
+            }
 
 			$html.= $this->icon($icon_name, array(
 				'type' => $icon_type,
 				'dir' => $icon_dir,
 				'class' => 'pg-icon pg-icon-'.$property_group_name,
 				'rel' => $property_group_name,
-				'title' => $label,
+				'title' => $tooltip,
 				'adjacentText' => array(
 					'text' => $label,
 					'class' => 'mti-text pg-icon-text-label'
@@ -9867,6 +9929,27 @@ class Admin {
 				// 'wrapClass' => $property_group_name. '-wrap',
 
 			));
+
+            // Shortcut for enabling Microthemer addon
+            if ( $property_group_name === 'html' && !$this->supportGUICSS() ){
+	            $html.= $this->icon($icon_name, array(
+		            'type' => $icon_type,
+		            'dir' => $icon_dir,
+		            'class' => 'trigger-microthemer-addon pg-icon pg-icon-MT-logo',
+		            'rel' => 'microthemer-addon',
+		            'title' => 'Enable Microthemer addon',
+		            'adjacentText' => array(
+			            'text' => 'Microthemer addon',
+			            'class' => 'mti-text pg-icon-text-label'
+		            ),
+		            'wrap' => array(
+			            'class' => 'mti-wrap pg-icon-wrap pg-icon-wrap-microthemer-addon',
+			            'rel' => 'microthemer-addon',
+		            ),
+		            // 'wrapClass' => $property_group_name. '-wrap',
+
+	            ));
+            }
 
 		}
 
@@ -10811,6 +10894,23 @@ class Admin {
 		// include the user's current media queries form importing back
 		$json_data['non_section']['active_queries'] = $this->preferences['m_queries'];
 
+
+        // Include snippets and npm dependencies
+        if ($this->supportContent()){
+
+	        if (!empty($this->serialised_post['export_sections']['active_snippets'])){
+
+                $json_data['non_section']['active_snippets'] = $this->contentMethod('getSnippets', array(-1, 0, ARRAY_A));
+
+		        //wp_die('export_sections: <pre>'.print_r($json_data['non_section']['active_snippets'], true).'</pre>');
+
+                // We want to combine npm packages with existing instead of overwriting
+                $json_data['non_section']['combine_preferences']['npm_dependencies'] = $this->preferences['npm_dependencies'];
+
+	        }
+        }
+
+
 		// unless full, loop through full options - removing sections
 		if (!$export_full){
 
@@ -10906,7 +11006,7 @@ class Admin {
 	}
 
 	// pre-process import or restore data
-	function filter_incoming_data($con, $data){
+	function filter_incoming_data($con, $data, $isMerge = false){
 
 		$filtered_json = $data;
 
@@ -10994,8 +11094,31 @@ class Admin {
             }
         }
 
+        // import npm_dependencies if provided npm_dependencies
+		if (!empty($filtered_json['non_section']['combine_preferences']['npm_dependencies'])){
+
+			$npm_dependencies = &$filtered_json['non_section']['combine_preferences']['npm_dependencies'];
+
+            if ($isMerge){
+                foreach($filtered_json['non_section']['combine_preferences']['npm_dependencies'] as $slug => $item){
+	                $this->preferences['npm_dependencies'][$slug] = $item;
+                }
+	            $npm_dependencies = &$this->preferences['npm_dependencies'];
+            }
+
+			$this->savePreferences(array('npm_dependencies' => $npm_dependencies));
+		}
+
+        // import snippets if provided
+        if (!empty($filtered_json['non_section']['active_snippets'])){
+	        $this->contentMethod('restoreSnippets', array(&$filtered_json['non_section']['active_snippets'], false, $isMerge));
+        }
+
+
 		// active_queries are just used for import now. Unset as they have served their purpose
 		unset($filtered_json['non_section']['active_queries']);
+		unset($filtered_json['non_section']['npm_dependencies']);
+		unset($filtered_json['non_section']['active_snippets']);
 
 		// just for debugging
 		if ($this->debug_import) {
@@ -11026,6 +11149,8 @@ class Admin {
 
 	// load .json file - or json data if already got
 	function load_json_file($json_file, $theme_name, $context = '', $data = false) {
+
+        $isMerge = $context == __('Merge', 'microthemer');
 
 		// if json data wasn't passed in to function, get it
 		if ( !$data ){
@@ -11058,10 +11183,10 @@ class Admin {
 		}
 
 		// replace mq keys, add new to the UI, add css units if necessary.
-		$filtered_json = $this->filter_incoming_data('import', $json_array);
+		$filtered_json = $this->filter_incoming_data('import', $json_array, $isMerge);
 
 		// merge the arrays if merge (must come after key analysis/replacements)
-		if ($context == __('Merge', 'microthemer') or $context == esc_attr__('Raw CSS', 'microthemer')) {
+		if ($isMerge or $context == esc_attr__('Raw CSS', 'microthemer')) {
 			$filtered_json = $this->merge($this->options, $filtered_json);
 		} else {
 			// Only update theme_in_focus if it's not a merge
@@ -11223,16 +11348,13 @@ class Admin {
 			// merge the arrays (recursively to avoid overwriting)
 			$merged_settings = $this->array_merge_recursive_distinct($orig_settings, $new_settings);
 
-			echo '<pre>custom_code debug: '  . print_r([
+			/*echo '<pre>custom_code debug: '  . print_r([
                     'custom_code' => $this->custom_code,
                     'new data non_section' => $new_settings['non_section']
-                ], true) . '</pre>';
+                ], true) . '</pre>';*/
 
 			// the hand-coded CSS of the imported settings needs to be appended to the original
 			foreach ($this->custom_code as $key => $arr){
-
-
-
 
 
 				$new_code = trim($new_settings['non_section'][$key]);

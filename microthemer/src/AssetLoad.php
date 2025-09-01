@@ -13,7 +13,7 @@ if (!defined( 'ABSPATH')) {
  * Minimal functionality to add CSS, JS (user animation), body classes, Google Fonts, and the viewport meta tag.
  * This file is copied to /wp-content/micro-themes upon activation, to support deactivating Microthemer.
  * It can be manually included as a standalone file using require(ABSPATH . '/wp-content/micro-themes/AssetLoad.php');
- * Alternatively, it can be installed as a simple plugin: mt-inactive.zip
+ * Alternatively, it can be installed as a simple plugin: microloader.zip
  */
 
 if (!class_exists('\Microthemer\AssetLoad')){
@@ -51,6 +51,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 		var $fileStub = 'active';
 		var $menuSlugs = array(); // for adding first/last classes to menus
 		var $menuItemCount = 0;
+		var $devMode = false;
 
 		public $hooks = array(
 			'head' => 'wp_head',
@@ -71,11 +72,15 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 		function init(){
 
+			if (defined('TVR_DEV_MODE') && !empty(constant('TVR_DEV_MODE'))){
+				$this->devMode = true;
+			}
+
 			$p = $this->getPreferences();
 			$this->checkAdminVsFront();
 
 			if ($this->hasContentCapability()){
-				$this->contentClass = new Content\AssetLoadContent($this, TVR_DEV_MODE);
+				$this->contentClass = new Content\AssetLoadContent($this, $this->devMode);
 			}
 
 			// Set the app name
@@ -308,6 +313,9 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				$this->conditionalAssets($asset_loading['logic']);
 			}
 
+			// Now we have folderLoading config, queue scripts and maybe hook HTML mods
+			$this->contentMethod('initContentAmendments');
+
 			// insert MT interface CSS here if AssetAuth child class is running
 			$this->addMTCSS();
 
@@ -429,7 +437,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				$this->loadConditionalAssets($folders, $logic);
 				
 				// Now we have folderLoading config, queue scripts and maybe hook HTML mods
-				$this->contentMethod('initContentAmendments');
+				//$this->contentMethod('initContentAmendments');
 			}
 
 			$this->folderLoadingChecked = true;
@@ -613,7 +621,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				);
 			}
 
-			$min = !TVR_DEV_MODE ? '-min' : '/page';
+			$min = !$this->devMode ? '-min' : '/page';
 
 			// Tailwind data
 			$tailwind = array(

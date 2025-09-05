@@ -7062,6 +7062,7 @@ class Admin {
                 <span class="snippet-sync-notify">Editing synced snippet:</span>
                 <span class="link detach-snippet" title="Detach as duplicate snippet (unsynced)" data-mtc="mod.MThtml.detachSyncedSnippet">detach</span>
                 <span class="snippet-detached">Detached!</span>
+                <span class="snippet-usage-count" data-usage-count="1" title="Usage count"  data-mtc="mod.MThtml.searchSnippetUsage"></span>
             </div>
         </div>';
     }

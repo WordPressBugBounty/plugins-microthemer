@@ -7,7 +7,7 @@ use \Microthemer\TimerTrait;
 /*
  * AssetLoadContent
  *
- * Manage content amendments
+ * Manage server-side content amendments and asset loading
  */
 
 class AssetLoadContent {
@@ -45,7 +45,6 @@ class AssetLoadContent {
 			$this->noAmends = isset($_GET['no_amends']);
 			$this->dynAmends = isset($_GET['dyn_amends']) || $this->debugAmends || $this->noAmends;
 			$this->timeAmends = isset($_GET['time_amends']);
-			//wp_die('timeAmends' . '<pre>' . print_r([$this->timeAmends], 1) . '</pre>');
 		}
 
 		if ($this->doAmends()){
@@ -60,7 +59,6 @@ class AssetLoadContent {
 	}
 
 	function setupOutputBufferCallback(){
-		//wp_die('$this->modList <pre>'.print_r($this->modList, 1).'</pre>' );
 		ob_start(array(&$this, 'filterOutputBuffer'));
 	}
 
@@ -78,8 +76,6 @@ class AssetLoadContent {
 	}
 
 	function filterOutputBuffer($html){
-
-		//wp_die('filterOutputBuffer check');
 
 		if (!$html || self::$hasRun){
 			return $html;
@@ -101,13 +97,6 @@ class AssetLoadContent {
 	}
 
 	function doAmends(){
-
-
-		/*wp_die('<pre>CHECK: '.print_r([
-				'result' => !empty($this->preferences[$this->assetClass->assetLoadingKey]['html_mods']['all']),
-				$this->assetClass->assetLoadingKey,
-				$this->preferences[$this->assetClass->assetLoadingKey]
-			], true).'</pre>');*/
 
 		return (
 			($this->isEditing || !empty($this->preferences[$this->assetClass->assetLoadingKey]['html_mods']['all']))
@@ -183,10 +172,6 @@ class AssetLoadContent {
 			// Client-side modifications / base settings for editing
 			$this->clientSideSetup($extracted);
 
-			/*wp_die('$extracted: <pre>' . print_r([
-					$extracted, $rows
-				], 1) . '</pre>');*/
-
 			if ($this->debugAmends){
 				$this->clientSide = &$extracted['clientSide'];
 			}
@@ -226,12 +211,6 @@ class AssetLoadContent {
 				// Function imports need to be printed inline
 				$snippet_deps = ContentHelper::getScriptDepsFromMeta($this->preferences['npm_dependencies'], $row->meta, true, false, true);
 
-				//$this->profiler['deps'][$row->slug] = $snippet_deps;
-				//$this->profiler['deps'][$row->slug] = $snippet_deps;
-				/*if ($row->slug === 'r4nd0mStr1ngF0rAnim'){
-					wp_die('$snippet_deps: <pre>'.print_r($snippet_deps, 1).'</pre>');
-				}*/
-
 				if ($snippet_deps){
 					foreach ($snippet_deps as $packageName => $config){
 
@@ -262,8 +241,6 @@ class AssetLoadContent {
 						$mq_query = $array['mq_query'];
 						if (!$mq_query){
 							$mq_query = 'all-devices';
-						} else {
-							// todo  - if we have a media query, do an approximation to see if it is valid
 						}
 
 						foreach ($array['selectors'] as $selectorSlug => $selectorData){
@@ -271,8 +248,6 @@ class AssetLoadContent {
 							$modArr = $selectorData['mods'];
 
 							foreach ($modArr as $index => $mod){
-
-								//wp_die('Mod' . '<pre>' . print_r($mod, 1) . '</pre>');
 
 								// Get aspect and snippet
 								$action = isset($mod['action']) ? trim($mod['action']) : '';
@@ -293,7 +268,6 @@ class AssetLoadContent {
 								$junctureMeta = $this->extractJunctureInfo($juncture);
 								$juncture = $junctureMeta['native'];
 								unset($junctureMeta['native']);
-
 
 								// resolve new value - use a snippet if an id is provided - otherwise plain text
 								$newValue = !empty($mod['snippet_id']) && !empty($allSnippets[$snippet_id])
@@ -334,11 +308,6 @@ class AssetLoadContent {
 									}
 
 									$extracted['clientSide'][$aspect][$snippet_id] = $newValue;
-
-									/*$extracted['clientSide'][$aspect][$snippet_id] = $aspect === 'js'
-										? ContentHelper::getJsFileName($mod, $snippet_id, false)
-										: $newValue;*/
-
 									$wasExtracted = true;
 								}
 
@@ -512,7 +481,6 @@ class AssetLoadContent {
 		$clientSide = &$extracted['clientSide'];
 		$hasClientSideMods = count($clientSide['mods']) || $this->isEditing;
 		$vendorDir = $this->assetClass->rootDir . 'mt/js/'.$this->assetClass->fileStub.'/npm/';
-		$vendorUrl = $this->assetClass->rootUrl . 'mt/js/'.$this->assetClass->fileStub.'/npm/';
 
 		if (!$hasClientSideMods){
 			return false;
@@ -571,21 +539,15 @@ class AssetLoadContent {
 
 				wp_register_script_module($packageName, $pointTo);
 
-				//wp_enqueue_script_module($packageName, $pointTo);
-
 				// Support deps that need to load inline, rather than being imported in JS
 				$this->popuplateInlineDeps($packageName, $dep, $pointTo, $inline);
 
 				if ($this->debugAmends && !empty($dep['size'])){
 					$extracted['clientSide']['asset_size']['user_packages'] += $dep['size'];
 				}
-
-
 			}
 
 		}
-
-		//wp_die('<pre>$inline'.print_r($inline, true).'</pre>');
 
 		// Register items in the import map - use a dummy file for now, better solution later
 		if (count($imports)){
@@ -598,15 +560,15 @@ class AssetLoadContent {
 
 		// Import statements for functions
 		$functionDeps = '';
-		$register = '';
 		if (count($clientSide['function_deps'])){
+			$register = array();
 			foreach ($clientSide['function_deps'] as $packageName => $importSyntax){
-				//$fileUrl = $this->deliveryUrl($packageName, $vendorDir, false, true);
 				if (!empty($importSyntax)){
-					//$imp = print_r($importSyntax, 1);
 					$functionDeps.= "import $importSyntax from '$packageName';\n";
+					ContentHelper::populateRegistered($packageName, $importSyntax, $register);
 				}
 			}
+			ContentHelper::applyRegistered($register, $functionDeps);
 			$functionDeps.= "\n";
 		}
 
@@ -621,27 +583,13 @@ class AssetLoadContent {
 				}
 			}
 		}
-		/*foreach ($clientSide['jsFunction'] as $jsFunction){
-			if ($jsFunction){
-				try {
-					$functionObject.=
-						preg_replace(
-							'/function\s+(\w+)\s*\((.*?)\)\s*\{(.*?)}/s',
-							'$1($2){$3}',
-							$jsFunction
-						) . ",\n";
-				} catch (\Exception $e) {
-					//$this->log('Error with function', $e->getMessage());
-				}
-			}
-		}*/
+
 		$functionObject.= '};';
 		$inlineFunctions = $functionDeps . 'var AF = window.AF = ' . $functionObject . "\n\n";
 
 		// Alpine is not instantiated by JS, but should apply to HTML
 		// So it needs to be initiated manually
 		$this->applyInlineDeps($inline);
-
 
 		$this->hookScript(
 			'amender-functions',
@@ -713,8 +661,6 @@ class AssetLoadContent {
 				? ' type="importmap"'
 				: '');
 		$srcAttribute = $src ? ' src="'.$src.'"' : '';
-
-		//echo 'Action/order: ' . $action . ' -> ' . $order. ' -> ' . $handle . '<br />';
 
 		add_action($action, function () use ($srcAttribute, $handle, $typeAttribute, $inline_content) {
 			printf(
@@ -860,19 +806,6 @@ class AssetLoadContent {
 			$input = str_replace('_lazy', '', $input);
 		}
 
-		// swap mouse-enter/leave for over/out
-		/*if ($input === 'mouseenter' || $input === 'mouseleave'){
-			$result['excludeRelated'] = 1;
-			$result['alias'] = $input;
-			$input = $input === 'mouseenter' ? 'mouseover' : 'mouseout';
-		}
-
-		// swap focus and blur for focusin / focusout (which bubble)
-		if ($input === 'focus' || $input === 'blur'){
-			$result['alias'] = $input;
-			$input = $input === 'focus' ? 'focusin' : 'focusout';
-		}*/
-
 		$result['native'] = $input;
 
 		// Return the modified string and the matches
@@ -946,14 +879,6 @@ class AssetLoadContent {
 
 			if ($content){
 				$tailwindUrl = $this->assetClass->rootUrl . ($pagePath ? $page : $siteWide);
-
-				/*wp_die('Content node' . '<pre>' . print_r([
-						$p['tailwind'],
-						$sitePath,
-						file_exists($sitePath)
-					], 1) . '</pre>');*/
-
-
 				$this->assetClass->enqueueOrAdd(
 					($add || $inline),
 					'mt-tailwind', // use mt- instead of microthemer- so it isn't removed when MT inits
@@ -967,15 +892,6 @@ class AssetLoadContent {
 
 		}
 	}
-
-	// Load global and folder scripts and dynamically create the object literal inline functions
-	function loadScripts(){
-
-
-
-	}
-
-
 
 
 }

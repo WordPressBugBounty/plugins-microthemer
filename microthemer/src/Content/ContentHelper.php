@@ -113,7 +113,7 @@ class ContentHelper {
 	}
 
 	public static function populateRegistered($packageName, $importSyntax, &$register){
-		if (str_contains($packageName, 'gsap')){
+		if (str_contains($packageName, 'gsap') && $packageName !== 'gsap'){
 			$register['gsap']['registerSyntax'] = "gsap.registerPlugin({addons});\n";
 			$register['gsap']['addons'][] = $importSyntax;
 		}

@@ -8,8 +8,8 @@ namespace Microthemer;
 
 trait PluginTrait {
 
-	var $version = '7.5.1.6';
-	var $db_chg_in_ver = '7.4.0.4';
+	var $version = '7.5.3.6';
+	var $db_chg_in_ver = '7.5.2.8';
 	var $minimum_wordpress = '5.6';
 	var $preferencesName = 'preferences_themer_loader';
 	var $autoloadPreferencesName = 'microthemer_autoload_preferences';
@@ -99,7 +99,6 @@ trait PluginTrait {
 	function jsonResponse($data, $clean = true){
 
 		if ($clean){
-			//ob_clean();
 			// Clean all levels of output buffering - this fixes issues like <p> wrapped around JSON
 			while (ob_get_level()) {
 				ob_end_clean();

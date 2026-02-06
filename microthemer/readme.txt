@@ -4,7 +4,7 @@ Contributors: bastywebb, joseluiscruz, ahrale
 Donate link: http://themeover.com/microthemer/
 Tags: css, customize, visual editor, google fonts, responsive
 Requires at least: 6.0
-Tested up to: 6.8
+Tested up to: 6.9
 Requires PHP: 5.6
 Stable tag: trunk
 License: GPLv2 or later
@@ -79,13 +79,132 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.5.3.6 (Dec 31st, 2025) =
+
+# Bugs Fixed (Amender)
+* Compatibility issue with various page builders when enabling a server-side edit if the builder loaded using a frontend URL with an editor=x parameter, rather than running in the admin area.
+
+= 7.5.3.5 (Dec 19th, 2025) =
+
+# Bugs Fixed (Amender)
+* Compatibility issue with Beaver Builder.
+* Additional compatibility fix for Bricks needed.
+
+= 7.5.3.4 (Dec 18th, 2025) =
+
+# Bugs Fixed (Amender)
+* Undoing an attribute removal did not restore it live (a refresh was required).
+
+# Bugs Fixed (Microthemer & Amender)
+* The folder numbers indicating total selectors were removed when using the "Undo" button.
+
+= 7.5.3.3 (Dec 16th, 2025) =
+
+# Bugs Fixed (Amender)
+* Global server-side changes were affecting the admin area instead of just the frontend.
+* Amendments didn't work with certain pseudo-elements / selectors e.g. ::before. These are stripped now.
+
+= 7.5.3.1 (Dec 15th, 2025) =
+
+# Bugs Fixed (Microthemer & Amender)
+* When using the radio buttons to select an alternative selector, the focus jumped back to the first item.
+
+# Bugs Fixed (Amender)
+* Removing an HTML attribute server-side did not work.
+* Moving an element server-side did not work.
+* Amender could run when Bricks editor was active, causing errors in the interface.
+
+= 7.5.2.9 (Dec 5th, 2025) =
+
+# Enhancement (Microthemer & Amender)
+* New switch to prioritise AI assistant speed vs thinking time.
+* Improved AI reliability - less formatting errors resulting in "AI error" message.
+
+= 7.5.2.8 (Nov 28th, 2025) =
+
+# Bugs fixed (Amender)
+* The code editor was uneditable when copying a selector or folder.
+* The message to signal a snippet is synced did not immediately show when copying a selector.
+
+= 7.5.2.8 (Nov 19th, 2025) =
+
+# Enhancements (Amender)
+* Amender beta status upgraded to production ready.
+* Improved database query performance.
+
+# Bugs fixed (Microthemer & Amender)
+* PHP warning due to missing sprite image.
+
+= 7.5.2.5 (Oct 30th, 2025) =
+
+# Change (Microthemer & Amender)
+* Reorganised some PHP class methods.
+
+= 7.5.2.4 (Oct 18th, 2025) =
+
+# Bugs fixed (Amender & Microthemer)
+* Possible error notification could display unnecessarily "action_after_repaint: no valid window context".
+
+= 7.5.2.3 (Oct 18th, 2025) =
+
+# Bugs fixed (Amender)
+* Amender changes not being saved due to a possible PHP error creating the database table "WordPress database error. Specified key was too long; max key length is 1000 bytes for query CREATE TABLE wp_micro_content".
+* On PHP 8.4, activated Amender produced a "Plugin produced unexpected output" warning due to some deprecation warnings from the plugin updater script.
+
+= 7.5.2.2 (Oct 18th, 2025) =
+
+# Bugs fixed (Microthemer)
+* Microthemer was mislabelled "Amender" in the WordPress menu, due to the wrong PHP constant being set for the plugin name.
+
+= 7.5.2.1 (Oct 17th, 2025) =
+
+# Enhancement (Amender)
+* The "Re-target current selector" option also updates Amender "add: css" if the single selector is being edited.
+
+# Bugs fixed (Amender)
+* The HTML inspection pane stripped preceding space from classes dynamically inserted by Amender.
+* The preference for enabling Microthemer as an addon for Amender was misaligned.
+* The popup for installing Microthemer as an addon for Amender persisted when displaying the npm installer popup.
+* The snippet usage count did not immediately update when reusing a snippet.
+* Creating a new snippet did not reset the usage count header.
+* All valid (non-deprecated) HTML attributes can be used in the aspect field e.g. tabindex, autocomplete, etc.
+* Snippet name field was not cleared when using the clear icon for all fields.
+
+= 7.5.2.0 (Oct 13th, 2025) =
+
+# Bugs fixed (Amender)
+* When setting a selector for moving elements, the action / aspect values were not auto-set, so the move did not happen.
+* Move relative syntax did not work for all examples e.g. next().
+
+= 7.5.1.9 (Oct 7th, 2025) =
+
+# Change
+* When default text is clicked and becomes blue (indicating it has been customised), it is saved. This is for interface consistency and snippet naming reasons.
+
+# Bugs fixed (Amender)
+* Errors in user JavaScript functions were not displayed at the top right of the interface.
+* Clearing all fields did not clear the TinyMCE editor.
+* Loading an existing snippet did not live update the page when choosing "Edit synced snippet".
+
+= 7.5.1.8 (Oct 3rd, 2025) =
+
+# Bugs fixed (Amender)
+* The review time in milliseconds was an underestimate due to a calculation error. Typical server-side HTML edits are done in 2-10 milliseconds (still extremely fast, but more than the sub-millisecond time reported previously).
+
 = 7.5.1.6 (Sept 30th, 2025) =
 
 # Enhancements (Microthemer & Amender)
 * AI example prompts.
+* Option to disable the AI assistant panel.
+* New 'outview' event which fires when an element that was in view scrolls out of view.
+* Provided some sensible defaults for the AI assistant to use when creating GSAP animations.
+* Synced snippet usage is tracked and can be searched.
 
 # Enhancements (Amender)
 * Customize the default Amender change tabs.
+
+# Bugs fixed (Amender)
+* No prompt to install a dependency was presented if the AI assistant created a GSAP / Three.js effect.
 
 = 7.5.1.5 (Sept 4th, 2025) =
 

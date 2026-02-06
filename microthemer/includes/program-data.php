@@ -753,6 +753,7 @@ $this->default_preferences = array(
 	"wireframe_mode" => 0,
 	"code_font_size" => 14,
 	"current_revision" => 0,
+	"ai_priority" => 'speed',
 	"allow_scss" => 0, // if enabled by default, invalid css/scss will prevent stylesheet update.
 	"lastMultiTab" => array(
 		'html' => array(
@@ -1525,7 +1526,7 @@ $this->modification = array(
 
 		// Amender only, filter on the client-side if not supported
 		__('Text', 'microthemer') => array(
-			'Reword the text to sound more lighthearted',
+			'Reword the text to sound more playful',
 			'Add a "Take the tour" sub-heading',
 		),
 		__('Media', 'microthemer') => array(

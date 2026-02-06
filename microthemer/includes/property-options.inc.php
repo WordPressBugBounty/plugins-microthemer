@@ -608,10 +608,11 @@ $propertyOptions['html']['move_to_relative'] = array(
 	//'type' => 'combobox',
 	'defVal' => 'none',
 	'select_options' => array(
-		'parent().parent()',
-		'closest(.container).find(.item)',
+		'parent',
 		'previous',
 		'next',
+		'siblings(*)',
+		'parents(.container).find(.item)',
 	),
 	'sug_values' => array(
 		'this' => 1
@@ -792,7 +793,7 @@ $propertyOptions['html']['juncture'] = array(
 $propertyOptions['html']['selector'] = array(
 	'short_label' => esc_html_x('Selector', 'noun', 'microthemer'),
 	'label' => esc_attr_x('Modification selector', 'noun', 'microthemer'),
-	'field-class' => 'field-is-full-width hidden', // conditional-field hide this until it's developed a bit more.
+	'field-class' => 'field-is-full-width', // conditional-field hide this until it's developed a bit more.
 	'input-class' => 'selector-override',
 	//'dynamic_fields' => 'selector',
 	//'type' => 'combobox',

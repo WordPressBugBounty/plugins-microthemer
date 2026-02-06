@@ -23,39 +23,7 @@ class HTML {
 	var $devMode = false;
 
 	public static $attributes = array(
-		'attributesString',
-		'class',
-		'id',
-		'title',
-		'alt',
-		'contenteditable',
-		'hidden',
-		'href',
-		'rel',
-		'src',
-		'style',
-		'target',
-		'width',
-		'height',
-		'required',
-		'selected',
-		'autocomplete',
-		'checked',
-		'for',
-		'type',
-		'name',
-		'value',
-		'onblur',
-		'onchange',
-		'onclick',
-		'onfocus',
-		'oninput',
-		'onload',
-		'onmouseover',
-		'onmouseout',
-		'onmousemove',
-		'onselect',
-		'role'
+		'accept', 'accept-charset', 'accesskey', 'action', 'allow', 'alpha', 'alt', 'as', 'async', 'autocapitalize', 'autocomplete', 'autoplay', 'capture', 'charset', 'checked', 'cite', 'class', 'colorspace', 'cols', 'colspan', 'content', 'contenteditable', 'controls', 'coords', 'crossorigin', 'csp', 'datetime', 'decoding', 'default', 'defer', 'dir', 'dirname', 'disabled', 'download', 'draggable', 'enctype', 'enterkeyhint', 'elementtiming', 'for', 'form', 'formaction', 'formenctype', 'formmethod', 'formnovalidate', 'formtarget', 'headers', 'height', 'hidden', 'high', 'href', 'hreflang', 'http-equiv', 'id', 'integrity', 'inputmode', 'ismap', 'itemprop', 'kind', 'label', 'lang', 'loading', 'list', 'loop', 'low', 'max', 'maxlength', 'media', 'method', 'min', 'minlength', 'multiple', 'muted', 'name', 'novalidate', 'open', 'optimum', 'pattern', 'ping', 'placeholder', 'playsinline', 'poster', 'preload', 'readonly', 'referrerpolicy', 'rel', 'required', 'reversed', 'role', 'rows', 'rowspan', 'sandbox', 'scope', 'selected', 'shape', 'size', 'sizes', 'slot', 'span', 'spellcheck', 'src', 'srcdoc', 'srclang', 'srcset', 'start', 'step', 'style', 'tabindex', 'target', 'title', 'translate', 'type', 'usemap', 'value', 'width', 'wrap'
 	);
 
 	public function __construct(&$contentClass, $devMode = false) {
@@ -115,8 +83,6 @@ class HTML {
 	// As the class property passed by reference has now been updated
 	function iterateMods(&$modList, &$html){
 
-		//wp_die('$modList at run time' . '<pre>' . print_r([$modList, $this->assetClass->preferences], 1) . '</pre>');
-
 		// If there are no server-side mods, and we do not need to print debug info
 		if (!count($modList) && !$this->contentClass->debugAmends){
 
@@ -132,7 +98,7 @@ class HTML {
 
 		// Parse the document
 		$this->doc = new \DOMDocument();
-		$this->doc->loadHTML($html, LIBXML_NOERROR | LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD ); // | LIBXML_NOCDATA
+		$this->doc->loadHTML($html, LIBXML_NOERROR | LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
 		$this->xpath = new \DOMXPath($this->doc);
 
 		// pull lazy loaded content out of DOM and store in DB
@@ -163,16 +129,6 @@ class HTML {
 			$nodes = $this->xpath->query($xpathSelector);
 
 			try {
-
-				/*$this->log(
-					'Run modification:',
-					array(
-						'folder' => $sectionSlug,
-						'selector' => $selectorCode,
-						'modification' => $mod,
-						//'value' => $newValue
-					)
-				);*/
 				$this->applyMod(
 					$nodes, $mod, $aspect, $newValue, $lazy
 				);
@@ -190,12 +146,6 @@ class HTML {
 				}
 			}
 		}
-
-		//wp_die('$lazy: <pre>' . print_r($lazy, 1) . '</pre>');
-		//wp_die('$this->isEditing: '. $this->isEditing);
-		//wp_die('$extracted' . '<pre>' . print_r($extracted, 1) . '</pre>');
-		// use extracted info to generate head CSS and footer deps and script code
-		//$this->addDepsAndExtractedCode($extracted, $lazy);
 
 		// Save extracted lazyLoad content in the Database and add data for deferred loading
 		$footerJS = '';
@@ -219,9 +169,10 @@ class HTML {
 		// If we are timing server-side changes, present json
 		if ($this->contentClass->timeAmends){
 			$this->contentClass->returnServerTiming(
-				$this->contentClass->profiler['all_server_side_html_changes']['total_time'], $html
+				$this->contentClass->profiler['all_server_side_html_changes']['total_time'],
+				$html,
+				$this->contentClass->memoryProfiler
 			);
-			return;
 		}
 
 		// Regular page view
@@ -234,6 +185,7 @@ class HTML {
 					$this->contentClass->debugAmends,
 					$modList,
 					$this->contentClass->profiler,
+					$this->contentClass->memoryProfiler,
 					$this->contentClass->clientSide,
 					$this->logs,
 					$lazy
@@ -248,6 +200,11 @@ class HTML {
 
 			// save the object back to an HTML string
 			$html = $this->doc->saveHTML();
+
+			// Free memory
+			unset($this->xpath, $this->doc);
+			ContentHelper::cleanupMemory();
+
 		}
 
 	}
@@ -299,9 +256,8 @@ class HTML {
 	}
 	
 	function aspectIsAttribute($value){
-		/*return in_array($value, HTML::$attributes);*/
 
-		if (in_array($value, HTML::$attributes, true)) {
+		if ($value === 'attributesString' || in_array($value, HTML::$attributes, true)) {
 			return true;
 		}
 
@@ -318,14 +274,17 @@ class HTML {
 	// This is done here for parity with frontend editing
 	function maybeWrapWithTag($content) {
 
+		// Allow for possibility $content is a node.
+		if (!is_string($content)) {
+			return $content;
+		}
+
 		$inlineElements = [
 			"span", "a", "strong", "em", "img", "br", "i", "b", "u", "small", "mark",
 			"q", "cite", "code", "kbd", "var", "abbr", "time", "sub", "sup",
 			"button", "label", "input", "textarea", "select", "option"
 		];
 
-		//$testPattern = '/^\s*<[\s\S]+>\s*$/';
-		//$oldPattern = '/(<\s*([a-zA-Z0-9]+)[^>]*>)([\s\S]*?)(<\s*\/\s*\2>)/m';
 		$pattern = '/^\s*(<\s*([a-zA-Z0-9]+)[^>]*>(?:([\s\S]*?)<\s*\/\s*\2\s*>|\s*)?)\s*$/';
 
 		preg_match_all($pattern, $content, $tagMatch);
@@ -335,10 +294,6 @@ class HTML {
 
 		// Use the updated logic for $requiresWrapper
 		$requiresWrapper = !$hasMatches || !$this->isPureTag($content);
-
-		/*if (strpos($content, '<input type="text"') !== false && $requiresWrapper){
-			wp_die('$tagMatch <pre>' . print_r(['$requiresWrapper' => $requiresWrapper, $tagMatch, esc_html($content), 'isPureTag' => $this->isPureTag($content), 'start' => preg_match('/^\s*</', $content), 'end' => preg_match('/>\s*$/', $content)], 1) . '</pre>');
-		}*/
 
 		if (!$requiresWrapper) {
 			return $content;
@@ -425,14 +380,6 @@ class HTML {
 		} else {
 			$node->parentNode->removeChild($node);
 		}
-
-		/*if ($isTextNode){
-			$this->modifyTextNodes($node, $action);
-		} else {
-
-		}*/
-
-
 	}
 	
 	function applyMod(&$nodes, $mod, $aspect, $newValueForNodes, &$lazy){
@@ -583,7 +530,7 @@ class HTML {
 
 						// remove attribute or set resolved attribute (for all other actions)
 						if ($action === 'remove'){
-							$node->removeAttribute($attName, $newValue);
+							$node->removeAttribute($attName);
 						} else {
 							$node->setAttribute($attName, $newValue);
 						}
@@ -682,14 +629,6 @@ class HTML {
 
 		$destNode = $this->resolveDestNode($node, $mod);
 
-		/*wp_die('Move' . '<pre>' . print_r([
-
-				'$mod' => $mod,
-				'relative' => json_decode($mod['move_relative_dom'], true),
-				'dest' => $destNode,
-				//'$node' => $node
-			], 1) . '</pre>');*/
-
 		if ($destNode){
 
 			// detach the node to move
@@ -704,16 +643,6 @@ class HTML {
 			$this->applyMod($destNodeArray, array(
 				'action' => $move_action
 			), 'html', $detachedNode, $lazy);
-
-			/*if ($mod['move_action'] === 'insertAfter'){
-				wp_die('Move' . '<pre>' . print_r([
-
-						'$mod' => $mod,
-						'relative' => json_decode($mod['move_relative_dom'], true),
-						'dest' => $destNode,
-						//'$node' => $node
-					], 1) . '</pre>');
-			}*/
 		}
 	}
 
@@ -736,13 +665,6 @@ class HTML {
 
 		// If we have relative DOM instructions
 		$nodes = array($node); // Start with an array containing the initial $node
-
-		/*if ($mod['move_action'] === 'insertBefore'){
-			wp_die('Move' . '<pre>' . print_r([
-					'iterate' => $relativeDom
-				], 1) . '</pre>');
-		}*/
-
 
 		foreach ($relativeDom['iterate'] as $item) {
 			$item_xpath = isset($item['xpath']) ? $item['xpath'] : $xpath;

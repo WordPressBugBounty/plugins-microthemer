@@ -5,6 +5,28 @@ namespace Microthemer\Content;
 class ContentHelper {
 
 	/**
+	 * Perform safe memory/DOM cleanup after heavy XML/DOM operations.
+	 * Compatible with PHP 5.1+ (skips unavailable functions).
+	 */
+	public static function cleanupMemory()
+	{
+		// Clear libxml internal error buffer
+		if (function_exists('libxml_clear_errors')) {
+			libxml_clear_errors();
+		}
+
+		// Trigger garbage collection for cyclic references (PHP 5.3+)
+		if (function_exists('gc_collect_cycles')) {
+			gc_collect_cycles();
+		}
+
+		// Free unused memory from Zend allocator (PHP 7.0+)
+		if (function_exists('gc_mem_caches')) {
+			gc_mem_caches();
+		}
+	}
+
+	/**
 	 * Merges any number of arrays recursively, preserving keys.
 	 *
 	 * For non-array values at the same key, the value from the later array will overwrite the earlier one.

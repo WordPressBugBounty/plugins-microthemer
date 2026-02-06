@@ -216,12 +216,12 @@ trait FileTrait {
 				// copy was successful
 				else {
 
-					//wp_die('Copy successful, try extracting '. $newFileName);
-
 					if ($isZipFile){
 
 						$error_logged = false;
 						$success = false;
+
+						//wp_die('Copy successful, try extracting '. $newFileName);
 
 						// try WordPress function fallback
 						if (!$success){
@@ -382,7 +382,9 @@ trait FileTrait {
 			}
 		}
 
-		//wp_die('Res: '. print_r($res, true));
+		/*if (str_contains($zip_file, 'amender.zip')){
+			wp_die('Result: '. print_r([$allowOverwrite, $zip_file, $unzipDir, $result], true));
+		}*/
 
 		return array(
 			'success' => ($result === TRUE),
@@ -390,16 +392,46 @@ trait FileTrait {
 		);
 	}
 
-	// Recursively delete a directory and it's contents
-	function destroyDirectoryAndContents($dir) {
-		if (!is_dir($dir) || is_link($dir)) return @unlink($dir); // error suppressed
-		foreach (scandir($dir) as $file) {
-			if ($file == '.' || $file == '..') continue;
-			if (!$this->destroyDirectoryAndContents($dir . DIRECTORY_SEPARATOR . $file)) {
-				chmod($dir . DIRECTORY_SEPARATOR . $file, 0777);
-				if (!mt_destroy_dir($dir . DIRECTORY_SEPARATOR . $file)) return false;
-			};
+	function destroyDirectoryAndContents($dir, $baseDir = null) {
+
+		if (!is_dir($dir)) {
+			return false;
 		}
+
+		// If this is the initial call, set the trusted base directory.
+		if ($baseDir === null) {
+			$baseDir = realpath($dir);
+			if ($baseDir === false) {
+				$this->log('Directory Deletion Error', '<p>Could not resolve the base path for deletion.</p>');
+				return false;
+			}
+		}
+
+		$items = scandir($dir);
+		foreach ($items as $item) {
+
+			if ($item == '.' || $item == '..') {
+				continue;
+			}
+
+			$path = $dir . DIRECTORY_SEPARATOR . $item;
+
+			if (!$this->checkExpectedPath($path, $baseDir)) {
+				$this->log('Directory Deletion Error', '<p>Wrong directory</p>');
+				return false;
+			}
+
+			if (is_dir($path)) {
+				if (!$this->destroyDirectoryAndContents($path, $baseDir)) {
+					return false;
+				}
+			} else {
+				if (!unlink($path)) {
+					return false;
+				}
+			}
+		}
+
 		return rmdir($dir);
 	}
 

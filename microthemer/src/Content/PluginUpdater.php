@@ -27,7 +27,7 @@ class PluginUpdater {
 
 		$checkerFile = __DIR__ . '/plugin-update-checker-master/plugin-update-checker.php';
 
-		if (!class_exists('\YahnisElsts\PluginUpdateChecker\v5p5\PucFactory')) {
+		if (!class_exists('\YahnisElsts\PluginUpdateChecker\v5p6\PucFactory')) {
 			if (!file_exists($checkerFile)) {
 				error_log('[Amender] Plugin Update Checker not found at: ' . $checkerFile);
 				return;
@@ -35,7 +35,7 @@ class PluginUpdater {
 			require_once $checkerFile;
 		}
 
-		$this->updateChecker = \YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::buildUpdateChecker(
+		$this->updateChecker = \YahnisElsts\PluginUpdateChecker\v5p6\PucFactory::buildUpdateChecker(
 			$this->updateApiUrl,
 			$this->pluginFile,
 			$this->pluginSlug

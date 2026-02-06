@@ -1,11 +1,14 @@
 <?php
 
-// todo have sep file for DebugErrors and DebugData
-// - run data debug with dynAmends (same with none)
+// Do performance / debug analysis
 
 namespace Microthemer\Content;
 
+use Microthemer\TimerTrait;
+
 class Debug {
+
+	use TimerTrait;
 
 	var $contentClass;
 	var $m_queries = null;
@@ -44,7 +47,7 @@ class Debug {
 		return $key;
 	}
 
-	public function generateHTML($debugAmends, &$modList, &$profiler, &$clientSide, &$logsArray, &$lazy) {
+	public function generateHTML($debugAmends, &$modList, &$profiler, &$memoryProfiler, &$clientSide, &$logsArray, &$lazy) {
 
 		$display = '';
 		$devData = '';
@@ -52,16 +55,80 @@ class Debug {
 		// show debug data
 		if ($debugAmends){
 
-			$profiler['all_amender_changes_time'] = (
-				$profiler['preparing_client_side_assets']['total_time'] + $profiler['all_server_side_html_changes']['total_time']);
+			// Performance table (time + memory)
+			$zeroClientMods = empty($clientSide['clientModsCount']) ? 1 : 0;
+			$zeroServerMods = empty($clientSide['serverModsCount']) ? 1 : 0;
+			$zeroMods = $zeroClientMods && $zeroServerMods;
 
-			$assetPrepTime = esc_html($profiler['preparing_client_side_assets']['total_time']);
+			// --- Time ---
+			$assetPrepTime = !$zeroMods && isset($profiler['preparing_client_side_assets']['total_time'])
+				? $profiler['preparing_client_side_assets']['total_time'] * 1000 // to ms
+				: 0;
+
+			$assetPrepLabel = round($assetPrepTime, 2).' <span class="amender-unit">ms</span>';
+			$htmlModsLabel  = $zeroServerMods ? '0 <span class="amender-unit">ms</span>' : 'checking...';
+			$totalModsLabel = $zeroServerMods ? $assetPrepLabel : 'checking...';
+
+			// --- Memory (avg net retained + max peak overhead) ---
+			$assetPrepMemDelta = !$zeroMods && isset($memoryProfiler['preparing_client_side_assets']['avg_delta'])
+				? $memoryProfiler['preparing_client_side_assets']['avg_delta']
+				: 0;
+			$assetPrepMemDeltaLabel = $this->formatBytes($assetPrepMemDelta);
+
+			$htmlAdjustMemDeltaLabel = $zeroServerMods
+				? $this->formatBytes(0)
+				: 'checking...';
+
+			$totalMemDeltaLabel = $zeroServerMods
+				? $assetPrepMemDeltaLabel
+				: 'checking...';
+
+			$assetPrepPeak = isset($memoryProfiler['preparing_client_side_assets']['max_peak_window'])
+				? $memoryProfiler['preparing_client_side_assets']['max_peak_window']
+				: 0;
+			$assetPrepPeakLabel = $this->formatBytes($assetPrepPeak);
+
+
+			$htmlAdjustPeakLabel = $zeroServerMods
+				? $this->formatBytes(0)
+				: 'checking...';
+
+			$totalPeak = $zeroServerMods
+				? $assetPrepPeakLabel
+				: 'checking...';
+
+			// --- Table HTML ---
+			$performance = '
+			<div class="amender-data-table amender-performance-table">
+			    <div class="amender-column-heading"></div>
+			    <div class="amender-column-heading">Asset Preparation</div>
+			    <div class="amender-column-heading">HTML Adjustments</div>
+			    <div class="amender-column-heading"><strong>Total</strong></div>
+			
+			    <div class="amender-column-heading">Time (milliseconds):</div>
+			    <div id="server-asset-timing" data-time="'.round($assetPrepTime, 2).'">'.$assetPrepLabel.'</div>
+			    <div id="server-html-timing" data-zero-mods="'.$zeroServerMods.'">'.$htmlModsLabel.'</div>
+			    <div id="server-total-timing"><strong>'.$totalModsLabel.'</strong></div>
+			    
+			</div>';
+
+			/*
+			 * <div class="amender-column-heading">Net Memory Retained:</div>
+			    <div id="server-asset-mem" data-bytes="'.$assetPrepMemDelta.'">'.$assetPrepMemDeltaLabel.'</div>
+			    <div id="server-html-mem" data-zero-mods="'.$zeroServerMods.'">'.$htmlAdjustMemDeltaLabel.'</div>
+			    <div id="server-total-mem"><strong>'.$totalMemDeltaLabel.'</strong></div>
+
+			    <div class="amender-column-heading">Peak Extra Allocation:</div>
+			    <div id="server-asset-peak" data-bytes="'.$assetPrepPeak.'">'.$assetPrepPeakLabel.'</div>
+			    <div id="server-html-peak" data-zero-mods="'.$zeroServerMods.'">'.$htmlAdjustPeakLabel.'</div>
+			    <div id="server-total-peak"><strong>'.$totalPeak.'</strong></div>
+			 */
 
 			// User CSS (todo need to include MT CSS)
 			$css = implode("\n", $clientSide['css']);
 
 			// JS functions and file contents
-			$js = $clientSide['inline_functions']
+			$js = !$zeroClientMods && $clientSide['inline_functions']
 				?  "// Inline JS Functions \n" . $clientSide['inline_functions']
 				: '';
 
@@ -69,22 +136,6 @@ class Debug {
 				$js.= "// ".$slug.".js\n" .
 				      file_get_contents($this->contentClass->getLocalJsFile($slug, 0, 0, 1)) . "\n\n";
 			}
-
-			$assetPrepLabel = $assetPrepTime.' <span class="amender-unit">ms</span>';
-			$zeroServerMods = empty($clientSide['serverModsCount']) ? 1 : 0;
-			$htmlModsLabel = $zeroServerMods ? '0<span class="amender-unit">ms</span>' : 'checking...';
-			$totalModsLabel = $zeroServerMods ? $assetPrepLabel : 'checking...';
-
-			$performance =
-			'<div class="amender-data-table amender-performance-table">
-				<div class="amender-column-heading">Asset Preparation</div>
-				<div class="amender-column-heading">HTML Adjustments</div>
-				<div class="amender-column-heading"><strong>Total Time</strong></div>
-				<div id="server-asset-timing" data-time="'.$assetPrepTime.'">'.$assetPrepTime.' <span class="amender-unit">ms</span></div>
-				<div id="server-html-timing" data-zero-mods="'.$zeroServerMods.'">'.$htmlModsLabel.'</div>
-				<div id="server-total-timing"><strong>'.$assetPrepLabel.'</strong></div>
-			</div>';
-
 
 			$this->contentClass->accumulateSizeKB(
 				'user_css',
@@ -100,13 +151,16 @@ class Debug {
 
 			$asset_size = $clientSide['asset_size'];
 			$totalSize = 0;
-			foreach ($asset_size as $key => $value){
-				if ($key === 'debug_only_data'){
-					$totalSize -= $value;
-				} else {
-					$totalSize += $value;
+			if (!$zeroClientMods){
+				foreach ($asset_size as $key => $value){
+					if ($key === 'debug_only_data'){
+						$totalSize -= $value;
+					} else {
+						$totalSize += $value;
+					}
 				}
 			}
+
 			$size = '
 			<div class="amender-data-table amender-size-table">
 				<div class="amender-column-heading">CSS</div>
@@ -119,9 +173,18 @@ class Debug {
 				<div>'.$this->roundKB($asset_size['user_css']).'</div>
 				<div>'.$this->roundKB($asset_size['user_js']).'</div>
 				<div>'.$this->roundKB($asset_size['user_packages']).'</div>
-				<div>'.$this->roundKB($asset_size['amender_inline'] - $asset_size['debug_only_data']).'</div>
-				<div>'.$this->roundKB($asset_size['amender_packages']).'</div>
-				
+				<div>'.
+			        ($zeroClientMods
+						? '0 <span class="amender-unit">KB</span>'
+						:  $this->roundKB($asset_size['amender_inline'] - $asset_size['debug_only_data'])
+			        )
+			        .'</div>
+				<div>'.
+			        ($zeroClientMods
+				        ? '0 <span class="amender-unit">KB</span>'
+				        :  $this->roundKB($asset_size['amender_packages'])
+			        )
+			        .'</div>
 				<div><strong>'.$this->roundKB($totalSize).'</strong></div>
 			</div>';
 			$user_packages = '
@@ -133,40 +196,48 @@ class Debug {
 				
 			';
 
-			$table = '
-			<div class="amender-data-table amender-modification-table">
-				<div class="amender-column-heading">Edit</div>
-				<div class="amender-column-heading">Event</div>
-				<div class="amender-column-heading">Devices</div>
-				<div class="amender-column-heading">Selector</div>
-				<div class="amender-column-heading">Action</div>
-				<div class="amender-column-heading">Aspect</div>
-				<div class="amender-column-heading">Content</div>
-			';
+			$hasPackages = false;
 
-			//$debugRows = array();
-			/*foreach ($modList as $item){
-				$item[3] = esc_html($item[3]);
-				//$debugRows[] = $item;
-				$table.=
-				'
-				<div>serverHTMLReady</div>
-				<div>'.esc_html($item[6]).'</div>
-				<div>'.esc_html($item[5]).'</div>
-				<div>'.esc_html($item[1]['action']).'</div>
-				<div>'.esc_html($item[1]['aspect']).'</div>
-				<div>'.esc_html($item[3]).'</div>
+			// Show message about no modifications if relevant
+			if ($zeroMods){
+				$table = 'No modifications have been made.';
+			}
+
+			else {
+				$table = '
+				<div class="amender-data-table amender-modification-table">
+					<div class="amender-column-heading">Edit</div>
+					<div class="amender-column-heading">Event</div>
+					<div class="amender-column-heading">Devices</div>
+					<div class="amender-column-heading">Selector</div>
+					<div class="amender-column-heading">Action</div>
+					<div class="amender-column-heading">Aspect</div>
+					<div class="amender-column-heading">Content</div>
 				';
-			}*/
 
-			// Server and client side amendments (always dyn when reviewing)
-			foreach ($clientSide['mods'] as $event => $devices){
-				foreach ($devices as $query => $selectors){
-					foreach ($selectors as $selectorId => $data){
-						foreach ($data['mods'] as $index => $modData){
-							$mod = $modData['mod'];
-							$table.=
-							'
+				//$debugRows = array();
+				/*foreach ($modList as $item){
+					$item[3] = esc_html($item[3]);
+					//$debugRows[] = $item;
+					$table.=
+					'
+					<div>serverHTMLReady</div>
+					<div>'.esc_html($item[6]).'</div>
+					<div>'.esc_html($item[5]).'</div>
+					<div>'.esc_html($item[1]['action']).'</div>
+					<div>'.esc_html($item[1]['aspect']).'</div>
+					<div>'.esc_html($item[3]).'</div>
+					';
+				}*/
+
+				// Server and client side amendments (always dyn when reviewing)
+				foreach ($clientSide['mods'] as $event => $devices){
+					foreach ($devices as $query => $selectors){
+						foreach ($selectors as $selectorId => $data){
+							foreach ($data['mods'] as $index => $modData){
+								$mod = $modData['mod'];
+								$table.=
+									'
 							<div class="edit-modification mt-ui-element" data-id="'.$selectorId.'" data-index="'.$index.'" 
 							data-mq_key="'.$this->getKeyFromQuery($query).'" data-pg="html" data-property="action">Edit</div>
 							<div>'.esc_html($event).'</div>
@@ -177,16 +248,17 @@ class Debug {
 							<div>'.esc_html($modData['debugValue']).'</div>
 							
 							';
+							}
 						}
 					}
 				}
+
+
+				$table.= '</div>';
 			}
 
-
-			$table.= '</div>';
-
 			// List packages, including size breakdown
-			$hasPackages = false;
+
 			foreach ($clientSide['import_map'] as $packageName => $one){
 				$dep = $this->contentClass->getDependencyInfo($packageName);
 				$dep['deliveryUrl'] = $this->contentClass->deliveryUrl(
@@ -215,6 +287,9 @@ class Debug {
 				<div><strong>'.$this->roundKB($asset_size['user_packages']).'</strong></div>
 			</div>';
 
+
+
+
 			// Dev only
 
 			if ($this->contentClass->devMode){
@@ -239,7 +314,7 @@ class Debug {
 			<div id="amender-data">
 				<div class="amender-data-title">Server-side Performance</div>
 				<div class="amender-data-content">'.$performance.'</div>
-				
+			
 				<div class="amender-data-title">Asset Size</div>
 				<div class="amender-data-content">'.$size.'</div>
 				<div class="amender-data-title">Modifications</div>

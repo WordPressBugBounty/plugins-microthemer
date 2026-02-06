@@ -34,13 +34,12 @@ class Logic {
 
 	// Regex patterns for reading logic
 	protected $patterns = array(
-		//"andOrSurrSpace" => "/\s+\b(and|AND|or|OR)\b\s+/",
 		"andOrSurrSpace" => '/\s+\b(and|AND|or|OR)\b(?=(?:[^"\']*(?:"[^"]*"|\'[^\']*\'))*[^"\']*$)\s+/', // exclude if inside double quotes
 		"functionName" => "(!)?\s*[a-zA-Z_\\\\]+",
 		"comparison" => "/\s*(?<comparison><=|<|>|>=|!==?|===?)\s*/",
 		"expressions" => array(
 			"(?:(?<negation>!)?\s*(?<functionName>[a-zA-Z_\\\\]+)\((?<parameter>.*?)\))",
-			"(?:[$]_?(?<global>GET|POST|GLOBALS)\['?\"?(?<key>.*?)'?\"?\])",
+			"(?:[$]_?(?<global>GET)\['?\"?(?<key>.*?)'?\"?\])",
 			"(?<string>['\"].+?['\"])",
 			"(?<boolean>true|false|null|TRUE|FALSE|NULL)",
 			"(?<number>-?\d+)",
@@ -50,7 +49,6 @@ class Logic {
 
 	// PHP functions the user is allowed to use in the logic
 	protected $allowedFunctions = array(
-
 		'get_post_type',
 		'has_action',
 		'has_block',
@@ -59,7 +57,6 @@ class Logic {
 		'has_meta',
 		'has_post_format',
 		'has_tag',
-		//'has_term', // covered by other functions and maybe too broad for asset assignment
 		'is_404',
 		'is_admin',
 		'is_archive',
@@ -83,7 +80,6 @@ class Logic {
 		'\\'.__NAMESPACE__.'\has_template',
 		'\\'.__NAMESPACE__.'\is_active',
 		'\\'.__NAMESPACE__.'\is_admin_page',
-		//'\\'.__NAMESPACE__.'\has_block_content',
 		'\\'.__NAMESPACE__.'\is_post_or_page',
 		'\\'.__NAMESPACE__.'\is_public',
 		'\\'.__NAMESPACE__.'\is_public_or_admin',
@@ -94,6 +90,14 @@ class Logic {
 		// native PHP
 		'isset',
 	);
+
+	public function getAllowedPHPSyntax(){
+		return array(
+			'functions' => $this->allowedFunctions,
+			'superglobals' => $this->allowedSuperglobals,
+			'characters' => 'or | and & ( ) ! = > <'
+		);
+	}
 
 	protected $allowedSuperglobals = array(
 		'$_GET',
@@ -289,7 +293,6 @@ class Logic {
 			"/" . implode('|', $this->patterns['expressions']) . "/s",
 			$string,
 			$matches
-			//PREG_PATTERN_ORDER
 		);
 
 		/*if (Helper::$doDebug){
@@ -314,11 +317,10 @@ class Logic {
 		if (Helper::$doDebug){
 			Helper::debug('Statement parsed in callback', $parsedStatement);
 		}
-
 		
 		$result = false;
 
-		// query any GET/POST values
+		// query any GET values
 		$global = isset($parsedStatement['global']) ? $parsedStatement['global'] : false;
 		if ($global){
 
@@ -330,10 +332,6 @@ class Logic {
 
 			if ($global == 'GET'){
 				$result = isset($_GET[$key]) ? $_GET[$key] : false;
-			} elseif ($global == 'POST'){
-				$result = isset($_POST[$key]) ? $_POST[$key] : false;
-			} elseif ($global == 'GLOBALS'){
-				$result = isset($GLOBALS[$key]) ? $GLOBALS[$key] : false;
 			}
 
 		}
@@ -387,10 +385,6 @@ class Logic {
 
 						if ($globalParameter == 'GET'){
 							$result = isset($_GET[$key]);
-						} elseif ($globalParameter == 'POST'){
-							$result = isset($_POST[$key]);
-						} elseif ($globalParameter == 'GLOBALS'){
-							$result = isset($GLOBALS[$key]);
 						}
 					}
 				}
@@ -712,30 +706,6 @@ class Logic {
 				'analysis' => '<pre>'.print_r($statementsArray, 1).'</pre>'
 			);
 
-			/*(
-				$fileExists === false && false // seb test todo this causes issues - but check why needed...
-					? array(
-						'result' => 0,
-						'resultString' => 'false',
-						'load' => 'No',
-						'logic' => $string,
-						'num_statements' => $this->countNumStatements($statementsArray),
-						'analysis' => 'The folder is not loading because it has no styles. <br /> 
-									   Therefore, the logic result is irrelevent: <br /><br />' .
-						              '<pre>'.print_r($statementsArray, 1).'</pre>'
-					)
-					: array(
-						'result' => $result,
-						'resultString' => $result
-							? 'true'
-							: ($result === null ? 'null' : 'false'),
-						'load' => $result ? 'Yes' : 'No',
-						'logic' => $string,
-						'num_statements' => $this->countNumStatements($statementsArray),
-						'analysis' => '<pre>'.print_r($statementsArray, 1).'</pre>'
-					)
-			);*/
-
 	}
 
 	public function countNumStatements($array){
@@ -790,17 +760,16 @@ class Logic {
 				$result = $this->evaluate($statementsArray, $string, $test, $fileExists);
 			}
 
-				// 'Throwable' is executed in PHP 7+, but ignored in lower PHP versions
+			// 'Throwable' is executed in PHP 7+, but ignored in lower PHP versions
 			catch (\Throwable $t) {
 				$error = $t->getMessage();
 			}
 
-				// 'Exception' is executed in PHP 5, this will not be reached in PHP 7+
+			// 'Exception' is executed in PHP 5, this will not be reached in PHP 7+
 			catch (\Exception $e) {
 				$error = $e->getMessage();
 			}
 		}
-
 
 
 		// return error result if a PHP exception occurs - this should fail silently
@@ -833,15 +802,6 @@ class Logic {
 
 	}
 
-	public function getAllowedPHPSyntax(){
-		return array(
-			'functions' => $this->allowedFunctions,
-			'superglobals' => $this->allowedSuperglobals,
-			'characters' => 'or | and & ( ) ! = > <'
-		);
-	}
-
-
 	// Integrations
 
 	// Bricks Templates
@@ -867,10 +827,6 @@ class Logic {
 				}
 			}
 		}
-
-	}
-
-	public static function debugger(){
 
 	}
 
@@ -911,15 +867,6 @@ class Logic {
 				}
 
 			}
-
-			/*if (Helper::$doDebug){
-				Helper::debug('The url params to compare', array(
-					'$urlParams' => $urlParams,
-					'source' => $source,
-					'$id' => $id,
-					'$template_ids' => $template_ids,
-				));
-			}*/
 
 			// single template and page views
 			if ($fseType === $source && $postId == $id){ // wp_navigation, wp_template_part, wp_pattern
@@ -1132,9 +1079,6 @@ function is_admin_page($pageNameOrId = false){
 	       || (!is_numeric($pageNameOrId) && isset($post->post_name) && $post->post_name === $pageNameOrId);
 }
 
-// wp_die('<pre>has_blocks: ' . has_blocks() . '</pre>');
-
-
 // check what page the user is on (frontend or admin)
 function is_post_or_page($id = null){
 
@@ -1217,8 +1161,6 @@ function has_template($source = null, $id = null, $label = null){
 	$template_ids = array(); // $cache ?: array();
 	$returnType = true;
 
-	//echo 'gotherebastyxxx-' . $source . $id . ' - <pre>'.print_r($cache, 1).'</pre><br/>';
-
 	if (!$source || !$id){
 		return false;
 	} /*if ($cache){
@@ -1243,7 +1185,7 @@ function has_template($source = null, $id = null, $label = null){
 		case 'wp_pattern':
 		case 'wp_navigation':
 			$returnType = 'blocksOnly';
-			//echo 'gotherebasty-' . $source . $id . '<br/>';
+			//echo 'gothere' . $source . $id . '<br/>';
 			Logic::getGutenbergTemplateIds($source, $id,$template_ids);
 			break;
 	}

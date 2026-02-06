@@ -307,7 +307,7 @@ trait AdminInitTrait {
 	// add a link to the WP Toolbar (this was copied from frontend class - use better method later)
 	function custom_toolbar_link($wp_admin_bar) {
 
-		if (!current_user_can('administrator')){
+		if (!current_user_can('manage_options')){
 			return false;
 		}
 
@@ -528,7 +528,7 @@ trait AdminInitTrait {
 
 	function microthemer_ajax_actions(){
 
-		if ( !current_user_can('administrator') ){
+		if ( !current_user_can('manage_options') ){
 			wp_die( 'Access denied' );
 		}
 

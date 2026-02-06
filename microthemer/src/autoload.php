@@ -1,8 +1,6 @@
 <?php
 
-// Simple autoloader without using composer
-// https://stackoverflow.com/questions/46162173/how-to-use-the-psr-4-autoload-in-my-classes-folder
-
+// Simple autoloader
 spl_autoload_register(function ($class) {
 
 	$prefix = 'Microthemer\\';

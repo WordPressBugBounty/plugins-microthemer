@@ -68,10 +68,24 @@ class AssetLoadContent {
 		}
 	}
 
-	function returnServerTiming($total_time, &$html){
+	function returnServerTiming($total_time, &$html, $memoryProfiler = array()){
+
 		header('Content-type: application/json');
+
+		// Build simplified memory stats (avg delta + peak)
+		$avgDelta = isset($memoryProfiler['all_server_side_html_changes']['avg_delta'])
+			? $memoryProfiler['all_server_side_html_changes']['avg_delta']
+			: 0;
+		$maxPeak = isset($memoryProfiler['all_server_side_html_changes']['max_peak_window'])
+			? $memoryProfiler['all_server_side_html_changes']['max_peak_window']
+			: 0;
+
 		$html = json_encode(array(
-			'server_html_timing' => $total_time
+			'server_html_timing' => $total_time * 1000, // return ms for consistency with JS
+			'server_html_memory' => array(
+				'avg_delta' => $avgDelta,
+				'max_peak'  => $maxPeak
+			)
 		));
 	}
 
@@ -96,12 +110,11 @@ class AssetLoadContent {
 		return $html;
 	}
 
+	// Early filtering can check for on/off presence of server-side amends
 	function doAmends(){
-
 		return (
-			($this->isEditing || !empty($this->preferences[$this->assetClass->assetLoadingKey]['html_mods']['all']))
+		($this->isEditing || !empty($this->preferences[$this->assetClass->assetLoadingKey]['html_mods']['all']))
 		);
-
 	}
 
 	// Content modification
@@ -112,6 +125,7 @@ class AssetLoadContent {
 			// bail if no active mods, or testing without
 			$this->profiler['all_amender_changes_time'] = 0 . 'ms';
 			$this->startT('preparing_client_side_assets');
+
 			$activeSlugs = $this->getActiveSlugs();
 
 			if (!$this->isEditing && !count($activeSlugs)){
@@ -155,7 +169,8 @@ class AssetLoadContent {
 
 					// Populated if debugging
 					'inline_functions' => '',
-					'serverModsCount' => 0
+					'serverModsCount' => 0,
+					'clientModsCount' => 0
 				),
 
 				// Build mods and snippet data for HTML parser to iterate through efficiently
@@ -176,12 +191,20 @@ class AssetLoadContent {
 				$this->clientSide = &$extracted['clientSide'];
 			}
 
-			$this->endT('preparing_client_side_assets');
-
 			// store serverSide mods on class
 			if (count($extracted['serverSide']['modList'])){
 				$this->modList = &$extracted['serverSide']['modList'];
 			}
+
+			//wp_die('$this->modList <pre>'.print_r([$this->isEditing, $this->modList], 1).'</pre>');
+
+			// Free memory
+			unset($rows);
+			ContentHelper::cleanupMemory();
+
+			$this->endT('preparing_client_side_assets');
+
+
 		}
 	}
 
@@ -335,6 +358,8 @@ class AssetLoadContent {
 									// Log count for server-side, even if we are using dynAmends
 									if ($juncture === 'serverHTMLReady'){
 										$extracted['clientSide']['serverModsCount']++;
+									} else {
+										$extracted['clientSide']['clientModsCount']++;
 									}
 
 									// add the snippet to an array if defined
@@ -617,7 +642,7 @@ class AssetLoadContent {
 		foreach ($mtScripts as $slug){
 			$this->hookScript(
 				'amender-'.$slug,
-				$this->getFrontDepsUrl($slug),
+				$this->getFrontDepsUrl($slug) . '?v=' . $this->assetClass->pluginVersion,
 				'module'
 			);
 		}
@@ -680,15 +705,18 @@ class AssetLoadContent {
 		$deps = $this->getFunctionDeps();
 		$html_mods = $asset_loading['html_mods'];
 
-		// fetch global folder collective mods
-		if (!empty($html_mods['global']['folder'])){
-			$activeSlugs['mt_collective_global'] = 1;
-		}
+		// fetch global folder collective mods (frontend only)
+		if (!$this->assetClass->isAdminArea){
 
-		// include global snippets
-		if (!empty($html_mods['global']['snippets'])){
-			foreach ($html_mods['global']['snippets'] as $snippet_id => $one){
-				$this->addSnippetAndDepIds($snippet_id, $deps, $activeSlugs);
+			if (!empty($html_mods['global']['folder'])){
+				$activeSlugs['mt_collective_global'] = 1;
+			}
+
+			// include global snippets
+			if (!empty($html_mods['global']['snippets'])){
+				foreach ($html_mods['global']['snippets'] as $snippet_id => $one){
+					$this->addSnippetAndDepIds($snippet_id, $deps, $activeSlugs);
+				}
 			}
 		}
 
@@ -755,31 +783,26 @@ class AssetLoadContent {
 
 		$mods_table = $wpdb->prefix . "micro_content";
 
-		$selectString = '';
-		$selectArray = array($published);
-		$i = 0;
-
-		foreach ($activeSlugs as $slug => $one){
-
-			if ($i > 0){
-				$selectString.= ' or ';
-			}
-
-			$selectString.= 'slug = %s';
-			$selectArray[] = $slug;
-			$i++;
+		// Bail early if there are no slugs
+		if (empty($activeSlugs)) {
+			return [];
 		}
 
-		$preparedSql = $wpdb->prepare(
+		// Create a comma-separated placeholder list for the IN clause
+		$placeholders = implode(',', array_fill(0, count($activeSlugs), '%s'));
+
+		// Build the SQL query using IN, which utilises indexes better
+		$sql = $wpdb->prepare(
 			"SELECT * FROM $mods_table 
-				WHERE published = %d and ( $selectString ) 
-				ORDER BY type desc, seq",
-			...$selectArray
+        WHERE published = %d 
+        AND slug IN ($placeholders) 
+        ORDER BY type DESC, seq",
+			array_merge([$published], array_keys($activeSlugs))
 		);
 
-		return $wpdb->get_results($preparedSql);
-
+		return $wpdb->get_results($sql);
 	}
+
 
 	function extractJunctureInfo($input) {
 

@@ -12,7 +12,7 @@ use \Microthemer\TimerTrait;
 
 class AssetAuthContent extends AssetLoadContent {
 
-	use TimerTrait;
+	//use TimerTrait;
 
 	public function __construct(&$assetClass, $devMode) {
 		parent::__construct($assetClass, $devMode);

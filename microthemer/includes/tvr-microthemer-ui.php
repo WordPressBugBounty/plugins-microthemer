@@ -1188,7 +1188,7 @@ require_once('common-inline-assets.php');
 						'class' => 'heading-icon',
 					));
 
-                    echo '<span>'.esc_html__('AI Assistant', 'microthemer').' <span class="ai-trial-hint muted">(free trial)</span></span>';
+                    echo '<span>'.esc_html__('AI Assistant', 'microthemer').' <span class="ai-trial-hint muted">(free beta)</span></span>';
 
 					$auto_save = !empty($this->preferences['auto_save_mode'])
 						? ' (changes are auto-saved)'
@@ -1233,11 +1233,39 @@ require_once('common-inline-assets.php');
 
                     </div>
 
-                    <span class="tvr-input-wrap tvr-field-input-wrap example-prompts">
-                        <input type="text" autocomplete="off" rel="recent_prompts" data-autofill="" data-appto="#combo-markup-do-not-clear" class="combobox has-arrows search-example-prompts" name="example_prompts" value="" placeholder="Example prompts">
-                        <span class="combo-arrow tvr-field-arrow"></span>
-                        <span class="mt-clear-field"></span>
-                    </span>
+
+
+                    <div class="tvr-prompt-config" data-priority="<?= $this->preferences['ai_priority'] ?>">
+
+	                    <?php
+	                    $priorities = array(
+		                    'speed'       => 'Prioritise speed ($)',
+		                    'balance'     => 'Balance speed & thinking time ($$)',
+		                    //'intelligence'=> 'Prioritise intelligence ($$$)',
+	                    );
+	                    $current = $this->preferences['ai_priority'];
+	                    ?>
+
+                        <div class="tvr-multi-buttons tvr-ai-priority">
+		                    <?php foreach ($priorities as $key => $label): ?>
+			                    <?php $active = ($current === $key) ? ' active' : ''; ?>
+                                <div class="tvr-multi-button<?= $active ?>"
+                                    data-mtc="mod.MTai.priorityButtonClicked"
+                                    data-priority="<?= $key ?>"
+                                    title="<?= htmlspecialchars($label, ENT_QUOTES) ?>"
+                                ></div>
+		                    <?php endforeach; ?>
+                        </div>
+
+                        <span class="tvr-input-wrap tvr-field-input-wrap example-prompts">
+                            <input type="text" autocomplete="off" rel="recent_prompts" data-autofill="" data-appto="#combo-markup-do-not-clear" class="combobox has-arrows search-example-prompts" name="example_prompts" value="" placeholder="Examples">
+                            <span class="combo-arrow tvr-field-arrow"></span>
+                            <span class="mt-clear-field"></span>
+                        </span>
+
+                    </div>
+
+
 
                     <textarea id="tvr-ai-prompt" class="tvr-ai-prompt" name="ai_prompt" placeholder="<?php echo $this->supportContent() ? 'Request a website change' : 'Request a style change'; ?>"></textarea>
                     <span id="ai-send-prompt" class="tvr-button ai-send-prompt">Send</span>
@@ -1638,6 +1666,8 @@ require_once('common-inline-assets.php');
                 <?php
                 if ($this->setupError){
                     echo  '<div class="setup-notification"> '. $this->display_log() . '</div>';
+                    echo $this->show_me;
+
                 }
                 ?>
 
@@ -2681,8 +2711,8 @@ require_once('common-inline-assets.php');
                         <p>Amender is not a page builder in its current form. It is designed to make customisations in those hard to reach places. Think of it like a "child theme" for your modern WordPress stack. Changes are made on the fly, without touching any files, so you can keep using (and now customizing) the tools you love.</p>
                         <p>Furthermore, you only pay for Amender when you want to publish your changes - when you know it solves your problem(s).</p>
                         <p class="addon-install-cta">
-                            <span class="tvr-button install-addon" data-addon="amender">Install Amender (beta)</span>
-                            <a target="_blank" href="https://themeover.com/amender/" title="Buy an Amender license">Go Pro</a>
+                            <span class="tvr-button install-addon" data-addon="amender">Install Amender</span>
+                            <a target="_blank" href="https://themeover.com/pricing/?contentView=amender" title="Buy an Amender license">Go Pro</a>
                         </p>
                     </div>
                 </div>

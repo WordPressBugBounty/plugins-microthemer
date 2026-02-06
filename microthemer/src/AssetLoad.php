@@ -22,6 +22,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 		use FrontAndBackTrait;
 
+		var $pluginVersion = '7.5.3.6';
 		protected $isBlockEditorScreen;
 		var $logicSettings = array();
 		public $context = 'load';
@@ -77,8 +78,10 @@ if (!class_exists('\Microthemer\AssetLoad')){
 			}
 
 			$p = $this->getPreferences();
+
 			$this->checkAdminVsFront();
 
+			// Maybe support Amender edits
 			if ($this->hasContentCapability()){
 				$this->contentClass = new Content\AssetLoadContent($this, $this->devMode);
 			}
@@ -150,7 +153,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				$this->isFrontend = false;
 				$this->isAdminArea = true;
 				$this->hooks = array(
-					'head' => 'admin_enqueue_scripts', // 'admin_head',
+					'head' => 'admin_enqueue_scripts',
 					'footer' => 'admin_footer',
 					'enqueue_scripts' => 'admin_enqueue_scripts'
 				);
@@ -661,7 +664,6 @@ if (!class_exists('\Microthemer\AssetLoad')){
 		function getPreferences(){
 
 			// fallback to the full preferences if frontend preferences haven't been set somehow
-			// (or an empty array but that's just to address PHP 8.2 type warnings)
 			$this->preferences = ( get_option('microthemer_autoload_preferences')
 					?: get_option('preferences_themer_loader') )
 						?: array();
@@ -815,12 +817,6 @@ if (!class_exists('\Microthemer\AssetLoad')){
 			}
 
 			return $classes;
-		}
-
-		/* Integrations */
-
-		function isBricksUi(){
-			return !isset($_GET['brickspreview']) && isset($_GET['bricks']) && $_GET['bricks'] === 'run';
 		}
 
 	}

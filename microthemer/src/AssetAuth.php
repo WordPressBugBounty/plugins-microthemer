@@ -62,8 +62,7 @@ class AssetAuth extends AssetLoad {
 
         if ($this->isFrontend){
 	        $this->hookRedirect();
-			$this->nonLoggedInMode(); // we are already on init hook, so function can be run immediately
-	        //$this->hookNonLoggedIn();
+			$this->nonLoggedInMode();
 	        $this->hookAdminBarLink();
 			$this->hookDequeue();
         }
@@ -87,11 +86,6 @@ class AssetAuth extends AssetLoad {
 	// support viewing the frontend as a logged-out user
 	function hookAjaxUrlSetup(){
 		add_action('init',  array(&$this, 'setAdminAjaxUrl'), $this->defaultActionHookOrder);
-	}
-
-    // support viewing the frontend as a logged-out user
-	function hookNonLoggedIn(){
-		add_action('init',  array(&$this, 'nonLoggedInMode'), $this->defaultActionHookOrder);
 	}
 
     // support redirection
@@ -267,7 +261,6 @@ class AssetAuth extends AssetLoad {
 
 				// Now we have folderLoading config, queue scripts and maybe hook HTML mods
 				$this->contentMethod('initContentAmendments');
-
 			}
 
             // Get the folder loading status of any draft folder too
@@ -366,7 +359,7 @@ class AssetAuth extends AssetLoad {
 
 	function adminBarLink($wp_admin_bar) {
 
-        if (!current_user_can('administrator')){
+        if (!current_user_can('manage_options')){
             return false;
         }
 
@@ -415,7 +408,7 @@ class AssetAuth extends AssetLoad {
 
 			$nonce = !empty($_GET['_wpnonce']) ? $_GET['_wpnonce'] : false;
 
-			if (current_user_can("administrator") && wp_verify_nonce( $nonce, 'mt_builder_redirect_check' )) {
+			if (current_user_can('manage_options') && wp_verify_nonce( $nonce, 'mt_builder_redirect_check' )) {
 
 				global $post;
 
@@ -467,7 +460,7 @@ class AssetAuth extends AssetLoad {
 
 			$nonce = !empty($_GET['_wpnonce']) ? $_GET['_wpnonce'] : false;
 
-            if (current_user_can("administrator") and wp_verify_nonce( $nonce, 'mt_nonlog_check' ) ) {
+            if (current_user_can('manage_options') and wp_verify_nonce( $nonce, 'mt_nonlog_check' ) ) {
 	            wp_set_current_user(-1);
 			}
 

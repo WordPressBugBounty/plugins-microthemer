@@ -3087,7 +3087,9 @@ class Admin {
 
 			'dependency_row' => $this->dependency_row(),
             'snippet_dependency_row' => $this->snippet_dependency_row(),
-            'detected_package_item' => $this->detected_package_item()
+			'detected_package_item' => $this->detected_package_item(),
+			'whitelist_ui' => $this->whitelist_ui_template(),
+			'whitelist_ui_item' => $this->whitelist_ui_item('domain_name'),
 
 			//'primary_context_menu_trigger' => $this->element_meta_template('primary'),
 
@@ -7002,6 +7004,38 @@ class Admin {
 
 		$html.= '</'.$tag.'>';
 		return $html;
+	}
+
+	function whitelist_ui_item($domain, $isWhitelisted = false){
+		$on = $isWhitelisted ? 1 : 0;
+		return '
+			<div class="mt-ai-whitelist-item">
+				<span class="mt-ai-whitelist-domain" data-domain="'.$domain.'">'.$domain.'</span>' .
+				$this->toggle('whitelisted_domains', array(
+					'toggle' => $on,
+					'data-pos' => esc_attr__('Whitelist domain', 'microthemer'),
+					'data-neg' => esc_attr__('Unwhitelist domain', 'microthemer'),
+				
+					'data-no-save' => 1
+				)) . '
+			</div>';
+	}
+
+	function whitelist_ui_template($blockedDomains = array()){
+		$items = '';
+		foreach ($blockedDomains as $domain){
+			$items .= $this->whitelist_ui_item($domain);
+		}
+		return '
+			<div class="mt-ai-whitelist-ui">
+				<div class="mt-ai-whitelist-heading">' . esc_html__('Whitelist Domains:', 'microthemer') . '</div>
+				<div class="mt-ai-whitelist-list">' . $items . '</div>
+				<div class="mt-ai-whitelist-actions">
+					<span class="tvr-button fast" data-mtc="mod.MTai.retryQuarantinedResponse">' .
+						esc_html__('Apply Changes', 'microthemer') . '
+					</button>
+				</div>
+			</div>';
 	}
 
 	// feather, chain, important, pie, disable icons

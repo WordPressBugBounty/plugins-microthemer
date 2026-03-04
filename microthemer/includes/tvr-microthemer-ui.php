@@ -1268,16 +1268,26 @@ require_once('common-inline-assets.php');
 
 
                     <textarea id="tvr-ai-prompt" class="tvr-ai-prompt" name="ai_prompt" placeholder="<?php echo $this->supportContent() ? 'Request a website change' : 'Request a style change'; ?>"></textarea>
+                    <div class="mt-ai-attachment-tray" style="display:none;"></div>
+                    <input type="file" id="mt-ai-file-input" multiple accept="image/png,image/jpeg,image/webp" style="display:none;">
                     <span id="ai-send-prompt" class="tvr-button ai-send-prompt">Send</span>
                     <div class="tvr-ai-talk">
                         <div id="tvr-ai-status" data-status="undefined"></div>
-                        <?php
-                        echo $this->iconFont('mic', array(
-                            'id' => 'tvr-ai-mic',
-                            'class' => 'tvr-ai-mic',
-                            'title' => esc_attr__("Talk to AI", 'microthemer'),
-                        ));
-                        ?>
+                        <div class="mt-ai-attachment-btns">
+							<?php
+							echo $this->iconFont('camera-solid-full', array(
+								'id' => 'mt-ai-capture-screen',
+								'class' => 'ai-attachment-btn',
+								'title' => esc_attr__("Take screen capture", 'microthemer'),
+							));
+							echo $this->iconFont('mic', array(
+								'id' => 'tvr-ai-mic',
+								'class' => 'tvr-ai-mic',
+								'title' => esc_attr__("Talk to AI", 'microthemer'),
+							));
+							?>
+                        </div>
+                        
                     </div>
                 </div>
 
@@ -1529,8 +1539,21 @@ require_once('common-inline-assets.php');
 							            .$this->toggle('ai_admin_access', array(
 								            'toggle' => !empty($this->preferences['ai_admin_access']),
 								            'toggle_id' => 'ai_admin_access',
-							            )).'</div>
-							            ' . $aiTest
+							            )).'</div>' .
+							            (function() {
+								            $whitelisted = !empty($this->preferences['whitelisted_domains']) ? $this->preferences['whitelisted_domains'] : array();
+								            if (empty($whitelisted) || $whitelisted[0] === '' && count($whitelisted) === 1)  return '';
+								            $items = '';
+								            foreach ($whitelisted as $domain) {
+												if ($domain === '') continue;
+									            $items .= $this->whitelist_ui_item($domain, true);
+								            }
+								            return '<div class="mt-ai-settings-whitelist-wrap">
+                                                <div class="mt-ai-whitelist-heading">' . esc_html__('Whitelisted domains', 'microthemer') . '</div>
+                                                <div class="mt-ai-whitelist-list">' . $items . '</div>
+                                            </div>';
+							            })()
+							            . $aiTest
 
 					            ),
 					            /*'api_key' => array(

@@ -79,6 +79,20 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
+= 7.5.3.7 (March 3rd, 2026) =
+
+# Enhancements (Microthemer & Amender)
+* Improved AI response security checking, with the option for users to whitelist external domains manually.
+* Ability to attach screenshots in the AI chat, for debugging or communicating visual / content speciications.
+* Optimised context management for faster and more cost effective AI output.
+
+# Enhancements (Amender)
+* More reliabe Pexels media search for stock photos and videos. 
+* Accessible arial-label added to stock video Amender embeds.
+
+# Bugs Fixed (Microthemer)
+* The Full code editor view displayed a tiny code editor if no selectors had been created in the main GUI view.
+
 = 7.5.3.6 (Dec 31st, 2025) =
 
 # Bugs Fixed (Amender)

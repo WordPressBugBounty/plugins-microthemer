@@ -19,7 +19,7 @@ for ($x = 1; $x <= $grid_size; $x++) {
 		$rlabel= 'R'.$x;
 	}
 	$col_labels.= '
-	<li class="col-label">
+	<li class="col-label py-14">
 		<span class="large-heading-label">'.$clabel.'</span>
 	</li>';
 	$row_labels.= '<li class="row-label">'.$rlabel.'</li>';

@@ -79,7 +79,12 @@ I've been happily developing Microthemer and supporting users of varying technic
 
 == Changelog ==
 
-= 7.5.3.7 (March 3rd, 2026) =
+= 7.5.3.8 (March 16th, 2026) =
+
+# Bugs Fixed (Microthemer)
+* Error handling animation shorthand properties with cubic-bezier definitions.
+
+= 7.5.3.7 (March 4th, 2026) =
 
 # Enhancements (Microthemer & Amender)
 * Improved AI response security checking, with the option for users to whitelist external domains manually.

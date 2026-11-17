@@ -19,7 +19,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 		use FrontAndBackTrait;
 
-		var $pluginVersion = '7.5.5.8';
+		var $pluginVersion = '7.5.5.9';
 		protected $isBlockEditorScreen;
 		var $logicSettings = array();
 		public $context = 'load';
@@ -318,12 +318,15 @@ if (!class_exists('\Microthemer\AssetLoad')){
 			}
 
 			$subDir = 'mt/conditional/' . $this->fileStub . '/';
-			$dir = $this->rootDir . $subDir;
 			$url = $this->rootUrl . $subDir;
 			$add = $this->addInsteadOfEnqueue();
 			$foldersDone = array();
 
 			foreach ($folders as $folder){
+
+				if (!isset($folder['slug']) || !Helper::isValidFolderSlug($folder['slug'])){
+					continue;
+				}
 
 				if (isset($folder['expr']) && !isset($foldersDone[$folder['slug']])){
 
@@ -331,8 +334,8 @@ if (!class_exists('\Microthemer\AssetLoad')){
 					$this->folderLoading[$slug] = 0;
 					$result = $logic->result(trim($folder['expr']));
 					$cssFileName = $slug . '.css';
-					$cssFile = $dir . $slug . '.css';
-					$fileExists = file_exists($dir . $cssFileName);
+					$cssFile = Helper::conditionalStylesheetPath($this->rootDir, $this->fileStub, $slug);
+					$fileExists = $cssFile !== false;
 
 					$this->folderLoading[$slug] = $result
 						? ($fileExists
@@ -738,7 +741,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				if (!empty($config['inline'])){
 					$wp_styles->add($handle, false, $deps);
 					$wp_styles->enqueue(array($handle));
-					$wp_styles->add_inline_style($handle, $config['code']);
+					$wp_styles->add_inline_style($handle, Helper::escapeInlineCSS($config['code']));
 				}
 
 				// regular external stylesheet

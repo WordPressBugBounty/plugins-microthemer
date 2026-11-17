@@ -623,8 +623,12 @@ class AssetAuth extends AssetLoad {
         // 
 		foreach ($folders as $folder){
 
+			if (!isset($folder['slug']) || !Helper::isValidFolderSlug($folder['slug'])){
+				continue;
+			}
+
 			$slug = $folder['slug'];
-			$file_exists = file_exists($this->rootDir . 'mt/conditional/draft/' . $slug . '.css');
+			$file_exists = Helper::conditionalStylesheetPath($this->rootDir, 'draft', $slug) !== false;
 
 			// if a condition has been set
 			if (isset($folder['expr'])){

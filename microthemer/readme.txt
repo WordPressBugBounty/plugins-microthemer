@@ -6,7 +6,7 @@ Tags: css, customize, visual editor, google fonts, responsive
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.3
-Stable tag: 7.5.5.8
+Stable tag: 7.5.5.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -96,6 +96,15 @@ Themeover: [Terms of Use](https://themeover.com/terms/), [Privacy Policy](https:
 5. Start customizing the appearance of your site.
 
 == Changelog ==
+
+= 7.5.5.9 (Nov 17th, 2026) =
+
+# Changes (Microthemer & Amender)
+* Security hardening.
+
+# Changes (Microthemer Lite)
+* Fixed a critical error on WordPress admin screens after installing Microthemer Lite 7.5.5.8, before Microthemer had been opened for the first time.
+* The notice for Microthemer Pro license holders now explains where to download Pro, and what to check if the download is missing.
 
 = 7.5.5.8 (Nov 16th, 2026) =
 

@@ -17,6 +17,36 @@ class Helper {
 	public static $doDebug = false;
 	public static $debugOutput = '';
 
+	// Folder slugs name one generated file. Preserve Unicode and ordinary punctuation,
+	// but never allow paths (including Windows separators) or traversal fragments.
+	public static function isValidFolderSlug($slug){
+		return (is_string($slug) || is_int($slug)) && (string) $slug !== ''
+			&& !preg_match('/[\/\\\\\0]|\.\./', (string) $slug);
+	}
+
+	public static function conditionalStylesheetPath($root, $state, $slug){
+		if (!in_array($state, array('active', 'draft'), true) || !self::isValidFolderSlug($slug)){
+			return false;
+		}
+
+		$root = realpath($root);
+		$dir = $root === false ? false : realpath($root . '/mt/conditional/' . $state);
+		$file = $dir === false ? false : realpath($dir . '/' . $slug . '.css');
+		if ($file === false || !is_file($file)
+			|| strpos($dir . DIRECTORY_SEPARATOR, $root . DIRECTORY_SEPARATOR) !== 0
+			|| strpos($file, $dir . DIRECTORY_SEPARATOR) !== 0){
+			return false;
+		}
+
+		return $file;
+	}
+
+	// Escape HTML closing delimiters (including a trailing partial delimiter), while keeping
+	// ordinary '<' comparisons valid in CSS media queries.
+	public static function escapeInlineCSS($css){
+		return preg_replace('~<(?=/|\z)~', '\\\\3c ', $css);
+	}
+
 	public static function debug($message, $data = false, $die = false){
 
 		if (Helper::$doDebug){

@@ -563,6 +563,13 @@ trait AdminInitTrait {
 	// Pro code live or accidentally publish work the user has not published.
 	function clearPublishedCustomCode(){
 
+		// On ordinary admin screens, init() reads the option before the editor's setup
+		// has created it. WordPress returns false for a missing option. Defer cleanup
+		// until preferences exist; do not initialize or change saved work here.
+		if (!is_array($this->preferences) || !$this->preferences){
+			return;
+		}
+
 		if (!empty($this->preferences['load_js']) || !empty($this->preferences['load_js_published'])){
 			$this->savePreferences(array('load_js' => 0, 'load_js_published' => 0));
 		}
@@ -719,11 +726,9 @@ trait AdminInitTrait {
 		$link = '<a href="%s" target="_blank" rel="noopener noreferrer">';
 
 		$install = sprintf(
-			/* translators: 1: opening link tag to the themeover.com account page, 2: closing link tag, 3: opening link tag to the themeover.com pricing page, 4: closing link tag */
-			esc_html__('If you have a Microthemer Pro license, %1$sdownload Microthemer Pro from your themeover.com account%2$s and install it in place of this plugin. Pro updates now come from themeover.com rather than WordPress.org. Otherwise, you can read about %3$sMicrothemer Pro%4$s.', 'microthemer'),
+			/* translators: 1: opening link tag to the themeover.com account page, 2: closing link tag */
+			esc_html__('If you already have a license, %1$sdownload Microthemer Pro from your Themeover account%2$s and install it in place of this plugin. Pro downloads and updates are provided by Themeover, not the WordPress.org plugin page. If your download is missing, check that you are signed in with the email address associated with your license.', 'microthemer'),
 			sprintf($link, esc_url('https://themeover.com/my-account/?contentView=microthemer')),
-			'</a>',
-			sprintf($link, esc_url('https://themeover.com/pricing/?contentView=microthemer')),
 			'</a>'
 		);
 

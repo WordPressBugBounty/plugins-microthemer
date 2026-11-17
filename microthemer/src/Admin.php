@@ -4417,7 +4417,10 @@ class Admin {
 
         // if revision has preferences, restore those
 		if (!empty($rev->preferences)){
-			update_option($this->preferencesName, unserialize($rev->preferences));
+			$preferences = unserialize($rev->preferences, array('allowed_classes' => array('stdClass')));
+			if (is_array($preferences)){
+				$this->savePreferences($this->preferencesThisUserCanSave($preferences));
+			}
 		}
 
 		// if revision has snippets, restore those
@@ -4991,6 +4994,7 @@ class Admin {
 		                        }
 	                        }
 	                        //wp_die('The final prefs: <pre>' . print_r($pref_array, 1) . '</pre>');
+	                        $pref_array = $this->preferencesThisUserCanSave($pref_array);
 	                        $this->savePreferences($pref_array);
 
 	                        $imported = true;
@@ -5022,6 +5026,7 @@ class Admin {
                         }
                     }
 
+                    $pref_array = $this->preferencesThisUserCanSave($pref_array);
                     $this->savePreferences($pref_array);
 
                     //wp_die('filtered prefs <pre>' . print_r($_POST, 1) . '</pre>');
@@ -10001,9 +10006,9 @@ class Admin {
 			));
 
 			$html.= '
-                            <span class="mt-tab mq-tab mq-tab-'.$key.'" rel="'.$key.'" title="' . esc_attr($m_query['query']). '">' .
+                            <span class="mt-tab mq-tab mq-tab-'.esc_attr($key).'" rel="'.esc_attr($key).'" title="' . esc_attr($m_query['query']). '">' .
 			        $menu_trigger .
-			        '<span class="mt-tab-txt mq-tab-txt">' . $m_query['label']. '</span>
+			        '<span class="mt-tab-txt mq-tab-txt">' . esc_html($m_query['label']). '</span>
                             </span>';
 		}
 

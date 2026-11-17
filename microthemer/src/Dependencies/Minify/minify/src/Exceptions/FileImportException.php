@@ -12,6 +12,10 @@
 
 namespace Microthemer\Dependencies\Minify\Exceptions;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /**
  * File Import Exception Class.
  *

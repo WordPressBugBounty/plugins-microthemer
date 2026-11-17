@@ -2,6 +2,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 trait SettingsTrait {
 
 	/*function getRevisionForIndexedDB($revision_id, $withSettings = false, $jsonResponse = false, $recent = null){
@@ -32,10 +36,6 @@ trait SettingsTrait {
 	function getRevisionForIndexedDB($revision_id, $withSettings = false, $jsonResponse = false, $recent = null) {
 		global $wpdb;
 		$table_name = $wpdb->prefix . "micro_revisions";
-		$columns = 'id, user_action, preferences, snippets';
-		if ($withSettings) {
-			$columns .= ', settings';
-		}
 
 		// Helper to normalize a DB row into an array
 		$normalizeRevision = function($rev) use ($withSettings) {
@@ -44,16 +44,28 @@ trait SettingsTrait {
 				'user_action' => !empty($rev->user_action) ? json_decode($rev->user_action) : '',
 				'preferences' => !empty($rev->preferences) ? unserialize($rev->preferences) : '',
 				'snippets'    => !empty($rev->snippets) ? unserialize($rev->snippets) : '',
-				'settings'    => $withSettings && isset($rev->settings) ? unserialize($rev->settings) : '',
+				'settings'    => $withSettings && isset($rev->settings) ? $this->settingsForUI(unserialize($rev->settings)) : '',
 			);
 		};
 
 		if ($recent !== null) {
 			// Fetch multiple recent revisions
 			$recent = (int) $recent;
-			$results = $wpdb->get_results(
-				$wpdb->prepare("SELECT $columns FROM $table_name ORDER BY id DESC LIMIT %d", $recent)
-			);
+			if ($withSettings) {
+				$results = $wpdb->get_results(
+					$wpdb->prepare(
+						"SELECT id, user_action, preferences, snippets, settings FROM %i ORDER BY id DESC LIMIT %d",
+						$table_name, $recent
+					)
+				);
+			} else {
+				$results = $wpdb->get_results(
+					$wpdb->prepare(
+						"SELECT id, user_action, preferences, snippets FROM %i ORDER BY id DESC LIMIT %d",
+						$table_name, $recent
+					)
+				);
+			}
 
 			$data = array();
 			if ($results) {
@@ -63,9 +75,21 @@ trait SettingsTrait {
 			}
 		} else {
 			// Fetch a single revision by ID
-			$rev = $wpdb->get_row(
-				$wpdb->prepare("SELECT $columns FROM $table_name WHERE id = %d", $revision_id)
-			);
+			if ($withSettings) {
+				$rev = $wpdb->get_row(
+					$wpdb->prepare(
+						"SELECT id, user_action, preferences, snippets, settings FROM %i WHERE id = %d",
+						$table_name, $revision_id
+					)
+				);
+			} else {
+				$rev = $wpdb->get_row(
+					$wpdb->prepare(
+						"SELECT id, user_action, preferences, snippets FROM %i WHERE id = %d",
+						$table_name, $revision_id
+					)
+				);
+			}
 
 			$data = $rev ? $normalizeRevision($rev) : null;
 		}
@@ -78,18 +102,20 @@ trait SettingsTrait {
 	}
 
 
+	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by microthemer_ajax_actions() via check_ajax_referer('mcth_simple_ajax', '_wpnonce'), which gates this whole call path.
 	function actionSaveInterface(){
 
 		// remove slashes and custom escaping so that DB data is clean
 		$this->serialised_post =
-			$this->deep_unescape($_POST, 1, 1, 1);
+			$this->deep_unescape($_POST, 1, 1, 1); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- unslash equivalent for nested arrays; fields validated downstream
 
 		if (!empty($this->serialised_post['serialise'])){
 			$this->serialised_post['tvr_mcth'] = $this->json('decode', $this->serialised_post['tvr_mcth']);
-			//json_decode($this->serialised_post['tvr_mcth'], true);
-			/*echo 'show_me from tvr_mcth: <pre> ';
-					print_r($_POST);
-					echo '</pre>';*/
+		}
+
+		// the settings (full, or a partial save package): see Schemas::sanitizeSettings
+		if (isset($this->serialised_post['tvr_mcth'])){
+			$this->serialised_post['tvr_mcth'] = Request\Schemas::sanitizeSettings($this->serialised_post['tvr_mcth']);
 		}
 
 		// bail if no save data was successfully decoded
@@ -207,7 +233,7 @@ trait SettingsTrait {
 			// update the revisions DB field
 			if (!$skip_revision){
 				$user_action = !empty($this->serialised_post['user_action'])
-					? json_encode($this->serialised_post['user_action'])
+					? wp_json_encode($this->serialised_post['user_action'])
 					: null;
 				$revision_id = $this->updateRevisions(
 					$this->options, $user_action, 1, 0, 0,
@@ -255,7 +281,8 @@ trait SettingsTrait {
 			//'uiData'=> array()
 		), $revisionData);
 
-		echo json_encode($response); //$html;
+		echo wp_json_encode($response); //$html;
+	// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	function getRevisionData($revision_id){
@@ -263,7 +290,7 @@ trait SettingsTrait {
 		if ($revision_id && is_numeric($revision_id)) {
 			$revision = $this->getRevisionForIndexedDB($revision_id);
 			if ($revision){
-				$revision['settings'] = $this->options;
+				$revision['settings'] = $this->settingsForUI($this->options);
 				$revisionData['revision_id'] = $revision_id;
 				$revisionData['revision'] = &$revision;
 			}
@@ -291,24 +318,22 @@ trait SettingsTrait {
 
 		$microthemerActive = $this->supportGUICSS();
 
-		// They cannot publish Amender if no subscription
-		$unableToPublishAmender = $this->supportContent() && !$this->hasContentSubscription();
+		// content modifications may not be publishable (see canPublishContent)
+		$contentPublishBlocked = $this->supportContent() && !$this->canPublishContent();
 
-		// They cannot publish anything if they are just using Amender free trial without Microthemer
-		$unableToPublishAnything = $unableToPublishAmender && !$microthemerActive;
+		// nothing to publish if content modifications are all there is
+		$canPublishSomething = !($contentPublishBlocked && !$microthemerActive);
 
-		$canPublishSomething = !$unableToPublishAnything;
-
-		// We can publish all settings if they have an amender subscription or they are just using Microthemer
-		$canPublishEverything = $this->hasContentSubscription() || !$this->supportContent();
+		$canPublishEverything = !$contentPublishBlocked;
 
 		$response = array(
 			'num_unpublished_saves' => $canPublishEverything
 				? 0
 				: $this->preferences['num_unpublished_saves'],
-			'notify_amender_subscription_needed' => $unableToPublishAmender
-				? 1
-				: 0,
+			// message explaining why content wasn't published (provided by an extension)
+			'content_publish_notice' => $contentPublishBlocked
+				? $this->extFilter('content_publish_notice', null, $microthemerActive)
+				: null,
 		);
 
 		// If they can publish Microthemer or Amender changes, update assets
@@ -324,7 +349,7 @@ trait SettingsTrait {
 			);
 
 			// Publish content modifications if allowed
-			if ($this->hasContentSubscription()){
+			if ($this->canPublishContent()){
 
 				// Update the database
 				$this->contentMethod('publishHTMLTable', array(), true);
@@ -343,18 +368,11 @@ trait SettingsTrait {
 
 		//$this->log('Test error', 'An issue occurred!');
 
-		/*$response = array(
-			'num_unpublished_saves' => 0,
-			'notify_amender_subscription_needed' => $this->supportContent() && !$this->hasContentSubscription()
-				? 1
-				: 0,
-		);*/
-
 		if (!empty($this->globalmessage)){
 			$response['html'] = '<div id="microthemer-notice">' . $this->display_log() . '</div>';
 		}
 
-		return json_encode($response);
+		return $response;
 
 	}
 
@@ -390,6 +408,205 @@ trait SettingsTrait {
 		return true;
 	}
 
+	// A selector's compiled CSS, made safe to output. A '<' is escaped (\3c is the same character
+	// in a CSS string and invalid anywhere else), so the CSS can never close a <style> element it
+	// is inlined in. Builds without the code editors only ever generate it from form fields, so
+	// there a brace imbalance can only be a value breaking out of its rule: that selector is left
+	// out of the stylesheet (its settings are untouched) rather than let it swallow or add rules.
+	function safeSelectorCSS($css){
+
+		if (!is_string($css) || $css === ''){
+			return $css;
+		}
+
+		$css = str_replace('<', '\3c ', $css);
+
+		if (!$this->hasCodeEditors() && !$this->bracesBalanced($css)){
+			return '';
+		}
+
+		return $css;
+	}
+
+	// A Pro selector can mix visual properties with free-text code in one compiled_css
+	// value. Lite cannot safely separate those rules after compilation, so leave that
+	// selector out of generated assets while keeping all of its saved settings.
+	function selectorHasCustomCode($selector){
+		$code = isset($selector['styles']['code']['css']['value'])
+			? $selector['styles']['code']['css']['value']
+			: '';
+		return (is_string($code) && trim($code) !== '' && $code !== 'consolidatedGUI')
+			|| !empty($selector['ast']['rules']['non_gui']);
+	}
+
+	function renderableSelectorCSS($selector){
+		if (!$this->hasCodeEditors() && $this->selectorHasCustomCode($selector)){
+			return '';
+		}
+		return !empty($selector['compiled_css'])
+			? $this->safeSelectorCSS($selector['compiled_css'])
+			: '';
+	}
+
+	// Code from the full CSS editor, made safe to output. This is the check core runs on Custom CSS:
+	// the stylesheet can be inlined, so the text must not close a <style> element or end in a partial
+	// closing tag that later CSS could complete. A bare '<' stays: @media (width < 40em) is valid CSS.
+	function safeCustomCSS($css){
+		return preg_replace('~<(?=/|\z)~', '\\\\3c ', $css);
+	}
+
+	// whether CSS opens and closes its blocks in order (ignoring strings and comments)
+	function bracesBalanced($css){
+
+		$depth = 0;
+		$quote = '';
+		$length = strlen($css);
+
+		for ($i = 0; $i < $length; $i++){
+
+			$char = $css[$i];
+
+			if ($quote){
+				if ($char === '\\'){
+					$i++;
+				} elseif ($char === $quote){
+					$quote = '';
+				}
+				continue;
+			}
+
+			if ($char === '/' && $i + 1 < $length && $css[$i + 1] === '*'){
+				$end = strpos($css, '*/', $i + 2);
+				if ($end === false){
+					return false;
+				}
+				$i = $end + 1;
+			} elseif ($char === '"' || $char === "'"){
+				$quote = $char;
+			} elseif ($char === '{'){
+				$depth++;
+			} elseif ($char === '}' && --$depth < 0){
+				return false;
+			}
+		}
+
+		return $depth === 0 && !$quote;
+	}
+
+	// Whether this user may write free-text code or Amender modifications. Mirrors core: arbitrary
+	// CSS needs edit_css (as the Customizer and Global Styles do) and scripts need unfiltered_html,
+	// so on multisite only super admins qualify. A network owner who trusts their site admins can
+	// allow them with the microthemer_can_edit_code filter, which is narrower than granting
+	// unfiltered_html, but DISALLOW_UNFILTERED_HTML rules out everyone. hasCodeEditors() still decides
+	// what the build outputs: code a permitted user saved stays live, whoever regenerates the assets.
+	function canEditCode() {
+
+		if (!$this->hasCodeEditors() || (defined('DISALLOW_UNFILTERED_HTML') && DISALLOW_UNFILTERED_HTML)){
+			return false;
+		}
+
+		return (bool) apply_filters(
+			'microthemer_can_edit_code',
+			current_user_can('edit_css') && current_user_can('unfiltered_html')
+		);
+	}
+
+	// What a save may write to preferences. Script packages decide what JavaScript a snippet loads,
+	// so they're code too, and a user who may not edit code can't change them this way either.
+	function preferencesThisUserCanSave($pref_array){
+
+		if ($this->canEditCode()){
+			return $pref_array;
+		}
+
+		return array_diff_key($pref_array, array_flip(array(
+			'npm_dependencies',
+			'npm_dependencies_published',
+			'npm_dependencies_in_use',
+			'npm_addon_files',
+		)));
+	}
+
+	// Where custom code from the full CSS/JS editors lives in the settings
+	function customCodeTrails(){
+		return array(
+			array('non_section', 'hand_coded_css'),
+			array('non_section', 'hand_coded_css_compiled'),
+			array('non_section', 'js'),
+			array('non_section', 'code_editors'),
+			array('non_section', 'meta', 'fullCodeSelectors'),
+		);
+	}
+
+	// Settings as the editor UI gets them. Builds without the code editors, and users who may not
+	// edit code, never see custom code, so none of the editor's code-handling paths can pick it up.
+	function settingsForUI($settings){
+
+		if ($this->canEditCode() || !is_array($settings)){
+			return $settings;
+		}
+
+		foreach ($this->customCodeTrails() as $trail){
+			$parent = &$settings;
+			$key = array_pop($trail);
+			foreach ($trail as $step){
+				if (!isset($parent[$step]) || !is_array($parent[$step])){
+					continue 2;
+				}
+				$parent = &$parent[$step];
+			}
+			unset($parent[$key]);
+			unset($parent);
+		}
+
+		return $settings;
+	}
+
+	// Builds without the code editors, and users who may not edit code, can't change custom code
+	// or Amender modifications: whatever a save held, keep exactly what was stored - restoring code
+	// the UI never saw, and dropping code a save tried to add. (Removing it is a deliberate action,
+	// see Extensions\CodePermissions. A save can't express it: unseen code is absent from every save.)
+	function keepStoredCustomCode($stored){
+
+		if ($this->canEditCode()){
+			return;
+		}
+
+		foreach ($this->customCodeTrails() as $trail){
+
+			$from = $stored;
+			$found = true;
+			foreach ($trail as $step){
+				if (!is_array($from) || !array_key_exists($step, $from)){
+					$found = false;
+					break;
+				}
+				$from = $from[$step];
+			}
+
+			$key = array_pop($trail);
+			$parent = &$this->options;
+			foreach ($trail as $step){
+				if (!isset($parent[$step]) || !is_array($parent[$step])){
+					if (!$found){
+						continue 2;
+					}
+					$parent[$step] = array();
+				}
+				$parent = &$parent[$step];
+			}
+
+			if ($found){
+				$parent[$key] = $from;
+			} else {
+				unset($parent[$key]);
+			}
+			unset($parent);
+		}
+
+		$this->options = UnavailableSettings::lockGroups($stored, $this->options, array('code', 'html'));
+	}
+
 	// Save the UI styles to the database - from full or partial save package
 	function saveUiOptions2($savePackage, $partial = false, $last_save_time = false){
 
@@ -397,6 +614,10 @@ trait SettingsTrait {
 		if (!$this->check_last_save_time($last_save_time)){
 			return false;
 		}
+
+		// Keep an exact copy for restoring settings the active property map cannot
+		// represent. This is essential when lite is saving data created in pro.
+		$stored_options = $this->options;
 
 		// plain save if no save package
 		if (!$partial){
@@ -407,6 +628,14 @@ trait SettingsTrait {
 		else {
 			$this->apply_save_package($savePackage, $this->options);
 		}
+
+		$this->options = UnavailableSettings::preserve(
+			$stored_options,
+			$this->options,
+			$this->propertyoptions,
+			$this->build_group_keys
+		);
+		$this->keepStoredCustomCode($stored_options);
 
 		// tag version the settings were saved at so e.g. css units can be imported correctly for legacy data
 		$this->options['non_section']['mt_version'] = $this->version;
@@ -419,6 +648,29 @@ trait SettingsTrait {
 
 		return true;
 
+	}
+
+	// Apply a partial save package outside the regular save flow (silent saves).
+	// These can carry whole-selector replacements too - e.g. switching a multi-tab
+	// re-reads the selector from the DOM - so unavailable settings need the same
+	// protection they get in saveUiOptions2.
+	function applySilentSavePackage($savePackage){
+
+		$stored_options = $this->options;
+
+		$this->apply_save_package($savePackage, $this->options);
+
+		$this->options = UnavailableSettings::preserve(
+			$stored_options,
+			$this->options,
+			$this->propertyoptions,
+			$this->build_group_keys
+		);
+		$this->keepStoredCustomCode($stored_options);
+
+		update_option($this->optionsName, $this->options);
+
+		return true;
 	}
 
 	// check the last save time
@@ -473,45 +725,191 @@ trait SettingsTrait {
 	// update the ui options using & reference to behave like JS object
 	function apply_save_package($savePackage, &$data){
 
-		$before_after = array('### Save Package Before and After ###');
-
 		foreach($savePackage as $update){
 
-			if ($update['action'] === 'debug'){
-				if ($this->debug_save_package) {
-					$before_after[] = $update['data'];
-				}
-				continue;
-			} elseif ($update['action'] === 'no_new_data'){
+			if ($update['action'] === 'debug' || $update['action'] === 'no_new_data'){
 				continue;
 			}
 
-			$before = false;
-			if ($this->debug_save_package) {
-				$before                 = $this->get_or_update_item($data, array_merge($update, array('action' => 'get')));
-				$update[ 'callerFunc' ] = !empty($update[ 'callerFunc' ]) ? $update[ 'callerFunc' ] : '';
+			if ($this->is_late_write($update, $data)){
+				$this->droppedSaveWrites[] = $update;
+				continue;
 			}
 
-			$data_item = &$this->get_or_update_item($data, $update, 0);
+			// a merge into the root can carry several folders and selectors
+			if (empty($update['trail']) && in_array($update['action'], array('array_merge', 'array_merge_recursive_distinct'), true)
+			    && isset($update['data']) && is_array($update['data'])){
+				$update['data'] = $this->without_late_records($update['data'], $data);
+			}
 
-			if ($this->debug_save_package) {
-				$before_after[] = array(
-					'before '.$update['callerFunc'].' (' .$update['action'].')' => $before,
-					'after '.$update['callerFunc'].' (' .$update['action'].')' => $data_item,
-					'update_package '.$update['callerFunc'].' (' .$update['action'].')' => $update
-				);
+			$this->get_or_update_item($data, $update, 0);
+
+			if ($update['action'] === 'delete'){
+				$this->delete_from_copies($update, $data);
+			}
+		}
+	}
+
+	/*
+	 * A folder or selector deleted from the main tree goes from its breakpoint and !important copies too. The
+	 * builder sends those deletes for the copies it knows about, but it doesn't load every stored entry (e.g. an
+	 * empty breakpoint folder), so without this they would stay behind.
+	 */
+	function delete_from_copies($update, &$data){
+
+		$trail = !empty($update['trail']) ? array_values($update['trail']) : array();
+
+		if (!isset($update['key']) || count($trail) > 1 || $update['key'] === 'this'
+		    || ($trail ? $trail[0] : $update['key']) === 'non_section'){
+			return;
+		}
+
+		$path = array_merge($trail, array($update['key'])); // [folder] or [folder, selector]
+		$nonSection = isset($data['non_section']) && is_array($data['non_section']) ? $data['non_section'] : array();
+		$trees = array();
+
+		foreach (array('m_query', 'important') as $type){
+
+			if (empty($nonSection[$type]) || !is_array($nonSection[$type])){
+				continue;
+			}
+
+			// all-devices !important keeps its breakpoints under [m_query], which isn't a folder
+			if ($type === 'important' && $path[0] !== 'm_query'){
+				$trees[] = array('non_section', 'important');
+			}
+
+			$breakpoints = $type === 'm_query' ? $nonSection['m_query'] : (isset($nonSection['important']['m_query']) ? $nonSection['important']['m_query'] : array());
+
+			foreach ((is_array($breakpoints) ? $breakpoints : array()) as $mq_key => $folders){
+				$trees[] = $type === 'm_query'
+					? array('non_section', 'm_query', $mq_key)
+					: array('non_section', 'important', 'm_query', $mq_key);
 			}
 		}
 
-		if ($this->debug_save_package) {
-			$before_after[] = array(
-				'Full options:' => $this->options
+		foreach ($trees as $tree){
+			$this->get_or_update_item($data, array(
+				'action' => 'delete',
+				'trail' => array_merge($tree, array_slice($path, 0, -1)),
+				'key' => end($path)
+			), 0);
+		}
+	}
+
+	/*
+	 * Late writes: changes that arrive after their folder or selector was deleted or renamed (a queued save,
+	 * a second tab within the stale-tab window). get_or_update_item creates missing levels, so applying them
+	 * would bring back the deleted selector, or the old key next to the renamed one. The builder adds a
+	 * selector by appending its whole record to the folder (new, copied, moved or a draft saved), so that is
+	 * the only write that may create one. A new folder arrives as a root merge or append, as the record of
+	 * its first selector, or as its own [folder, this] record. Breakpoint and !important copies need the
+	 * selector to exist in the main tree.
+	 */
+	public $droppedSaveWrites = array();
+
+	function is_late_write($update, $data){
+
+		if (in_array($update['action'], array('get', 'delete', 'rename', 'reorder'), true)){
+			return false; // these never create anything
+		}
+
+		$trail = !empty($update['trail']) ? array_values($update['trail']) : array();
+		$isAppend = $update['action'] === 'append';
+
+		// with append, the key is the last level of the trail
+		if ($isAppend && isset($update['key'])){
+			$trail[] = $update['key'];
+		}
+
+		$location = $this->folder_trail_location($trail);
+		if (!$location){
+			return false; // the root, or a non_section setting that isn't keyed by folder
+		}
+
+		list($folder, $selector, $isMainTree, $depth) = $location;
+		$value = isset($update['data']) && is_array($update['data']) ? $update['data'] : array();
+		$appendsSelector = $isMainTree && $isAppend && $depth === 2 && $selector !== 'this' && !empty($value['label']);
+
+		if (!isset($data[$folder]) || !is_array($data[$folder])){
+
+			$createsFolder = $isMainTree && (
+				($isAppend && $depth === 1 && !empty($value['this']['label']))
+				|| $appendsSelector
+				|| ($update['action'] === 'replace' && $depth === 2 && $selector === 'this' && !empty($value['label']))
 			);
-			$write_file = @fopen($this->debug_dir . 'save-package.txt', 'w');
-			fwrite($write_file, print_r($before_after, true));
-			fclose($write_file);
+
+			return !$createsFolder;
 		}
 
+		if ($selector === null || $selector === 'this'){
+			return false;
+		}
+
+		if (!isset($data[$folder][$selector]) || !is_array($data[$folder][$selector])){
+			return !$appendsSelector;
+		}
+
+		return false;
+	}
+
+	// The folder and selector keys a trail passes through: [folder, selector|null, is main tree, depth below the tree]
+	function folder_trail_location($trail){
+
+		if (!isset($trail[0])){
+			return false;
+		}
+
+		if ($trail[0] !== 'non_section'){
+			$offset = 0;
+		} elseif (isset($trail[1]) && $trail[1] === 'm_query'){
+			$offset = 3;
+		} elseif (isset($trail[1]) && $trail[1] === 'important'){
+			$offset = isset($trail[2]) && $trail[2] === 'm_query' ? 4 : 2;
+		} else {
+			return false;
+		}
+
+		if (!isset($trail[$offset])){
+			return false;
+		}
+
+		return array(
+			$trail[$offset],
+			isset($trail[$offset + 1]) ? $trail[$offset + 1] : null,
+			$offset === 0,
+			count($trail) - $offset
+		);
+	}
+
+	// A root merge can add a folder or selector with its label (the folder menu's add forms do), but a style
+	// edit's merge only carries the changed fields, so for a missing record it is a late write
+	function without_late_records($merge, $data){
+
+		foreach ($merge as $folder => $folderData){
+
+			if ($folder === 'non_section' || !is_array($folderData)){
+				continue;
+			}
+
+			$folderExists = isset($data[$folder]) && is_array($data[$folder]);
+
+			if (!$folderExists && empty($folderData['this']['label'])){
+				$this->droppedSaveWrites[] = array('action' => 'merge', 'trail' => array($folder));
+				unset($merge[$folder]);
+				continue;
+			}
+
+			foreach ($folderData as $selector => $selectorData){
+				if ($selector !== 'this' && (!is_array($selectorData) || empty($selectorData['label']))
+				    && !($folderExists && isset($data[$folder][$selector]) && is_array($data[$folder][$selector]))){
+					$this->droppedSaveWrites[] = array('action' => 'merge', 'trail' => array($folder, $selector));
+					unset($merge[$folder][$selector]);
+				}
+			}
+		}
+
+		return $merge;
 	}
 
 
@@ -532,8 +930,9 @@ trait SettingsTrait {
 			// if item doesn't exist
 			if (!isset($data[$key])){
 
-				// bail if we're trying to get an item that doesn't exist
-				if ($config['action'] === 'get'){
+				// bail if we're trying to get an item that doesn't exist, or change one that has nothing to change
+				// (creating the trail for these would leave empty items behind e.g. a selector in a breakpoint)
+				if (in_array($config['action'], array('get', 'delete', 'rename', 'reorder'), true)){
 
 					/* $this->log(
 								 esc_html__('Trail lead to undefined item: '.$key, 'microthemer'),
@@ -583,7 +982,9 @@ trait SettingsTrait {
 				$item = $config['data'];
 				break;
 			case 'delete':
-				unset($item[$config['key']]);
+				if (is_array($item)){
+					unset($item[$config['key']]);
+				}
 				break;
 			case 'rename':
 				$this->order_item_properties($item, $config['order'], $config['key'], $config['new_key']);
@@ -915,7 +1316,8 @@ trait SettingsTrait {
 		// as an interim, MT will continue to load dependencies in the global stylesheet
 		// e.g. key frames, GFonts, event JS - this will take some time but can be supported
 		$globalStylesheetRequired = 0;
-		$contentTrial = $this->supportContent() && !$this->hasContentSubscription();
+		// content modifications that can't be published yet are kept out of the published data
+		$contentDraftOnly = $this->supportContent() && !$this->canPublishContent();
 		$doPublish = !empty($assetTypes['active']) || !empty($this->preferences['auto_publish_mode']);
 
 		// Ensure that we publish at the same time if auto-publish is set
@@ -929,8 +1331,10 @@ trait SettingsTrait {
 			$prev_asset_loading['html_mods'] = array();
 		}
 
-		// check for micro-themes folder and create if it doesn't exist
-		$this->setup_micro_themes_dir();
+		// check for the storage folder and create if it doesn't exist
+		if (!$this->setup_micro_themes_dir()){
+			return false;
+		}
 
 		// setup vars
 		$asset = array(
@@ -964,8 +1368,7 @@ trait SettingsTrait {
 				'html_mods' => array(), // all mod junctures (global or conditional)
 			),
 			'assetTypes' => $assetTypes,
-			'separatePublishData' => $contentTrial && $doPublish,
-			'contentTrial' => $contentTrial,
+			'separatePublishData' => $contentDraftOnly && $doPublish,
 			'doPublish' => $doPublish,
 		);
 
@@ -977,9 +1380,11 @@ trait SettingsTrait {
 		$title = '/*  MICROTHEMER STYLES  */' . "\n\n";
 
 		// check if hand coded have been set - output before other css
+		// (builds without the code editors keep any stored custom code but never output it)
 		$scss_custom_code = '';
 		$custom_code = '';
-		if ( !empty($this->options['non_section']['hand_coded_css']) &&
+		if ( $this->hasCodeEditors() &&
+		     !empty($this->options['non_section']['hand_coded_css']) &&
 		     !empty(trim($this->options['non_section']['hand_coded_css'])) ){
 
 			$globalStylesheetRequired = 1;
@@ -997,13 +1402,13 @@ trait SettingsTrait {
 
 				// include already compiled CSS
 				if (!empty($this->options['non_section']['hand_coded_css_compiled'])){
-					$custom_code.= $custom_code_comment . $this->options['non_section']['hand_coded_css_compiled'] ."\n";
+					$custom_code.= $custom_code_comment . $this->safeCustomCSS($this->options['non_section']['hand_coded_css_compiled']) ."\n";
 				}
 			}
 
 			// No scss support
 			else {
-				$custom_code.= $custom_code_comment . $this->options['non_section']['hand_coded_css'] ."\n";
+				$custom_code.= $custom_code_comment . $this->safeCustomCSS($this->options['non_section']['hand_coded_css']) ."\n";
 			}
 
 		}
@@ -1022,7 +1427,7 @@ trait SettingsTrait {
 			}
 		}
 
-		//$this->log('The total config', json_encode($asset['preference']['conditional']));
+		//$this->log('The total config', wp_json_encode($asset['preference']['conditional']));
 
 		// flag that some CSS will be output to the global stylesheet
 		if ($asset['global']['data']){
@@ -1034,8 +1439,12 @@ trait SettingsTrait {
 		// any animations have been found after iterating GUI options, include if necessary
 		$anim_keyframes = '';
 
+		// the stock animations (animate.css) ship with pro builds only
+		$animation_code_file = $this->thisplugindir . 'includes/animation/animation-code.inc.php';
+
 		if ( !empty($this->options['non_section']['meta']['animations']['names']) and
-		     count($this->options['non_section']['meta']['animations']['names']) ){
+		     count($this->options['non_section']['meta']['animations']['names']) and
+		     file_exists($animation_code_file) ){
 
 			$globalStylesheetRequired = 1;
 
@@ -1046,7 +1455,7 @@ trait SettingsTrait {
 
 			// get array of animation code
 			$animations = array();
-			include $this->thisplugindir . 'includes/animation/animation-code.inc.php';
+			include $animation_code_file;
 
 			foreach ($this->options['non_section']['meta']['animations']['names'] as $animation_name => $one){
 
@@ -1065,7 +1474,7 @@ trait SettingsTrait {
 		/** UPDATE PREFERENCES */
 
 		// flag if global JS file should load
-		$js_data = !empty($this->options['non_section']['js'])
+		$js_data = $this->hasCodeEditors() && !empty($this->options['non_section']['js'])
 			? trim($this->options['non_section']['js'])
 			: '';
 		$load_js = !empty($js_data);
@@ -1097,6 +1506,11 @@ trait SettingsTrait {
 				: array(),
 			'num_saves' => (++$this->preferences['num_saves'])
 		);
+
+		// whether the published stylesheets carry full code editor CSS (see clearPublishedCustomCode)
+		if ($doPublish){
+			$pref_array['custom_css_published'] = $custom_code !== '' ? 1 : 0;
+		}
 
 		// google fonts
 		$gf_keys = array('g_fonts_used', 'g_url', 'g_url_with_subsets', 'found_gf_subsets');
@@ -1139,7 +1553,25 @@ trait SettingsTrait {
 			);
 		}
 
-		$this->updateAssetFiles($asset, $assetTypes, $globalStylesheetRequired);
+		$assetsWritten = $this->updateAssetFiles($asset, $assetTypes, $globalStylesheetRequired);
+		if ($assetsWritten && $doPublish && $this->isCSSEditor()){
+			// All active asset paths, including auto publish, share this source of truth.
+			// Later drafts must not become live during Lite's Pro-code cleanup.
+			update_option('microthemer_published_css_snapshot', array(
+				'settings' => $this->options,
+				'preferences' => array(
+					'm_queries' => isset($this->preferences['m_queries']) ? $this->preferences['m_queries'] : array(),
+					'allow_scss' => !empty($this->preferences['allow_scss']) ? 1 : 0,
+				),
+			), false);
+			delete_option('microthemer_lite_css_retry');
+			if ($this->hasCodeEditors()){
+				delete_option('microthemer_lite_css_cleaned');
+			} else {
+				update_option('microthemer_lite_css_cleaned', 1, false);
+			}
+		}
+		return $assetsWritten;
 
 	}
 
@@ -1241,6 +1673,7 @@ trait SettingsTrait {
 	}
 
 	function updateAssetFiles($asset, $assetTypes, $globalStylesheetRequired){
+		$filesOk = true;
 
 		// HTML modification
 
@@ -1260,7 +1693,7 @@ trait SettingsTrait {
 		// prepare any Global HTML for DB delete
 		if (count($asset['global']['html'])){
 			$slug = 'mt_collective_global';
-			$insertOrUpdate[$slug] = json_encode($asset['global']['html']);
+			$insertOrUpdate[$slug] = wp_json_encode($asset['global']['html']);
 			unset($staleMods[$slug]);
 		}
 
@@ -1305,11 +1738,12 @@ trait SettingsTrait {
 
 				// Write to or remove file
 				if ( $config['write']){
-					$this->write_file(
+					$filesOk = $this->write_file(
 						$file, $prefix . $asset['global'][$dataKey], $minify, $dataType
-					);
+					) && $filesOk;
 				} elseif (file_exists($file)) {
-					unlink($file);
+					// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removing generated CSS/JS in the storage folder when asset no longer needed.
+					$filesOk = unlink($file) && $filesOk;
 				}
 			}
 		}
@@ -1327,10 +1761,15 @@ trait SettingsTrait {
 
 				foreach ($asset['conditional'] as $folderSlug => $condSty){
 
+					// the slug becomes a file name, so it must never carry a path (imported packs are untrusted)
+					if (preg_match('/[\/\\\\\0]|\.\./', (string) $folderSlug)){
+						continue;
+					}
+
 					// prepare any HTML mods for DB delete
 					if ($assetType === 'draft'){
 						if (!empty($condSty['html']) && is_array($condSty['html']) && count($condSty['html'])){
-							$insertOrUpdate[$folderSlug] = json_encode($condSty['html']);
+							$insertOrUpdate[$folderSlug] = wp_json_encode($condSty['html']);
 							unset($staleMods[$folderSlug]);
 						}
 					}
@@ -1346,7 +1785,7 @@ trait SettingsTrait {
 								$asset['separatePublishData'], $folderSlug, $assetType, $dataKey, $condSty, $asset
 							], 1).'</pre>');*/
 
-						$this->write_file($file, $fseFix . $condSty[$dataKey], $minify, 'css');
+						$filesOk = $this->write_file($file, $fseFix . $condSty[$dataKey], $minify, 'css') && $filesOk;
 					}
 
 				}
@@ -1354,7 +1793,8 @@ trait SettingsTrait {
 				// clean up any files that are no longer conditional / renamed
 				$redundantFiles = array_diff($previousFiles, $currentFiles);
 				foreach ($redundantFiles as $fileName){
-					unlink($conditionalDir . $fileName);
+					// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Cleaning renamed/removed conditional assets in the storage folder.
+					$filesOk = unlink($conditionalDir . $fileName) && $filesOk;
 				}
 
 			}
@@ -1375,11 +1815,12 @@ trait SettingsTrait {
 		}*/
 
 		/* debug
-		 * $this->log('An update', json_encode([
+		 * $this->log('An update', wp_json_encode([
 			'$globalStylesheetRequired' => $globalStylesheetRequired,
 			'file exists' => file_exists($global_css),
 			'file' => $global_css
 		]));*/
+		return $filesOk;
 
 	}
 
@@ -1607,12 +2048,13 @@ trait SettingsTrait {
 				}
 
 
-				$string = !empty($sub_array['compiled_css'])
+				$selector_css = $this->renderableSelectorCSS($sub_array);
+				$string = $selector_css !== ''
 					? $this->normalise_tabs(
-						$this->normalise_line_breaks($sub_array['compiled_css']), $tab
+						$this->normalise_line_breaks($selector_css), $tab
 					)
 					: false;
-				$string2 = $sassToo && !empty($sub_array['raw_scss'])
+				$string2 = $sassToo && $selector_css !== '' && !empty($sub_array['raw_scss'])
 					? $this->normalise_tabs(
 						$this->normalise_line_breaks($sub_array['raw_scss']), $tab, true
 					)

@@ -8,6 +8,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 trait BlockTrait {
 
 

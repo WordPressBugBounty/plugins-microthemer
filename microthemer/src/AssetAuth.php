@@ -10,6 +10,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 class AssetAuth extends AssetLoad {
 
     use PluginTrait;
@@ -77,11 +81,29 @@ class AssetAuth extends AssetLoad {
 	            $this->deferHookIfAdmin('current_screen', 'hookMTJS');
             }
 
+	        $this->allowScriptingEditorInPreview();
         }
 
         // note, must come after hookMTJS as inline data is attached to the tvr_mcth_frontend handle
 	    //$this->deferHookIfAdmin('current_screen', 'hookFrontendData');
     }
+
+	// WP 7.1+ sends Document-Isolation-Policy on block editor screens (for client-side media processing).
+	// This isolates the editor into its own agent cluster, so MT can't script Gutenberg in the site preview
+	// (setup never completes and exiting Gutenberg can't read the permalink). Only skip it when the
+	// editor is loading in an iframe (MT's preview), so the standalone editor keeps client-side processing.
+	function allowScriptingEditorInPreview(){
+
+		$inIframe = isset($_SERVER['HTTP_SEC_FETCH_DEST']) && $_SERVER['HTTP_SEC_FETCH_DEST'] === 'iframe';
+
+		if (!$inIframe){
+			return;
+		}
+
+		foreach (array('load-post.php', 'load-post-new.php', 'load-site-editor.php', 'load-widgets.php') as $hook){
+			remove_action($hook, 'wp_set_up_cross_origin_isolation');
+		}
+	}
 
 	// support viewing the frontend as a logged-out user
 	function hookAjaxUrlSetup(){
@@ -165,7 +187,27 @@ class AssetAuth extends AssetLoad {
 
     }
 
+	// On other admin screens, Microthemer's preview styles/scripts are only needed when the screen is
+	// shown inside Microthemer's site preview (an iframe), so a screen opened normally doesn't load
+	// them. Browsers that don't send Sec-Fetch-Dest keep loading them, as before.
+	function previewAssetsNeeded(){
+
+		if (!$this->isAdminArea){
+			return true;
+		}
+
+		$destination = isset($_SERVER['HTTP_SEC_FETCH_DEST'])
+			? sanitize_key(wp_unslash($_SERVER['HTTP_SEC_FETCH_DEST']))
+			: '';
+
+		return $destination !== 'document';
+	}
+
 	function addMTCSS(){
+
+		if (!$this->previewAssetsNeeded()){
+			return;
+		}
 
 		// use the $wp_styles->add() method rather than enqueue if order is specified
 		// or loading stylesheets in footer which only works if using $wp_styles->add()
@@ -194,6 +236,13 @@ class AssetAuth extends AssetLoad {
 
 	function addMTJS(){
 
+		if (!$this->previewAssetsNeeded()){
+			// The block editor opened directly (Sec-Fetch-Dest: document) does not get the preview
+			// stack. The "always add classes" preference still needs mt-block.js there.
+			$this->enqueueBlockClassScript(true);
+			return;
+		}
+
 		$p = $this->preferences;
         $min = !TVR_DEV_MODE ? '-min' : '/page';
         $jsPath = $this->thispluginurl.'js'.$min;
@@ -202,19 +251,7 @@ class AssetAuth extends AssetLoad {
 		wp_enqueue_script('jquery');
 		wp_enqueue_script('jquery-ui-tooltip');
 
-        // load mt-block.js on block editor pages
-        if ($this->isBlockEditorScreen){
-
-            $js_path = 'js' . (TVR_DEV_MODE ? '/mod/' : '-min/') . 'mt-block.js';
-
-            wp_enqueue_script(
-		        'tvr_block_classes',
-		        $this->thispluginurl . $js_path,
-		        array( 'wp-blocks', 'wp-element', 'wp-compose', 'lodash' ),
-		        filemtime($this->thisplugindir . $js_path),
-		        false // Set it to true if you want it to be loaded in the footer
-	        );
-        }
+        $this->enqueueBlockClassScript(false);
 
 		// MT preview script
 		// For editing styles on the frontend and the admin area
@@ -237,6 +274,41 @@ class AssetAuth extends AssetLoad {
 		// the previous system of hooking this separately did not work on the wp-login.php page
 		// And I think it added unnecessary complexity too
 		$this->addFrontendData();
+	}
+
+	// mt-block.js on block editor screens. $outsidePreview is a screen opened directly, where the
+	// preview scripts are not loaded: only the "always add classes" preference needs the script there,
+	// plus the one flag it reads (window.MTDynFrontData.add_block_classes_all).
+	function enqueueBlockClassScript($outsidePreview = false){
+
+		if (!$this->isBlockEditorScreen){
+			return;
+		}
+
+		if ($outsidePreview && empty($this->preferences['add_block_classes_all'])){
+			return;
+		}
+
+		$js_path = 'js' . (TVR_DEV_MODE ? '/mod/' : '-min/') . 'mt-block.js';
+
+		wp_enqueue_script(
+			'tvr_block_classes',
+			$this->thispluginurl . $js_path,
+			array( 'wp-blocks', 'wp-element', 'wp-compose', 'lodash' ),
+			filemtime($this->thisplugindir . $js_path),
+			false
+		);
+
+		// nonce for the unsaved block content it sends with folder logic tests (Helper::isLiveContentTest)
+		$before = 'window.MTBlockData = ' . wp_json_encode(array('liveNonce' => wp_create_nonce('mt_live_content'))) . ';';
+
+		if ($outsidePreview){
+			$before .= 'window.MTDynFrontData = ' . wp_json_encode(array(
+				'add_block_classes_all' => true,
+			)) . ';';
+		}
+
+		wp_add_inline_script('tvr_block_classes', $before, 'before');
 	}
 
 	function addFrontendData($returnData = false) {
@@ -265,9 +337,14 @@ class AssetAuth extends AssetLoad {
 
             // Get the folder loading status of any draft folder too
 			$eligibleForLoading = !$this->isAdminArea || $this->supportAdminAssets();
-			$draftFolder = isset($_COOKIE['microthemer_draft_folder'])
-				? json_decode(stripslashes($_COOKIE['microthemer_draft_folder']), true)
-				: false;
+			$draftFolder = false;
+			if (isset($_COOKIE['microthemer_draft_folder'])){
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- decoded and sanitized by Schemas::draftFolderCookie()
+				$cookie = Request\Schemas::draftFolderCookie()->sanitizeJson((string) $_COOKIE['microthemer_draft_folder']);
+				if (empty($cookie['errors']) && !empty($cookie['value']['slug'])){
+					$draftFolder = $cookie['value'] + array('expr' => '');
+				}
+			}
 
             // if we need to test draft folder logic that hasn't been saved
 			if ($draftFolder && $eligibleForLoading){
@@ -333,7 +410,7 @@ class AssetAuth extends AssetLoad {
 
 			wp_add_inline_script(
 				'tvr_mcth_frontend',
-				'window.MTDynFrontData = '. json_encode( $MTDynFrontData ) .';',
+				'window.MTDynFrontData = '. wp_json_encode( $MTDynFrontData ) .';',
 				'before'
 			);
 
@@ -369,7 +446,7 @@ class AssetAuth extends AssetLoad {
 
         // format URL
         $href = $this->wp_blog_admin_url . 'admin.php?page=' . $this->microthemeruipage .
-                '&mt_preview_url=' . rawurlencode(esc_url($currentPageURL))
+                '&mt_preview_url=' . rawurlencode(esc_url_raw($currentPageURL))
                 . '&mt_item_id=' . rawurlencode($post['post_id'])
                 . '&mt_path_label=' . rawurlencode($post['post_title'])
                 . '&_wpnonce=' . wp_create_nonce( 'mt-preview-nonce' );
@@ -382,6 +459,7 @@ class AssetAuth extends AssetLoad {
             'href' => $href,
             'meta' => array(
                 'class' => 'wp-mcr-shortcut',
+                /* translators: %s: application name */
                 'title' => sprintf(__('Edit with %s', 'microthemer'), $this->appName)
             )
         ));
@@ -406,7 +484,7 @@ class AssetAuth extends AssetLoad {
 		// redirect to Oxygen edit page
 		if ( isset($_GET['mto2_edit_link']) && function_exists('oxygen_add_posts_quick_action_link') ){
 
-			$nonce = !empty($_GET['_wpnonce']) ? $_GET['_wpnonce'] : false;
+			$nonce = !empty($_GET["_wpnonce"]) ? sanitize_text_field(wp_unslash($_GET["_wpnonce"])) : false;
 
 			if (current_user_can('manage_options') && wp_verify_nonce( $nonce, 'mt_builder_redirect_check' )) {
 
@@ -424,7 +502,8 @@ class AssetAuth extends AssetLoad {
 
 						$edit_url = $matches[1];
 
-						wp_redirect( esc_url($edit_url) );
+						wp_safe_redirect( $edit_url );
+						exit;
 					}
 				}
 
@@ -458,7 +537,7 @@ class AssetAuth extends AssetLoad {
 
         if (isset($_GET['mt_nonlog'])) {
 
-			$nonce = !empty($_GET['_wpnonce']) ? $_GET['_wpnonce'] : false;
+			$nonce = !empty($_GET["_wpnonce"]) ? sanitize_text_field(wp_unslash($_GET["_wpnonce"])) : false;
 
             if (current_user_can('manage_options') and wp_verify_nonce( $nonce, 'mt_nonlog_check' ) ) {
 	            wp_set_current_user(-1);
@@ -476,7 +555,10 @@ class AssetAuth extends AssetLoad {
 
 	// get the current page for iframe-meta and loading WP page after clicking WP admin MT option
 	function currentPageURL() {
-		return Common::get_protocol() . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+		// Sanitize as a complete URL; sanitize_text_field() removes valid percent-encoded path/query octets.
+		return esc_url_raw(
+			Common::get_protocol() . wp_unslash($_SERVER["HTTP_HOST"]) . wp_unslash($_SERVER["REQUEST_URI"])
+		);
 	}
 
 	function getCurrentPostData($id = 0){
@@ -497,7 +579,7 @@ class AssetAuth extends AssetLoad {
 	function doLogicTest($folders, $logic, $forceAll = false){
 
 		$testFolder = isset($_GET['test_logic'])
-			? $_GET['test_logic']
+			? sanitize_text_field(wp_unslash($_GET["test_logic"]))
 			: null;
 		$testAll = isset($_GET['test_all']) || $forceAll;
 		$getStylesheets = isset($_GET['get_simple_stylesheets']);
@@ -556,9 +638,10 @@ class AssetAuth extends AssetLoad {
 							: 'empty')
                         : 0;
 
-					// For FSE page changes (which only replaces inner content) we need to replace MT assets
+					// For FSE page changes (which only replaces inner content) we need to replace MT assets.
 					if ($getStylesheets && $file_exists && $this->folderLoading[$slug]){
-						$stylesheets.= '<link rel="stylesheet" href="'.$this->micro_root_url.'mt/conditional/draft/'.$slug.'.css?'.$this->cacheParam.'" id="microthemer-'.$slug.'-css">' . "\n";
+						// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- AJAX/FSE injects markup; styles are not a normal page enqueue.
+						$stylesheets.= '<link rel="stylesheet" href="'.esc_url($this->micro_root_url.'mt/conditional/draft/'.$slug.'.css?'.$this->cacheParam).'" id="microthemer-'.esc_attr($slug).'-css">' . "\n";
 					}
 				}
 

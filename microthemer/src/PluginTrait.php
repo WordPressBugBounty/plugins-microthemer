@@ -6,9 +6,13 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 trait PluginTrait {
 
-	var $version = '7.5.3.9';
+	var $version = '7.5.5.8';
 	var $db_chg_in_ver = '7.5.2.8';
 	var $minimum_wordpress = '5.6';
 	var $preferencesName = 'preferences_themer_loader';
@@ -27,7 +31,6 @@ trait PluginTrait {
 	// Previously dynamic properties
 	// @var strings dir/url paths
 	var $thistmpdir;
-	var $debug_dir;
 	var $home_url;
 	var $wp_admin_url;
 	var $wp_blog_admin_url;
@@ -38,8 +41,10 @@ trait PluginTrait {
 	var $min_and_max_mqs;
 	var $container_queries;
 	var $default_dev_preferences;
-	var $subscription_defaults;
-	var $subscription_check_defaults;
+	var $aiPanel = false;   // set only in AI-enabled builds (src/AIPanel.php present)
+	var $moduleUI = false;  // set only in builds with the Amender content classes (src/Content present)
+	var $extensions = array(); // components in src/Extensions (not present in every build)
+	var $coreOnly = false;  // true while writing data that must not include extension output
 	var $browser_events;
 	var $browser_event_keys;
 	var $system_fonts;
@@ -47,10 +52,6 @@ trait PluginTrait {
 	var $mq_structure;
 	var $menu;
 
-	var $wp_content_url = '';
-	var $wp_content_dir = '';
-	var $wp_plugin_url = '';
-	var $wp_plugin_dir = '';
 	var $thispluginurl = '';
 	var $thisplugindir = '';
 	var $multisite_blog_id = false;
@@ -60,12 +61,33 @@ trait PluginTrait {
 	var $content;
 
 	function loadTextDomain(){
-
+		// phpcs:ignore PluginCheck.CodeAnalysis.DiscouragedFunctions.load_plugin_textdomainFound -- Required for builds installed outside the plugin directory; redundant but harmless on wp.org (auto-loads via Domain Path since 4.6).
 		load_plugin_textdomain(
 			'microthemer',
 			false,
-			dirname( plugin_basename(__FILE__) ) . '/languages/'
+			dirname( dirname( plugin_basename( __FILE__ ) ) ) . '/languages/'
 		);
+	}
+
+	// Where Microthemer keeps its files (see Helper::storage), incl. a private tmp folder for
+	// downloaded files
+	function setStoragePaths(){
+		$storage = Helper::storage();
+		$this->micro_root_dir = $storage['dir'];
+		$this->micro_root_url = $storage['url'];
+		$this->thistmpdir = $storage['dir'] . 'tmp/';
+	}
+
+	// Extension points. Components in src/Extensions (present in some builds only) hook into
+	// these through the WordPress hooks API; without them the default value passes through.
+	function extFilter($name, $value, ...$args){
+		return $this->coreOnly ? $value : apply_filters('microthemer_' . $name, $value, ...$args);
+	}
+
+	function extAction($name, ...$args){
+		if (!$this->coreOnly){
+			do_action('microthemer_' . $name, ...$args);
+		}
 	}
 
 	// get/set cookie
@@ -76,7 +98,7 @@ trait PluginTrait {
 			return setcookie($key, $value, $expiration, '/', COOKIE_DOMAIN);
 		}
 
-		return isset($_COOKIE[$key]) ? $_COOKIE[$key] : false;
+		return isset($_COOKIE[$key]) ? sanitize_text_field(wp_unslash($_COOKIE[$key])) : false;
 	}
 
 	// delete cookie
@@ -109,7 +131,7 @@ trait PluginTrait {
 
 		http_response_code(200);
 
-		echo json_encode($data);
+		echo wp_json_encode($data);
 		exit;
 	}
 

@@ -10,6 +10,10 @@
 
 namespace Microthemer\Dependencies\Minify;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /**
  * Base Exception Class.
  *

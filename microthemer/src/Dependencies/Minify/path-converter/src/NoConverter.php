@@ -2,6 +2,10 @@
 
 namespace Microthemer\Dependencies\Minify\PathConverter;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /**
  * Don't convert paths.
  *

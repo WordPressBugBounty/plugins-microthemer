@@ -1,7 +1,6 @@
 <?php
-// Stop direct call
-if(preg_match('#' . basename(__FILE__) . '#', $_SERVER['PHP_SELF'])) {
-	die('Please do not call this page directly.');
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 /***
 pre content php
@@ -11,7 +10,8 @@ $append_time = '?'.time(); // to prevent file caching
 
 // get the theme from the url or fall back to theme_in_focus
 if (!empty($_GET['design_pack'])) {
-	$this->preferences['theme_in_focus'] = $pref_array['theme_in_focus'] = htmlentities($_GET['design_pack']);
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- saves theme_in_focus, so the nonce is verified by verifyPageLinkNonces() on admin_init
+	$this->preferences['theme_in_focus'] = $pref_array['theme_in_focus'] = sanitize_file_name(wp_unslash($_GET["design_pack"]));
 	$this->savePreferences($pref_array);
 }
 
@@ -19,7 +19,7 @@ if (!empty($_GET['design_pack'])) {
 if (empty($this->preferences['theme_in_focus'])) {
 	?>
 	<p>Please install your first design pack on the
-		<a href="admin.php?page=<?php echo $this->microthemespage; ?>">manage design packs page</a></p>
+		<a href="admin.php?page=<?php echo esc_attr($this->microthemespage); ?>">manage design packs page</a></p>
 	<?php
 	die();
 }
@@ -41,8 +41,8 @@ $ui_class = '';
 require_once('common-inline-assets.php');
 
 ?>
-<div id="tvr" class='wrap tvr-wrap tvr-manage tvr-manage-single <?php echo $ui_class; ?>'>
-	<?php echo $this->manage_packs_header($this->managesinglepage); ?>
+<div id="tvr" class='wrap tvr-wrap tvr-manage tvr-manage-single <?php echo esc_attr($ui_class); ?>'>
+	<?php echo wp_kses( $this->manage_packs_header($this->managesinglepage), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
 	<div id='tvr-manage-single'>
 
 		<?php
@@ -51,10 +51,10 @@ require_once('common-inline-assets.php');
 		$this->manage_packs_meta();
 		?>
 
-		<p><a class="no-line" href="<?php echo 'admin.php?page='. $this->microthemespage;?>"><?php esc_html_e("&laquo; Back to all packs", 'microthemer');?></a></p>
+		<p><a class="no-line" href="<?php echo esc_attr('admin.php?page='. $this->microthemespage);?>"><?php esc_html_e("&laquo; Back to all packs", 'microthemer');?></a></p>
 
 		<div id="full-logs">
-			<?php echo $this->display_log(); ?>
+			<?php echo wp_kses( $this->display_log(), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
 		</div>
 
 		<div id='pack-summary'>
@@ -70,7 +70,7 @@ require_once('common-inline-assets.php');
 			?>
 			<div id='micro-screenshot'>
 				<?php $src = $screenshot . $append_time; ?>
-				<img class="color-img" src='<?php echo $src; ?>' />
+				<img class="color-img" src='<?php echo esc_url($src); ?>' />
 			</div>
 
 
@@ -85,15 +85,15 @@ require_once('common-inline-assets.php');
 				$h2.= '</div>';
 				// author
 				if (!empty($meta_info['Author'])) {
-					$h2.= '<p class="author-name">' . sprintf( esc_html__( 'by %s', 'microthemer'), strip_tags($meta_info['Author']) ) . '</p>';
+					$h2.= '<p class="author-name">' . sprintf( /* translators: %s: author name */ esc_html__( 'by %s', 'microthemer'), wp_strip_all_tags($meta_info['Author']) ) . '</p>';
 				} else {
 					$h2.= '<br />';
 				}
-				echo $h2;
+				echo wp_kses( $h2, \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 				if ($meta_info['Description']){
 					?>
 					<div class="heading"><?php esc_html_e('Description', 'microthemer'); ?></div>
-					<p><?php echo $meta_info['Description']; ?></p>
+					<p><?php echo esc_html($meta_info['Description']); ?></p>
 					<?php
 				} else {
 					?>
@@ -105,25 +105,13 @@ require_once('common-inline-assets.php');
 				if (count($meta_info['Tags']) > 0) {
 					?>
 					<div class="heading"><?php esc_html_e('Tags', 'microthemer'); ?></div>
-					<p class="display-micro-tags"><?php echo implode(', ', $meta_info['Tags']); ?></p>
+					<p class="display-micro-tags"><?php echo esc_html(implode(', ', $meta_info['Tags'])); ?></p>
 					<?php
 				}
 				?>
 
 				<ul id='main-theme-actions' class='main-theme-actions'>
 					<?php
-					// activate / deactivate
-					if ($this->preferences['active_theme'] == $this->preferences['theme_in_focus']) {
-						$act_text = __('Deactivate', 'microthemer');
-						$act_param = 'tvr_deactivate_micro_theme';
-						$nonce = 'tvr_deactivate_micro_theme';
-					}
-					else {
-						$act_text = __('Activate', 'microthemer');
-						$act_param = 'tvr_activate_micro_theme';
-						$nonce = 'tvr_activate_micro_theme';
-					}
-
 					$action_buttons = array(
 						'info',
 						'attachments',
@@ -139,10 +127,10 @@ require_once('common-inline-assets.php');
 							$class = '';
 						}
 						?>
-                        <li class="pack-action <?php echo $class; ?> pack-action-<?php echo $button; ?>"
-                            rel="<?php echo $button; ?>" data-dir-name="<?php echo $this->preferences['theme_in_focus']; ?>" data-dir-label="<?php echo $readableName; ?>">
+                        <li class="pack-action <?php echo esc_attr($class); ?> pack-action-<?php echo esc_attr($button); ?>"
+                            rel="<?php echo esc_attr($button); ?>" data-dir-name="<?php echo esc_attr($this->preferences['theme_in_focus']); ?>" data-dir-label="<?php echo esc_attr($readableName); ?>">
                             <span class="pack-icon icon tvr-icon"></span>
-                            <span class="action-text"><?php echo $button; ?></span>
+                            <span class="action-text"><?php echo esc_html($button); ?></span>
                         </li>
 						<?php
 					}
@@ -166,50 +154,51 @@ require_once('common-inline-assets.php');
 						); */?></p>
 					<p><?php /*esc_html__('The information you enter will update the meta.txt files in your design pack. Themeover will make use of this information if you submit your design pack for inclusion in our marketplace.', 'microthemer'); */?></p>-->
 					<p><?php printf(
+						/* translators: %s: tab name link HTML */
 						esc_html__('It\'s not necessary to fill out these fields if don\'t wish to share your design pack (e.g. via a marketplace we may build in future). But if you\'re building up a personal library of designs, you may wish to upload a thumbnail image to replace the "No Screenshot" placeholder on the %s.', 'microthemer'),
 							'<span class="pack-action link" rel="attachments">' . esc_html__('Attachments tab', 'microthemer') . '</span>'
 					); ?></p>
 				</div>
 				<div class="heading"><?php esc_html_e('Design Pack Meta Info', 'microthemer'); ?></div>
 				<form name='edit_meta_form' id="edit-meta-form" method="post" class='float-form' autocomplete="off"
-					action="admin.php?page=<?php echo $this->managesinglepage;?>" >
+					action="admin.php?page=<?php echo esc_attr($this->managesinglepage);?>" >
 					<?php wp_nonce_field('tvr_edit_meta_submit'); ?>
 					<p class="combobox-wrap">
 						<label><?php esc_html_e('Type of Design Pack: ', 'microthemer'); ?></label>
 						<span class="tvr-input-wrap">
 						<input type="text" class="combobox has-arrows" id="type_of_pack" name="theme_meta[PackType]" rel="packTypes"
-							value="<?php echo $meta_info['PackType'];?>" />
+							value="<?php echo esc_attr($meta_info['PackType']);?>" />
 						<span class="combo-arrow"></span>
 						</span>
 					</p>
 					<p><label><?php esc_html_e('Design Pack Name: ', 'microthemer'); ?></label>
-						<input type='text' autocomplete="off" id='micro-name' name='theme_meta[Name]' value='<?php echo $meta_info['Name'];?>' maxlength='40' />
-						<input type='hidden' id='prev-micro-name' name='prev_micro_name' value='<?php echo $meta_info['Name'];?>' />
+						<input type='text' autocomplete="off" id='micro-name' name='theme_meta[Name]' value='<?php echo esc_attr($meta_info['Name']);?>' maxlength='40' />
+						<input type='hidden' id='prev-micro-name' name='prev_micro_name' value='<?php echo esc_attr($meta_info['Name']);?>' />
 					</p>
 
 					<p><label>&nbsp;</label><span class='tipbit'><?php esc_html_e('allowed characters: a-z, A-Z, 0-9, -, _', 'microthemer'); ?></span></p>
 					<p><label><?php esc_html_e('Version: ', 'microthemer'); ?></label>
-						<input type='text' autocomplete="off" name='theme_meta[Version]' value='<?php echo $meta_info['Version'];?>' />
+						<input type='text' autocomplete="off" name='theme_meta[Version]' value='<?php echo esc_attr($meta_info['Version']);?>' />
 					</p>
 
 					<p><label><?php esc_html_e('Description: ', 'microthemer'); ?></label>
-						<textarea name='theme_meta[Description]' autocomplete="off"><?php echo $meta_info['Description'];?></textarea>
+						<textarea name='theme_meta[Description]' autocomplete="off"><?php echo esc_textarea($meta_info['Description']);?></textarea>
 					</p>
 					<p><label><?php esc_html_e('Author: ', 'microthemer'); ?></label>
-						<input type='text' autocomplete="off" name='theme_meta[Author]' value='<?php echo strip_tags($meta_info['Author']);?>' />
+						<input type='text' autocomplete="off" name='theme_meta[Author]' value='<?php echo esc_attr($meta_info['Author']);?>' />
 					</p>
 					<p><label><?php esc_html_e('Author URI: ', 'microthemer'); ?></label>
-						<input type='text' autocomplete="off" name='theme_meta[AuthorURI]' value='<?php echo $meta_info['AuthorURI'];?>' />
+						<input type='text' autocomplete="off" name='theme_meta[AuthorURI]' value='<?php echo esc_attr($meta_info['AuthorURI']);?>' />
 					</p>
 					<p><label><?php esc_html_e('Target Theme or Plugin: ', 'microthemer'); ?></label>
-						<input type='text' name='theme_meta[Template]' value='<?php echo $meta_info['Template'];?>' />
+						<input type='text' name='theme_meta[Template]' value='<?php echo esc_attr($meta_info['Template']);?>' />
 					</p>
 
 					<p><label><?php esc_html_e('Tags: ', 'microthemer'); ?></label>
 						<textarea name='theme_meta[Tags]'><?php
 							// this will only be set if the meta file exits (it won't exist if the user created the theme dir manually)
 							if (count($meta_info['Tags']) > 0) {
-								echo implode(', ', $meta_info['Tags']);
+								echo esc_html(implode(', ', $meta_info['Tags']));
 							}
 							?></textarea>
 					</p>
@@ -233,7 +222,7 @@ require_once('common-inline-assets.php');
 						<th colspan="2" class="manage-column image-upload">
 
 							<form name='upload_file_form' id="upload-file-form" method="post" enctype="multipart/form-data"
-								action="admin.php?page=<?php echo $this->managesinglepage;?>" autocomplete="off">
+								action="admin.php?page=<?php echo esc_attr($this->managesinglepage);?>" autocomplete="off">
 								<?php wp_nonce_field('tvr_upload_file_submit'); ?>
 								<input type="file" name="upload_file" />
 								<input class="tvr-button" type="submit" name= "tvr_upload_file_submit" value="Upload File" />
@@ -263,9 +252,9 @@ require_once('common-inline-assets.php');
 						// add any media library images to the array
 						if ($library_images = $this->get_linked_library_images($json_config_file )) {
 							foreach ($library_images as $key => $file_url) {
-								// check if file exists
-								//$file_path = str_replace($this->wp_content_url, $this->wp_content_dir, $file_url);
-								if (!file_exists(ABSPATH . $file_url)){
+								// check the media library file exists
+								$library_path = $this->local_path_from_url($file_url);
+								if (!$library_path || !file_exists($library_path)){
 									continue;
 								}
 								++$i;
@@ -298,20 +287,20 @@ require_once('common-inline-assets.php');
 							?>
 							<tr>
 								<td class="file-name">
-                                    <a href="<?php echo $array['file_url'] . $append_time;?>" target="_blank">
-	                                    <?php echo $array['display_url']; ?>
+                                    <a href="<?php echo esc_url($array['file_url'] . $append_time);?>" target="_blank">
+	                                    <?php echo esc_html($array["display_url"]); ?>
                                     </a>
 								</td>
 								<td>
                                     <?php
-                                    echo $this->iconFont('bin', array(
+                                    echo wp_kses( $this->iconFont('bin', array(
                                         'class' => 'delete-file view-file delete-icon',
                                         'data-href' => 'admin.php?page='.
                                             $this->managesinglepage
                                             .'&mt_action=tvr_delete_micro_file&file='.$array['file_url']
                                             .'&location='.$array['location']
                                             .'&_wpnonce='.wp_create_nonce('tvr_delete_micro_file')
-                                     ));
+                                     )), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
                                     ?>
 
 									<!--<span class='delete-file view-file tvr-icon delete-icon'
@@ -349,9 +338,9 @@ require_once('common-inline-assets.php');
 				<div class="heading"><?php esc_html_e('Instructions For The End User', 'microthemer'); ?></div>
 
 				<form name='edit_readme_form' id="edit-readme-form" method="post" class='float-form' autocomplete="off"
-					action="admin.php?page=<?php echo $this->managesinglepage;?>" >
+					action="admin.php?page=<?php echo esc_attr($this->managesinglepage);?>" >
 					<?php wp_nonce_field('tvr_edit_readme_submit'); ?>
-					<textarea name='tvr_theme_readme' autocomplete="off"><?php echo htmlentities($readme_info);?></textarea>
+					<textarea name='tvr_theme_readme' autocomplete="off"><?php echo esc_textarea($readme_info);?></textarea>
 					<p class="button-wrap">
 						<input class="tvr-button" type="submit" name="tvr_edit_readme_submit" value="<?php esc_attr_e('Update Instructions', 'microthemer'); ?>" />
 					</p>
@@ -362,7 +351,7 @@ require_once('common-inline-assets.php');
 
 
 		<!-- View file dialog -->
-		<?php echo $this->start_dialog('view-pack-file', esc_html__('Design Pack File', 'microthemer'), 'sidebar'); ?>
+		<?php echo wp_kses( $this->start_dialog('view-pack-file', esc_html__('Design Pack File', 'microthemer'), 'sidebar'), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
 		<div class="explain">
 			<div class="heading"><?php esc_html_e('About this file', 'microthemer'); ?></div>
 			<div class="explain-config">
@@ -379,7 +368,7 @@ require_once('common-inline-assets.php');
 		<div class="content-main">
 			<textarea id="pack-file-content"></textarea>
 		</div>
-		<?php echo $this->end_dialog(esc_html_x('Close', 'verb', 'microthemer'), 'span', 'close-dialog'); ?>
+		<?php echo wp_kses( $this->end_dialog(esc_html_x('Close', 'verb', 'microthemer'), 'span', 'close-dialog'), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
 
 	</div><!-- end tvr-manage -->
 

@@ -12,6 +12,10 @@
 
 namespace Microthemer\Dependencies\Minify\Exceptions;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /**
  * IO Exception Class.
  *

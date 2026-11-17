@@ -1,14 +1,14 @@
-﻿=== Microthemer Lite - Visual Editor to Customize CSS ===
+﻿=== Microthemer ===
 
 Contributors: bastywebb, joseluiscruz, ahrale
 Donate link: http://themeover.com/microthemer/
 Tags: css, customize, visual editor, google fonts, responsive
-Requires at least: 6.0
-Tested up to: 6.9
-Requires PHP: 5.6
-Stable tag: trunk
+Requires at least: 6.5
+Tested up to: 7.1
+Requires PHP: 8.3
+Stable tag: 7.5.5.8
 License: GPLv2 or later
-License URI: http://www.gnu.org/licenses/gpl-2.0.html
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 A visual editor to customize the CSS styling of anything on your site - from Google fonts to responsive layouts.
 
@@ -22,11 +22,9 @@ A light-weight yet powerful visual editor to customize the CSS styling of any as
 1. Style anything
 1. Use with any theme or plugin
 1. Point & click visual styling
-1. Code editor (CSS, Sass, JS)
-1. Sync code editor with the UI
 1. Customisable breakpoints
 1. HTML and CSS inspection
-1. 150+ CSS properties
+1. 100+ CSS properties
 1. Dark or light theme
 1. Custom toolbar layouts
 1. Work with any CSS unit
@@ -43,16 +41,13 @@ A light-weight yet powerful visual editor to customize the CSS styling of any as
 1. Deep integration with Elementor, Beaver Builder, Oxygen
 1. Multisite support
 1. Uninstall MT, but keep your edits
-1. **[Pro]** CSS grid (drag & drop)
-1. **[Pro]** Flexbox
-1. **[Pro]** Stock SVG mask images
-1. **[Pro]** Transform
-1. **[Pro]** Animation
-1. **[Pro]** Transition
 
 
-= Lite VS Pro =
-This lite version limits you styling 15 things, and doesn't include the features marked [Pro] in the list above. To unlock the full program, you can <a href="https://themeover.com/">purchase a license</a> (monthly, annual, or lifetime).
+= Related plugin =
+A separate plugin, <a href="https://themeover.com/microthemer/">Microthemer Pro</a>, adds grid, flexbox, transform, transition, animation, shape and mask editing. It is developed and distributed independently by Themeover. Microthemer (this plugin) is fully functional on its own — every feature included here works without restriction.
+
+= Source code =
+This plugin's JavaScript and CSS are minified. The human-readable source of every minified file, tagged by version, is at <a href="https://github.com/sebastianwebb/microthemer-lite">github.com/sebastianwebb/microthemer-lite</a>. Third-party libraries included as their authors distribute them (sass.js, js-beautify, animate.css, jQuery UI) are listed there with links to their source.
 
 = Useful links =
 
@@ -64,10 +59,33 @@ This lite version limits you styling 15 things, and doesn't include the features
 
 = Author note  =
 
-Hello everyone, my name is Sebastian. I've designed Microthemer for developers as well as beginners. My aim is to level up beginners by exposing the CSS code Microthemer generates when using the visual controls. This is of course helpful for developers who may wish to make manual edits. Some developers use Microthemer as an in-browser CSS or Sass editor, and just lean on the interface for element selection or more advanced properties like filters, grid, and animation.
+Hello everyone, my name is Sebastian. I've designed Microthemer for developers as well as beginners. My aim is to level up beginners by exposing the CSS code Microthemer generates when using the visual controls. This is of course helpful for developers who may wish to make manual edits. Some developers use Microthemer as an in-browser CSS or Sass editor, and just lean on the interface for element selection or visual properties like filters.
 
 I've been happily developing Microthemer and supporting users of varying technical experience in my forum for many years now. I'm always ready to answer questions about the software and help out with CSS hurdles. Please don't hesitate to get in touch!
 
+
+== External services ==
+
+Microthemer connects to the following external services. It connects to nothing else, and loads no code from outside the plugin.
+
+= Google Fonts =
+
+Used to browse and apply Google fonts.
+
+* When you open Microthemer's Google Fonts browser, it requests the list of available fonts from the Google Fonts Developer API (`https://www.googleapis.com/webfonts/v1/webfonts`), and loads the fonts you preview from Google Fonts (`fonts.googleapis.com` and `fonts.gstatic.com`). Your browser sends these requests, so Google receives your IP address and browser details. No site content or settings are sent.
+* If you apply a Google font to your site, your site's pages load that font's stylesheet from `fonts.googleapis.com` (and the font files from `fonts.gstatic.com`), so Google receives each visitor's IP address and browser details. Nothing is loaded from Google unless you apply a Google font.
+
+Google Fonts: [Terms of Service](https://developers.google.com/terms), [Privacy Policy](https://policies.google.com/privacy), [Google Fonts privacy FAQ](https://developers.google.com/fonts/faq/privacy)
+
+= Themeover error reporting (opt-in) =
+
+Used to find and fix bugs. It is off by default: nothing is sent unless you turn it on in the Error reporting section of Microthemer's setup dialog, or click its "Send report" button. The "Preview" link there shows exactly what would be sent.
+
+* When a JavaScript error occurs in the Microthemer interface, and you have allowed it, a report is sent to `https://validate.themeover.com/report/`. It contains the error message, stack trace and the plugin or theme it came from, your browser and operating system (browser name, version and user agent), the Microthemer version, your interface layout preset, the names of your recent Microthemer actions, and a random ID for your site (not linked to you).
+* If you also allow "Include non-sensitive Microthemer settings", a report can include your Microthemer settings (styles and preferences), at most once a day, so we can reproduce the error.
+* If you also allow "Include your domain", reports include your site's domain name so we can follow up.
+
+Themeover: [Terms of Use](https://themeover.com/terms/), [Privacy Policy](https://themeover.com/privacy-policy/)
 
 == Installation ==
 
@@ -78,6 +96,99 @@ I've been happily developing Microthemer and supporting users of varying technic
 5. Start customizing the appearance of your site.
 
 == Changelog ==
+
+= 7.5.5.8 (Nov 16th, 2026) =
+
+# Changes (Microthemer)
+* Minified CSS no longer breaks when a CSS variable contains a quoted value with a semicolon, such as an SVG data URI. Before, styles after it could be lost for logged-out visitors.
+
+= 7.5.5.7 (Nov 10th, 2026) =
+
+# Changes (Microthemer & Amender)
+* Update notifications improved for expired subscriptions.
+
+# Changes (Amender)
+* Changes on click and other bubbling events now run when a child of the selected element is clicked.
+* Selectors with a comma inside :is(), :not(), :where() or an attribute value now work.
+* "inview (once)" now runs once for each element, instead of only the first one to come into view.
+* Lazy loaded content now loads when a page has no other client-side changes, and multiple elements with the same lazy load ID each get their own content.
+* Replacing an element no longer moves the new content past neighbouring text, and undo restores the original position.
+* Adding a style no longer breaks the element's existing inline styles, and adding a class no longer duplicates it.
+* Table rows and cells can now be added with HTML changes, and rows or options added inside a table or select no longer get a wrapper.
+* Loose text added with HTML changes is now wrapped in a span on the server too, so the live page matches the editor (the server used a div).
+* Server-side attribute changes now accept attributes without a value, unquoted values and & characters. Before, these removed all of the element's attributes.
+* Find and replace treats plain text literally, including text starting with a slash. A failed match no longer wipes an attribute on the server.
+* Removing a parent wrapper from sibling elements now removes one level, and never removes the body.
+* The _delay event option now works for functions, and applies per element.
+* Replacing all attributes on the client side now removes the old attributes, like it does on the server.
+* In the editor: undo is more accurate for attributes (quotes, SVG attributes, Alpine.js attributes), moved content, child wrappers and changes made at a different screen width.
+* In the editor: renaming a folder or selector no longer loses changes for media queries that aren't active.
+
+# Changes (Microthemer)
+* Fixed a cause of lost or empty settings: a late delete no longer creates empty items, and new values added to an empty group are no longer dropped on a full save.
+* A save from a second browser tab (or one still queued) no longer brings back a selector that was deleted, or a copy of a renamed selector under its old name.
+* Renaming a selector by focusing its label with the keyboard and pressing Enter no longer loses its styles for other screen sizes.
+* Renaming a selector straight after styling it no longer leaves an !important entry behind under its old name.
+* Deleting a folder or selector is quicker: it's removed where it is instead of rebuilding all the settings. It's also removed from every screen size and !important copy, including ones the editor hadn't loaded.
+* Clicking an icon in a suggestions menu (such as showing or hiding site variables) now updates the open menu instead of closing it, and the menu no longer shows up empty when opened again.
+
+= 7.5.5.6 (Nov 6th, 2026) =
+
+# Changes (Microthemer)
+* The notice about settings that need Microthemer Pro now shows across the WordPress admin area, until it's dismissed or Pro is installed.
+
+= 7.5.5.5 (Nov 2nd, 2026) =
+
+# Changes (Microthemer)
+* Fixed some issues with the uninstall script missing a couple of options from the wp_options table.
+
+= 7.5.5.4 (Oct 30th, 2026) =
+
+# Changes (Microthemer & Amender)
+* Security hardening following a further code review, including stricter checks on imported files and settings, safer handling of remote URLs, and escaping of values read from the previewed page.
+* Actions triggered by links in the plugin now show a clear "Security check failed" message if the link has expired, rather than a partly loaded page.
+
+# Bugs Fixed (Microthemer)
+* Layout presets now save correctly.
+* Saving no longer overwrites the layout, custom paths, recent prefixes or font settings if the submitted data is malformed.
+* HTML tags in folder and selector names are now removed as you type, so names and slugs no longer change after a reload.
+* The eraser icon in the preview path menu now works for site search results.
+* The preview link in the toolbar now keeps any later query parameters.
+* Design packs without a meta.txt file no longer overwrite the details of the pack in focus.
+* The internal tmp folder no longer appears in the design pack list.
+* Pack and library image paths are now detected reliably, so imported images move to the media library as expected.
+* Storage move notices now show the full folder path on multisite.
+
+# Bugs Fixed (Microthemer Lite)
+* The code view no longer logs a 404 and a script error each time the editor loads.
+
+= 7.5.5.3 (Oct 19th, 2026) =
+
+# Changes (Microthemer & Amender)
+* Restored missing build file.
+
+= 7.5.5.2 (Oct 17th, 2026) =
+
+# Changes (Microthemer)
+* Removed the raw JS and CSS code editor from the Lite version, as per wordpress.org's policy of 3rd party plugins not replicating native features with extra security considerations. 
+
+= 7.5.5.1 (Oct 15th, 2026) =
+
+# Changes (Microthemer & Amender)
+* Enhanced the local security checks of AI generated content. 
+
+= 7.5.5.0 (October 1st, 2026) =
+
+# Changes (Microthemer & Amender)
+* Code and packaging updates for WordPress.org hosting standards, including the removal of GSAP and of the freemium model from this plugin.
+* The selector cap and the previews of Microthemer Pro features (CSS grid, flexbox, transform, animation, and shapes & masks) have been removed from this plugin.
+* The Amender preview has also been removed from this plugin.
+* Microthemer Pro keeps all of its functionality.
+* Assorted reliability, security, and compatibility improvements.
+
+# Bugs Fixed (Microthemer & Amender)
+* Editing Gutenberg pages and templates on WordPress 7.1: Microthemer could not connect to the block editor in the site preview, and exiting Gutenberg reloaded it.
+* "Save & Exit" in the Gutenberg builder now saves unsaved edits (as a draft update or an autosave revision) instead of discarding them.
 
 = 7.5.3.9 (April 15th, 2026) =
 

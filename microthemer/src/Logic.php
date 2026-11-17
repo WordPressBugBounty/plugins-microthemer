@@ -2,6 +2,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /*
  * Logic
  *
@@ -331,7 +335,10 @@ class Logic {
 			}
 
 			if ($global == 'GET'){
-				$result = isset($_GET[$key]) ? $_GET[$key] : false;
+				// Logic compares arbitrary scalar/array values; null filtering preserves valid URL/path punctuation.
+				$result = isset($_GET[$key])
+					? map_deep(wp_unslash($_GET[$key]), 'wp_kses_no_null') // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized via map_deep callback
+					: false;
 			}
 
 		}
@@ -683,7 +690,7 @@ class Logic {
 				'load' => $result ? 'Yes' : 'No',
 				'logic' => $string,
 				'num_statements' => count($statementsArray, COUNT_RECURSIVE),
-				'analysis' => '<pre>'.print_r($statementsArray, 1).'</pre>',
+				'analysis' => '<pre>'.esc_html(print_r($statementsArray, 1)).'</pre>',
 				//'cache' => Logic::$cache
 			), false);
 		}
@@ -703,7 +710,7 @@ class Logic {
 				'load' => $result ? 'Yes' : 'No',
 				'logic' => $string,
 				'num_statements' => $this->countNumStatements($statementsArray),
-				'analysis' => '<pre>'.print_r($statementsArray, 1).'</pre>'
+				'analysis' => '<pre>'.esc_html(print_r($statementsArray, 1)).'</pre>'
 			);
 
 	}
@@ -887,7 +894,8 @@ class Logic {
 		else {
 			// regular Gutenberg editor
 			if ($pagenow === 'post.php' && isset($_GET['post'])){
-				$postId = $_GET['post'];
+				// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only context detection from the core post editor URL; nothing saved, value cast to int
+				$postId = intval($_GET["post"]);
 				$post = get_post($postId);
 				$currentTemplate = Helper::getTemplateFromPostId($postId, $post);
 			}
@@ -1144,7 +1152,8 @@ function is_active($item = null, $slug = null){
 
 // check if the current url matches a path
 function match_url_path($value = null, $regex = false){
-	$urlPath = $_SERVER['REQUEST_URI'];
+	// Keep URL encoding intact for literal and regex matching; sanitize_text_field() removes valid percent octets.
+	$urlPath = isset($_SERVER["REQUEST_URI"]) ? esc_url_raw(wp_unslash($_SERVER["REQUEST_URI"])) : "";
 	return $regex
 		? preg_match('/'.$value.'/', $urlPath)
 		: strpos($urlPath, $value) !== false;

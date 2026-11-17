@@ -2,6 +2,27 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/*
+ * Pack import/export and design-pack file IO uses direct PHP filesystem APIs in the storage folder (uploads/microthemer).
+ * WP_Filesystem FTP credential prompts are unsuitable for these admin AJAX flows.
+ *
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fopen
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fwrite
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fread
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_mkdir
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_rmdir
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_chmod
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_touch
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_is_writable
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_is_writeable
+ * phpcs:disable WordPress.WP.AlternativeFunctions.unlink_unlink
+ * phpcs:disable WordPress.WP.AlternativeFunctions.rename_rename
+ */
 trait PackTrait {
 
 	/**
@@ -10,7 +31,7 @@ trait PackTrait {
 	function manage_micro_themes_page() {
 
 		// only run code if it's the manage themes page
-		if ( $_GET['page'] == $this->microthemespage ) {
+		if ( isset($_GET["page"]) and $_GET["page"] == $this->microthemespage ) {
 
 			if (!current_user_can('manage_options')){
 				wp_die('Access denied');
@@ -37,7 +58,7 @@ trait PackTrait {
 			if (isset($_POST['tvr_edit_micro_submit'])) {
 				check_admin_referer('tvr_edit_micro_submit');
 				$pref_array = array();
-				$pref_array['theme_in_focus'] = $_POST['preferences']['theme_in_focus'];
+				$pref_array["theme_in_focus"] = sanitize_file_name(wp_unslash($_POST["preferences"]["theme_in_focus"]));
 				$this->savePreferences($pref_array);
 			}
 
@@ -51,6 +72,7 @@ trait PackTrait {
 				$this->load_json_file($json_file, $theme_name);
 				// update the revisions DB field
 				$user_action = sprintf(
+					/* translators: %s: item name */
 					esc_html__('%s Activated', 'microthemer'),
 					'<i>' . $this->readable_name($theme_name) . '</i>'
 				);
@@ -70,6 +92,7 @@ trait PackTrait {
 						esc_html__('Item deactivated', 'microthemer'),
 						'<p>' .
 						sprintf(
+							/* translators: %s: item name */
 							esc_html__('%s was deactivated.', 'microthemer'),
 							'<i>'.$this->readable_name($this->preferences['theme_in_focus']).'</i>' )
 						. '</p>',
@@ -103,7 +126,7 @@ trait PackTrait {
 	 */
 	function manage_single_page() {
 		// only run code on preferences page
-		if( $_GET['page'] == $this->managesinglepage ) {
+		if( isset($_GET["page"]) and $_GET["page"] == $this->managesinglepage ) {
 
 			if (!current_user_can('manage_options')){
 				wp_die('Access denied');
@@ -139,7 +162,11 @@ trait PackTrait {
 				$_GET['mt_action'] == 'tvr_delete_micro_file') {
 				check_admin_referer('tvr_delete_micro_file');
 
-				$file_to_delete = basename(stripslashes($_GET['file']));
+				$raw_file = isset($_GET['file']) ? sanitize_text_field(wp_unslash($_GET['file'])) : '';
+				$location = isset($_GET['location']) ? sanitize_key(wp_unslash($_GET['location'])) : '';
+
+				// Preserve the existing basename: sanitize_file_name() can rename valid files and make deletion miss its target.
+				$file_to_delete = basename($raw_file);
 				$base_dir = $this->micro_root_dir . $this->preferences['theme_in_focus'] . '/';
 				$full_path = $base_dir . $file_to_delete;
 
@@ -149,13 +176,17 @@ trait PackTrait {
 
 				$delete_ok = true;
 				// remove the file from the media library
-				if ($_GET['location'] == 'library'){
+				if ($location == 'library'){
 					// This logic remains the same, as it uses WordPress's secure media deletion functions
 					// which operate on post IDs, not file paths from user input.
 					global $wpdb;
-					$img_path = $_GET['file'];
-					$query = $wpdb->prepare("SELECT ID FROM {$wpdb->posts} WHERE guid = %s AND post_type = 'attachment'", esc_url($img_path));
-					$results = $wpdb->get_results($query);
+					$img_path = esc_url_raw($raw_file);
+					$results = $wpdb->get_results(
+						$wpdb->prepare(
+							"SELECT ID FROM {$wpdb->posts} WHERE guid = %s AND post_type = 'attachment'",
+							$img_path
+						)
+					);
 					foreach ( $results as $row ) {
 						if ( false === wp_delete_attachment( $row->ID )) {
 							$delete_ok = false;
@@ -187,7 +218,7 @@ trait PackTrait {
 				if ($delete_ok){
 					$this->log(
 						esc_html__('File deleted', 'microthemer'),
-						'<p>' . sprintf( esc_html__('%s was successfully deleted.', 'microthemer'), '<b>' . esc_html($file_to_delete) . '</b>' ) . '</p>',
+						'<p>' . sprintf( /* translators: %s: file name */ esc_html__('%s was successfully deleted.', 'microthemer'), '<b>' . esc_html($file_to_delete) . '</b>' ) . '</p>',
 						'notice'
 					);
 					// update paths in json file
@@ -198,7 +229,7 @@ trait PackTrait {
 				} else {
 					$this->log(
 						esc_html__('File delete failed', 'microthemer'),
-						'<p>' . sprintf( esc_html__('%s was not deleted.', 'microthemer'), '<b>' . esc_html($file_to_delete) . '</b>' ) . '</p>'
+						'<p>' . sprintf( /* translators: %s: file name */ esc_html__('%s was not deleted.', 'microthemer'), '<b>' . esc_html($file_to_delete) . '</b>' ) . '</p>'
 					);
 				}
 			}
@@ -209,14 +240,18 @@ trait PackTrait {
 	}
 
 	// process posted zip file
+	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by the design-pack form dispatcher, which calls check_admin_referer() on each branch before invoking this method.
 	function process_uploaded_zip() {
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
 		if ($_FILES['upload_micro']['error'] == 0) {
 			$this->handle_zip_package();
 		}
 		// there was an error - save in global message
 		else {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
 			$this->log_file_upload_error($_FILES['upload_micro']['error']);
 		}
+	// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	// write settings to .json file
@@ -252,8 +287,10 @@ trait PackTrait {
 			if (!is_dir($dir)){
 				if ( !wp_mkdir_p($dir) ) {
 					$this->log(
-						esc_html__('/micro-themes/'.$theme.' create directory error', 'microthemer'),
+						/* translators: %s: design pack / theme folder name */
+						sprintf( esc_html__('Design pack folder (%s) create error', 'microthemer'), $theme ),
 						'<p>' . sprintf(
+							/* translators: %s: directory path */
 							esc_html__('WordPress was not able to create the directory: %s', 'microthemer'),
 							$this->root_rel($dir)
 						) . $this->permissionshelp . '</p>'
@@ -351,21 +388,8 @@ trait PackTrait {
 			$json_data['non_section']['js'] = '';
 		}
 
-		// create debug selective export file if specified at top of script
-		if ($this->debug_selective_export) {
-			$data = '';
-			$debug_file = $this->debug_dir . 'debug-selective-export.txt';
-			$write_file = @fopen($debug_file, 'w');
-			$data.= esc_html__('The Selectively Exported Options', 'microthemer') . "\n\n";
-			$data.= print_r($json_data, true);
-			$data.= "\n\n" . esc_html__('The Full Options', 'microthemer') . "\n\n";
-			$data.= print_r($this->options, true);
-			fwrite($write_file, $data);
-			fclose($write_file);
-		}
-
 		// write data to json file
-		if ($data = json_encode($json_data)) {
+		if ($data = wp_json_encode($json_data)) {
 			// the file will be created if it doesn't exist. otherwise it is overwritten.
 			$write_file = @fopen($json_file, 'w');
 			fwrite($write_file, $data);
@@ -411,12 +435,12 @@ trait PackTrait {
 
 		// json decode was successful
 
-		// if the export included workspace settings, save preferences and remove from data
-		// this is insurance agaist upgrade problems
-		if (!empty($json_array['non_section']['exported_preferences'])){
-			update_option($this->preferencesName, $json_array['non_section']['exported_preferences']);
-			unset($json_array['non_section']['exported_preferences']);
-		}
+		// pack data comes from a file that may not be trusted: sanitize it like the raw CSS import does
+		$json_array = Request\Schemas::sanitizeSettings($json_array);
+
+		// older exports included the whole preferences option. Replacing it wholesale from a file would let
+		// an imported pack overwrite any preference (e.g. theme_in_focus), so just discard it
+		unset($json_array['non_section']['exported_preferences']);
 
 		// replace mq keys, add new to the UI, add css units if necessary.
 		$filtered_json = $this->filter_incoming_data('import', $json_array, $isMerge);
@@ -431,7 +455,10 @@ trait PackTrait {
 		}
 
 		// updates options var, save settings, and update stylesheet
+		// (saveUiOptions2 compares with $this->options, by then the pack, so custom code is kept here)
+		$stored_options = $this->options;
 		$this->options = $filtered_json;
+		$this->keepStoredCustomCode($stored_options);
 		$this->saveUiOptions2($this->options);
 		$this->update_assets($theme_name, $context);
 
@@ -449,7 +476,7 @@ trait PackTrait {
 		<ul class="pack-manage-options">
 			<li class="upload">
 				<form name='upload_micro_form' id="upload-micro-form" method="post" enctype="multipart/form-data"
-				      action="<?php echo 'admin.php?page='. $page;?>" >
+				      action="<?php echo esc_attr('admin.php?page='. $page);?>" >
 					<?php wp_nonce_field('tvr_upload_micro_submit'); ?>
 					<input id="upload_pack_input" type="file" name="upload_micro" />
 					<input class="tvr-button upload-pack" type="submit" name="tvr_upload_micro_submit"
@@ -464,7 +491,7 @@ trait PackTrait {
 	function get_design_packs($packs){
 		$count = 0;
 		$valid_packs = array();
-		$exclude = array('sass', 'scss');
+		$exclude = array('sass', 'scss', 'tmp');
 		foreach($packs as $name => $item){
 			if (is_array($item) && !in_array($name, $exclude)){
 				++$count;
@@ -480,9 +507,9 @@ trait PackTrait {
 	// output meta spans and logs tmpl for manage pages
 	function manage_packs_meta(){
 		?>
-		<span id="ajaxUrl" rel="<?php echo $this->wp_ajax_url; ?>"></span>
-		<span id="delete-ok" rel='admin.php?page=<?php echo $this->microthemespage;?>&mt_action=tvr_delete_ok&_wpnonce=<?php echo wp_create_nonce('tvr_delete_ok'); ?>'></span>
-		<span id="zip-folder" rel="<?php echo $this->thispluginurl.'zip-exports/'; ?>"></span>
+		<span id="ajaxUrl" rel="<?php echo esc_url($this->wp_ajax_url); ?>"></span>
+		<span id="delete-ok" rel='admin.php?page=<?php echo esc_attr($this->microthemespage);?>&mt_action=tvr_delete_ok&_wpnonce=<?php echo esc_attr(wp_create_nonce('tvr_delete_ok')); ?>'></span>
+		<span id="zip-folder" rel="<?php echo esc_url($this->micro_root_url.'zip-exports/'); ?>"></span>
 		<?php
 	}
 
@@ -497,9 +524,9 @@ trait PackTrait {
 				echo '
 						<li class="page-item">';
 				if ($i == $page) {
-					echo '<span>'.$i.'</span>';
+					echo '<span>'.(int)$i.'</span>';
 				} else {
-					echo '<a href="admin.php?page='. $this->microthemespage . '&packs_page='.$i.'">'.$i.'</a>';
+					echo '<a href="'.esc_url(wp_nonce_url('admin.php?page='. $this->microthemespage . '&packs_page='.(int)$i, 'mt_manage_packs')).'">'.(int)$i.'</a>';
 				}
 				echo '
 						</li>';
@@ -511,15 +538,16 @@ trait PackTrait {
 			}
 
 			echo '<li class="displaying-x">' .
-			     sprintf(esc_html__('Displaying %s - %s of %s', 'microthemer'), $start, $end, $total_packs) . '</li>';
+			     /* translators: 1: start index, 2: end index, 3: total count */
+		     sprintf(esc_html__('Displaying %1$s - %2$s of %3$s', 'microthemer'), (int)$start, (int)$end, (int)$total_packs) . '</li>';
 
 			if (!empty($this->preferences['theme_in_focus']) and $total_packs > 0){
-				$url = 'admin.php?page=' . $this->managesinglepage . '&design_pack=' . $this->preferences['theme_in_focus'];
+				$url = wp_nonce_url('admin.php?page=' . $this->managesinglepage . '&design_pack=' . $this->preferences['theme_in_focus'], 'mt_manage_packs');
 				$name = $this->readable_name($this->preferences['theme_in_focus']);
 				?>
-				<li class="last-modified" rel="<?php echo $this->preferences['theme_in_focus']; ?>">
-					<?php esc_html_e('Last modified design pack: ', 'microthemer'); ?><a title="<?php printf(esc_attr__('Edit %s', 'microthemer'), $name); ?>"
-					                                                                     href="<?php echo $url; ?>"><?php echo esc_html($name); ?>
+				<li class="last-modified" rel="<?php echo esc_attr($this->preferences['theme_in_focus']); ?>">
+					<?php esc_html_e('Last modified design pack: ', 'microthemer'); ?><a title="<?php /* translators: %s: design pack name */ printf(esc_attr__('Edit %s', 'microthemer'), esc_attr($name)); ?>"
+					                                                                     href="<?php echo esc_url($url); ?>"><?php echo esc_html($name); ?>
 					</a>
 				</li>
 				<?php
@@ -538,15 +566,16 @@ trait PackTrait {
 		if ($action == 'unzip') {
 			$name = substr($name, 0, -4);
 		}
-		// check for micro-themes folder and create if doesn't exist
+		// check for storage folder and create if doesn't exist
 		$error = !$this->setup_micro_themes_dir() ? true : false;
 
-		// check if the micro-themes folder is writable
+		// check if the storage folder is writable
 		if ( !is_writeable( $this->micro_root_dir ) ) {
 			$this->log(
-				esc_html__('/micro-themes write error', 'microthemer'),
+				esc_html__('Storage folder write error', 'microthemer'),
 				'<p>' . sprintf(
-					esc_html__('The directory %s is not writable.', 'microthemer'),
+					/* translators: %s: directory path */
+				esc_html__('The directory %s is not writable.', 'microthemer'),
 					$this->root_rel($this->micro_root_dir)
 				) . $this->permissionshelp . '</p>'
 			);
@@ -563,7 +592,8 @@ trait PackTrait {
 			$this->log(
 				esc_html__('design pack create error', 'microthemer'),
 				'<p>' . sprintf(
-					esc_html__('WordPress was not able to create the %s directory.', 'microthemer'), $this->root_rel($this_micro_abs)
+					/* translators: %s: directory path */
+				esc_html__('WordPress was not able to create the %s directory.', 'microthemer'), $this->root_rel($this_micro_abs)
 				). '</p>'
 			);
 			$error = true;
@@ -573,7 +603,8 @@ trait PackTrait {
 			$this->log(
 				esc_html__('design pack write error', 'microthemer'),
 				'<p>' . sprintf(
-					esc_html__('The directory %s is not writable.', 'microthemer'), $this->root_rel($this_micro_abs)
+					/* translators: %s: directory path */
+				esc_html__('The directory %s is not writable.', 'microthemer'), $this->root_rel($this_micro_abs)
 				) . $this->permissionshelp . '</p>'
 			);
 			$error = true;
@@ -622,7 +653,7 @@ trait PackTrait {
 			if ($action == 'unzip') {
 				$this->log(
 					esc_html__('Design pack installed', 'microthemer'),
-					'<p>' . esc_html__('The design pack was successfully uploaded and extracted. You can import it into your workspace any time using the') .
+					'<p>' . esc_html__('The design pack was successfully uploaded and extracted. You can import it into your workspace any time using the', 'microthemer') .
 					' <span class="show-parent-dialog link" rel="import-from-pack">' . esc_html__('import option', 'microthemer') . '</span>'.
 					'<span id="update-packs-list" rel="' . $this->readable_name($name) . '"></span>.</p>',
 					'notice'
@@ -658,7 +689,8 @@ trait PackTrait {
 			$this->log(
 				esc_html__('Missing meta file', 'microthemer'),
 				'<p>' . sprintf(
-					esc_html__('The zip file doesn\'t contain a necessary %s file or it could not be read.', 'microthemer'),
+					/* translators: %s: file name */
+				esc_html__('The zip file doesn\'t contain a necessary %s file or it could not be read.', 'microthemer'),
 					$this->root_rel($meta_file)
 				) . '</p>'
 			);
@@ -672,7 +704,8 @@ trait PackTrait {
 			$this->log(
 				esc_html__('File doesn\'t exist', 'microthemer'),
 				'<p>' . sprintf(
-					esc_html__('%s does not exist on the server.', 'microthemer'),
+					/* translators: %s: file path */
+				esc_html__('%s does not exist on the server.', 'microthemer'),
 					$this->root_rel($file)
 				) . '</p>'
 			);
@@ -682,7 +715,8 @@ trait PackTrait {
 			$this->log(
 				esc_html__('File not readable', 'microthemer'),
 				'<p>' . sprintf(
-					esc_html__(' %s could not be read.', 'microthemer'),
+					/* translators: %s: file path */
+				esc_html__(' %s could not be read.', 'microthemer'),
 					$this->root_rel($file)
 				) . '</p>'
 				. $this->permissionshelp
@@ -699,9 +733,9 @@ trait PackTrait {
 	function get_image_paths($data){
 		$img_array = array();
 
-		// look for images
-		preg_match_all('/"(background_image|list_style_image|border_image_src|mask_image)":"([^none][A-Za-z0-9 _\-\.\\/&\(\)\[\]!\{\}\?:=]+)"/',
-			$data,
+		// look for images (config.json escapes slashes and keeps each style in {"value":"..."})
+		preg_match_all('/"(background_image|list_style_image|border_image_src|mask_image)":\s*(?:\{\s*"value":\s*)?"([^none][A-Za-z0-9 _\-\.\\/&\(\)\[\]!\{\}\?:=]+)"/',
+			str_replace('\\/', '/', $data),
 			$img_array,
 			PREG_PATTERN_ORDER);
 
@@ -735,9 +769,14 @@ trait PackTrait {
 		}
 
 		// loop through the image array, remove any images not in the media library
+		// (Microthemer's own storage folder is in uploads too, so its files are excluded by path)
+		$storage_path = wp_parse_url($this->micro_root_url, PHP_URL_PATH);
+		$library_images = array();
 		foreach ($img_array[2] as $key => $config_img_path) {
 			// has uploads path and doesn't also exist in pack dir (yet to be moved) - may be an unnecessary check
-			if (strpos($config_img_path, '/uploads/')!== false and !is_file($this->micro_root_dir . $config_img_path)){
+			if (strpos($config_img_path, '/uploads/')!== false and
+			    ($storage_path === null || strpos($config_img_path, $storage_path) === false) and
+			    !is_file($this->micro_root_dir . $config_img_path)){
 				$library_images[] = $config_img_path;
 			}
 		}
@@ -804,7 +843,8 @@ trait PackTrait {
 					$this->log(
 						esc_html__('Move to media library failed', 'microthemer'),
 						'<p>' . sprintf(
-							esc_html__('%s was not imported due to an error.', 'microthemer'),
+							/* translators: %s: file name */
+						esc_html__('%s was not imported due to an error.', 'microthemer'),
 							$this->root_rel($tmp_image)
 						) . '</p>'
 						. $wp_error
@@ -856,9 +896,12 @@ trait PackTrait {
 		// replace paths in string
 		$replacement_occurred = false;
 		foreach ($replacements as $orig => $new){
-			if (strpos($data, $orig) !== false){
-				$replacement_occurred = true;
-				$data = str_replace($orig, $new, $data);
+			// get_image_paths() returns unescaped paths, but config.json escapes its slashes
+			foreach (array_unique(array($orig, str_replace('/', '\\/', $orig))) as $path){
+				if (strpos($data, $path) !== false){
+					$replacement_occurred = true;
+					$data = str_replace($path, $new, $data);
+				}
 			}
 		}
 		if (!$replacement_occurred){
@@ -890,7 +933,7 @@ trait PackTrait {
 				else {
 					$this->log(
 						esc_html__('Image paths failed to update.', 'microthemer'),
-						'<p>' . sprintf(esc_html__('Images paths could not be updated to reflect the new location of the images transferred to your media library. This happened because %s could not rewrite the config.json file.', 'microthemer'), $this->appName) . '</p>' . $this->permissionshelp
+						'<p>' . sprintf(/* translators: %s: application name */ esc_html__('Images paths could not be updated to reflect the new location of the images transferred to your media library. This happened because %s could not rewrite the config.json file.', 'microthemer'), $this->appName) . '</p>' . $this->permissionshelp
 					);
 					return false;
 				}
@@ -923,8 +966,11 @@ trait PackTrait {
 			return 0;
 		}
 
+		// Microthemer's own folder is in uploads too, but its pack and tmp files are not permanent
+		$in_storage = stripos(str_replace('\\', '/', $file), str_replace('\\', '/', $this->micro_root_dir)) === 0;
+
 		//Is the file already in the uploads folder?
-		if ( preg_match('|^' . preg_quote(str_replace('\\', '/', $uploads['basedir'])) . '(.*)$|i', $file, $mat) ) {
+		if ( !$in_storage && preg_match('|^' . preg_quote(str_replace('\\', '/', $uploads['basedir'])) . '(.*)$|i', $file, $mat) ) {
 			$filename = basename($file);
 			$new_file = $file;
 
@@ -935,7 +981,8 @@ trait PackTrait {
 				$this->log(
 					esc_html__('Image already in library', 'microthemer'),
 					'<p>' . sprintf(
-						esc_html__('%s already exists in the WordPress media library and was therefore not moved', 'microthemer'),
+						/* translators: %s: file name */
+					esc_html__('%s already exists in the WordPress media library and was therefore not moved', 'microthemer'),
 						$filename
 					) . '</p>',
 					'warning'
@@ -952,7 +999,8 @@ trait PackTrait {
 				$this->log(
 					esc_html__('Move to library failed', 'microthemer'),
 					'<p>' . sprintf(
-						esc_html__('%s could not be moved to %s', 'microthemer'),
+						/* translators: 1: source file name, 2: destination path */
+					esc_html__('%1$s could not be moved to %2$s', 'microthemer'),
 						$filename,
 						$uploads['path']
 					) . '</p>',
@@ -1025,31 +1073,42 @@ trait PackTrait {
 	}
 
 	// handle zip package
+	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by the design-pack form dispatcher, which calls check_admin_referer() on each branch before invoking this method (via process_uploaded_zip).
 	function handle_zip_package() {
-		$temp_zipfile = $_FILES['upload_micro']['tmp_name'];
-		$filename = $_FILES['upload_micro']['name']; // it won't be this name for long
-		// Chrome return a empty content-type : http://code.google.com/p/chromium/issues/detail?id=6800
-		if ( !preg_match('/chrome/i', $_SERVER['HTTP_USER_AGENT']) ) {
-			// check if file is a zip file
-			if ( !preg_match('/(zip|download|octet-stream)/i', $_FILES['upload_micro']['type']) ) {
+
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
+		$temp_zipfile = isset($_FILES['upload_micro']['tmp_name']) ? $_FILES['upload_micro']['tmp_name'] : '';
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
+		$filename = isset($_FILES['upload_micro']['name'])
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
+			? sanitize_file_name(wp_unslash($_FILES['upload_micro']['name']))
+			: ''; // it won't be this name for long
+
+		// check the actual file extension rather than the client-supplied MIME type
+		$filetype = wp_check_filetype($filename, array('zip' => 'application/zip'));
+
+		if (!$temp_zipfile || !is_uploaded_file($temp_zipfile) || $filetype['ext'] !== 'zip'){
+			if ($temp_zipfile){
 				@unlink($temp_zipfile); // del temp file
-				$this->log(
-					esc_html__('Faulty zip file', 'microthemer'),
-					'<p>' . esc_html__('The uploaded file was faulty or was not a zip file.', 'microthemer') . '</p>
-						<p>' . esc_html__('The server recognised this file type: ', 'microthemer') . $_FILES['upload_micro']['type'].'</p>'
-				);
-				return false;
 			}
+			$this->log(
+				esc_html__('Faulty zip file', 'microthemer'),
+				'<p>' . esc_html__('The uploaded file was faulty or was not a zip file.', 'microthemer') . '</p>'
+			);
+			return false;
 		}
+
 		$this->create_micro_theme($filename, 'unzip', $temp_zipfile);
+	// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	// read meta data from file
 	function read_meta_file($meta_file) {
 		// create default meta.txt file if it doesn't exist
 		if (!is_file($meta_file)) {
-			$_POST['theme_meta']['Name'] = $this->readable_name($this->preferences['theme_in_focus']);
-			$this->update_meta_file($this->micro_root_dir . $this->preferences['theme_in_focus'].'/meta.txt');
+			// the packs list reads every pack, so the file may not belong to theme_in_focus
+			$_POST['theme_meta'] = array('Name' => $this->readable_name(basename(dirname($meta_file))));
+			$this->update_meta_file($meta_file);
 		}
 		if (is_file($meta_file)) {
 			// check if it's readable
@@ -1059,12 +1118,10 @@ trait PackTrait {
 				return $this->flx_get_theme_data( $meta_file );
 			}
 			else {
-				$abs_meta_path = $this->micro_root_dir . $this->preferences['theme_in_focus'].'/meta.txt';
-
 				$this->log(
 					esc_html__('Read meta.txt error', 'microthemer'),
 					'<p>' . esc_html__('WordPress does not have permission to read: ', 'microthemer') .
-					$this->root_rel($abs_meta_path) . '. '.$this->permissionshelp.'</p>'
+					$this->root_rel($meta_file) . '. '.$this->permissionshelp.'</p>'
 				);
 				return false;
 			}
@@ -1076,7 +1133,7 @@ trait PackTrait {
 
 		// create default readme file if it doesn't exist
 		if (!is_file($readme_file)) {
-			$this->update_readme_file($this->micro_root_dir . $this->preferences['theme_in_focus'].'/readme.txt');
+			$this->update_readme_file($readme_file);
 		}
 		if (is_file($readme_file)) {
 			// check if it's readable
@@ -1091,11 +1148,10 @@ trait PackTrait {
 				return $data;
 			}
 			else {
-				$abs_readme_path = $this->micro_root_dir . $this->preferences['theme_in_focus'].'/readme.txt';
 				$this->log(
 					esc_html__('Read readme.txt error', 'microthemer'),
 					'<p>' . esc_html__('WordPress does not have permission to read: ', 'microthemer'),
-					$this->root_rel($abs_readme_path) . '. '.$this->permissionshelp.'</p>'
+					$this->root_rel($readme_file) . '. '.$this->permissionshelp.'</p>'
 				);
 				return false;
 			}
@@ -1151,13 +1207,13 @@ trait PackTrait {
 			$theme_data['Tags'] = array_map( 'trim', explode( ',', wp_kses( $theme_data['Tags'], array() ) ) );
 
 		if ( empty($theme_data['Author']) ) {
-			$theme_data['Author'] = $theme_data['AuthorName'] = __('Anonymous');
+			$theme_data['Author'] = $theme_data['AuthorName'] = __('Anonymous', 'microthemer');
 		} else {
 			$theme_data['AuthorName'] = wp_kses( $theme_data['Author'], $themes_allowed_tags );
 			if ( empty( $theme_data['AuthorURI'] ) ) {
 				$theme_data['Author'] = $theme_data['AuthorName'];
 			} else {
-				$theme_data['Author'] = sprintf( '<a href="%s" title="%s">%s</a>', $theme_data['AuthorURI'], esc_html__( 'Visit author homepage' ), $theme_data['AuthorName'] );
+				$theme_data['Author'] = sprintf( '<a href="%s" title="%s">%s</a>', $theme_data['AuthorURI'], esc_html__( 'Visit author homepage', 'microthemer' ), $theme_data['AuthorName'] );
 			}
 		}
 		return $theme_data;
@@ -1197,7 +1253,8 @@ trait PackTrait {
 			$this->log(
 				'Files successfully deleted',
 				'<p>' . sprintf(
-					esc_html__('All files within %s were successfully deleted.', 'microthemer'),
+					/* translators: %s: directory path */
+				esc_html__('All files within %s were successfully deleted.', 'microthemer'),
 					$this->readable_name($dir_name)
 				) . '</p>',
 				'dev-notice'
@@ -1207,7 +1264,8 @@ trait PackTrait {
 				$this->log(
 					esc_html__('Delete directory error', 'microthemer'),
 					'<p>' . sprintf(
-						esc_html__('The empty directory: %s could not be deleted.', 'microthemer'),
+						/* translators: %s: directory path */
+				esc_html__('The empty directory: %s could not be deleted.', 'microthemer'),
 						$this->readable_name($dir_name)
 					) . '</p>'
 				);
@@ -1217,7 +1275,8 @@ trait PackTrait {
 				$this->log(
 					esc_html__('Directory successfully deleted', 'microthemer'),
 					'<p>' . sprintf(
-						esc_html__('%s was successfully deleted.', 'microthemer'),
+						/* translators: %s: directory path */
+				esc_html__('%s was successfully deleted.', 'microthemer'),
 						$this->readable_name($dir_name)
 					) . '</p>',
 					'notice'
@@ -1240,12 +1299,13 @@ trait PackTrait {
 	}
 
 	// update the meta file
+	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by the design-pack form dispatcher, which calls check_admin_referer() on each branch before invoking this method.
 	function update_meta_file($meta_file) {
 
 		// check if the micro theme dir needs to be renamed
 		if (isset($_POST['prev_micro_name']) and ($_POST['prev_micro_name'] != $_POST['theme_meta']['Name'])) {
 			$orig_name = $this->micro_root_dir . $this->preferences['theme_in_focus'];
-			$new_theme_in_focus = sanitize_file_name(sanitize_title($_POST['theme_meta']['Name']));
+			$new_theme_in_focus = sanitize_file_name(sanitize_title(wp_unslash($_POST['theme_meta']['Name'])));
 			// need to do unique dir check here too
 			// Check for micro theme with same name
 			if ($alt_name = $this->rename_if_required($this->micro_root_dir, $new_theme_in_focus)) {
@@ -1282,7 +1342,8 @@ trait PackTrait {
 					$this->log(
 						esc_html__('Directory rename error', 'microthemer'),
 						'<p>' . sprintf(
-							esc_html__('The directory %s could not be renamed for some reason.', 'microthemer'),
+							/* translators: %s: directory path */
+				esc_html__('The directory %s could not be renamed for some reason.', 'microthemer'),
 							$this->root_rel($orig_name)
 						) . '</p>'
 					);
@@ -1292,9 +1353,10 @@ trait PackTrait {
 				$this->log(
 					esc_html__('Directory rename error', 'microthemer'),
 					'<p>' . sprintf(
-						esc_html__('WordPress does not have permission to rename the directory %s to match your new theme name "%s".', 'microthemer'),
+						/* translators: 1: directory path, 2: new theme name */
+				esc_html__('WordPress does not have permission to rename the directory %1$s to match your new theme name "%2$s".', 'microthemer'),
 						$this->root_rel($orig_name),
-						htmlentities($this->readable_name($_POST['theme_meta']['Name']))
+						esc_html($this->readable_name(sanitize_text_field(wp_unslash($_POST["theme_meta"]["Name"]))))
 					) . $this->permissionshelp.'.</p>'
 				);
 			}
@@ -1305,8 +1367,9 @@ trait PackTrait {
 		if (!file_exists($meta_file)) {
 			if (!$write_file = @fopen($meta_file, 'w')) {
 				$this->log(
-					sprintf( esc_html__('Create %s error', 'microthemer'), 'meta.txt' ),
-					'<p>' . sprintf(esc_html__('WordPress does not have permission to create: %s', 'microthemer'), $this->root_rel($meta_file) . '. '.$this->permissionshelp ) . '</p>'
+					/* translators: %s: file name */
+				sprintf( esc_html__('Create %s error', 'microthemer'), 'meta.txt' ),
+					'<p>' . sprintf(/* translators: %s: file path */ esc_html__('WordPress does not have permission to create: %s', 'microthemer'), $this->root_rel($meta_file) . '. '.$this->permissionshelp ) . '</p>'
 				);
 			}
 			else {
@@ -1335,25 +1398,28 @@ trait PackTrait {
 		// check if it's writable - // need to remove carriage returns
 		if ( is_writable($meta_file) ) {
 
-			$Name = !empty($_POST['theme_meta']['Name']) ? $_POST['theme_meta']['Name'] : '';
-			$PackType = !empty($_POST['theme_meta']['PackType']) ? $_POST['theme_meta']['PackType'] : '';
-			$Description = !empty($_POST['theme_meta']['Description']) ? $_POST['theme_meta']['Description'] : '';
-			$Author = !empty($_POST['theme_meta']['Author']) ? $_POST['theme_meta']['Author'] : '';
-			$AuthorURI = !empty($_POST['theme_meta']['AuthorURI']) ? $_POST['theme_meta']['AuthorURI'] : '';
-			$Template = !empty($_POST['theme_meta']['Template']) ? $_POST['theme_meta']['Template'] : '';
-			$Version = !empty($_POST['theme_meta']['Version']) ? $_POST['theme_meta']['Version'] : '';
-			$Tags = !empty($_POST['theme_meta']['Tags']) ? $_POST['theme_meta']['Tags'] : '';
+			$Name = !empty($_POST["theme_meta"]["Name"]) ? sanitize_text_field(wp_unslash($_POST["theme_meta"]["Name"])) : "";
+			// PackType is a human label (e.g. "Theme Skin") — sanitize_key() would collapse it.
+			$PackType = !empty($_POST["theme_meta"]["PackType"]) ? sanitize_text_field(wp_unslash($_POST["theme_meta"]["PackType"])) : "";
+			$Description = !empty($_POST["theme_meta"]["Description"]) ? sanitize_textarea_field(wp_unslash($_POST["theme_meta"]["Description"])) : "";
+			$Author = !empty($_POST["theme_meta"]["Author"]) ? sanitize_text_field(wp_unslash($_POST["theme_meta"]["Author"])) : "";
+			$AuthorURI = !empty($_POST["theme_meta"]["AuthorURI"]) ? esc_url_raw(wp_unslash($_POST["theme_meta"]["AuthorURI"])) : "";
+			$Template = !empty($_POST["theme_meta"]["Template"]) ? sanitize_text_field(wp_unslash($_POST["theme_meta"]["Template"])) : "";
+			$Version = !empty($_POST["theme_meta"]["Version"]) ? sanitize_text_field(wp_unslash($_POST["theme_meta"]["Version"])) : "";
+			$Tags = !empty($_POST["theme_meta"]["Tags"]) ? sanitize_text_field(wp_unslash($_POST["theme_meta"]["Tags"])) : "";
 
+			// $Name..$Tags are already wp_unslash()'d above; stripslashes() here would double-unslash
+			// and eat literal backslashes a pack author typed (e.g. Windows-style paths in Description).
 			$data = '/*
-Theme Name: '.strip_tags(stripslashes($Name)).'
-Pack Type: '.strip_tags(stripslashes($PackType)).'
-Description: '.strip_tags(stripslashes(str_replace(array("\n", "\r"), array(" ", ""), $Description))).'
-Author: '.strip_tags(stripslashes($Author)).'
-Author URI: '.strip_tags(stripslashes($AuthorURI)).'
-Template: '.strip_tags(stripslashes($Template)).'
-Version: '.strip_tags(stripslashes($Version)).'
-Tags: '.strip_tags(stripslashes($Tags)).'
-DateCreated: '.date('Y-m-d').'
+Theme Name: '.wp_strip_all_tags($Name).'
+Pack Type: '.wp_strip_all_tags($PackType).'
+Description: '.wp_strip_all_tags(str_replace(array("\n", "\r"), array(" ", ""), $Description)).'
+Author: '.wp_strip_all_tags($Author).'
+Author URI: '.wp_strip_all_tags($AuthorURI).'
+Template: '.wp_strip_all_tags($Template).'
+Version: '.wp_strip_all_tags($Version).'
+Tags: '.wp_strip_all_tags($Tags).'
+DateCreated: '.gmdate('Y-m-d').'
 */';
 
 			// the file will be created if it doesn't exist. otherwise it is overwritten.
@@ -1363,28 +1429,33 @@ DateCreated: '.date('Y-m-d').'
 			// success message
 			$this->log(
 				'meta.txt '.$task,
-				'<p>' . sprintf( esc_html__('The %s file for the design pack was %s', 'microthemer'), 'meta.txt', $task ) . '</p>',
+				'<p>' . sprintf( /* translators: 1: file name, 2: action performed (created/updated) */ esc_html__('The %1$s file for the design pack was %2$s', 'microthemer'), 'meta.txt', $task ) . '</p>',
 				'dev-notice'
 			);
 		}
 		else {
 			$this->log(
+				/* translators: %s: file name */
 				sprintf( esc_html__('Write %s error', 'microthemer'), 'meta.txt'),
 				'<p>' . esc_html__('WordPress does not have "write" permission for: ', 'microthemer') .
 				$this->root_rel($meta_file) . '. '.$this->permissionshelp.'</p>'
 			);
 		}
+	// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	// update the readme file
+	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by the design-pack form dispatcher, which calls check_admin_referer() on each branch before invoking this method.
 	function update_readme_file($readme_file) {
 		// Create new file if it doesn't already exist
 		if (!file_exists($readme_file)) {
 			if (!$write_file = @fopen($readme_file, 'w')) {
 				$this->log(
-					sprintf( esc_html__('Create %s error', 'microthemer'), 'readme.txt'),
+					/* translators: %s: file name */
+				sprintf( esc_html__('Create %s error', 'microthemer'), 'readme.txt'),
 					'<p>' . sprintf(
-						esc_html__('WordPress does not have permission to create: %s', 'microthemer'),
+						/* translators: %s: file path */
+					esc_html__('WordPress does not have permission to create: %s', 'microthemer'),
 						$this->root_rel($readme_file) . '. '.$this->permissionshelp
 					) . '</p>'
 				);
@@ -1404,7 +1475,8 @@ DateCreated: '.date('Y-m-d').'
 		}
 		// check if it's writable
 		if ( is_writable($readme_file) ) {
-			$data = stripslashes($_POST['tvr_theme_readme']); // don't use striptags so html code can be added
+			// Pack instructions support basic post HTML, but do not need executable or embedded markup.
+			$data = wp_kses_post(wp_unslash($_POST["tvr_theme_readme"]));
 			// the file will be created if it doesn't exist. otherwise it is overwritten.
 			$write_file = @fopen($readme_file, 'w');
 			fwrite($write_file, $data);
@@ -1413,7 +1485,8 @@ DateCreated: '.date('Y-m-d').'
 			$this->log(
 				'readme.txt '.$task,
 				'<p>' . sprintf(
-					esc_html__('The %s file for the design pack was %s', 'microthemer'),
+					/* translators: 1: file name, 2: action performed (created/updated) */
+					esc_html__('The %1$s file for the design pack was %2$s', 'microthemer'),
 					'readme.txt', $task
 				) . '</p>',
 				'dev-notice'
@@ -1421,31 +1494,38 @@ DateCreated: '.date('Y-m-d').'
 		}
 		else {
 			$this->log(
+				/* translators: %s: file name */
 				sprintf( esc_html__('Write %s error', 'microthemer'), 'readme.txt'),
 				'<p>' . esc_html__('WordPress does not have "write" permission for: ', 'microthemer') .
 				$this->root_rel($readme_file) . '. '.$this->permissionshelp.'</p>'
 			);
 		}
+	// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	// handle file upload to a pack
+	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by the design-pack form dispatcher, which calls check_admin_referer() on each branch before invoking this method.
 	function handle_file_upload() {
 
 		// if no error
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
 		if ($_FILES['upload_file']['error'] == 0) {
-			$file = $_FILES['upload_file']['name'];
+			$file = sanitize_file_name(wp_unslash($_FILES["upload_file"]["name"]));
 			// check if the file has a valid extension
 			if ($this->is_acceptable($file)) {
 				$dest_dir = $this->micro_root_dir . $this->preferences['theme_in_focus'].'/';
 				// check if the directory is writable
 				if (is_writeable($dest_dir) ) {
 					// copy file if safe
+					// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
 					if (is_uploaded_file($_FILES['upload_file']['tmp_name'])
+					    // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
 					    and copy($_FILES['upload_file']['tmp_name'], $dest_dir . $file)) {
 						$this->log(
 							esc_html__('File successfully uploaded', 'microthemer'),
 							'<p>' . wp_kses(
 								sprintf(
+									/* translators: %s: file name */
 									__('<b>%s</b> was successfully uploaded.', 'microthemer'),
 									htmlentities($file)
 								),
@@ -1480,7 +1560,8 @@ DateCreated: '.date('Y-m-d').'
 									esc_html__('Screenshot thumbnail error', 'microthemer'),
 									'<p>' . wp_kses(
 										sprintf(
-											__('Could not resize <b>%s</b> to thumbnail proportions.', 'microthemer'),
+											/* translators: %s: image file path */
+										__('Could not resize <b>%s</b> to thumbnail proportions.', 'microthemer'),
 											$root_rel_thumb
 										),
 										array( 'b' => array() )
@@ -1495,7 +1576,8 @@ DateCreated: '.date('Y-m-d').'
 								$this->log(
 									esc_html__('Screenshot thumbnail successfully created', 'microthemer'),
 									'<p>' . sprintf(
-										esc_html__('%s was successfully created.', 'microthemer'),
+										/* translators: %s: thumbnail file path */
+						esc_html__('%s was successfully created.', 'microthemer'),
 										$root_rel_thumb
 									) . '</p>',
 									'notice'
@@ -1525,8 +1607,10 @@ DateCreated: '.date('Y-m-d').'
 		}
 		// there was an error - save in global message
 		else {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
 			$this->log_file_upload_error($_FILES['upload_file']['error']);
 		}
+	// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	// log file upload problem
@@ -1611,7 +1695,8 @@ DateCreated: '.date('Y-m-d').'
 			$this->log(
 				esc_html__('Dimensions too big', 'microthemer'),
 				'<p>' . sprintf(
-					esc_html__('The resize dimensions you specified (%s x %s) are bigger than the original image (%s x %s). This is not allowed.', 'microthemer'),
+					/* translators: 1: requested width, 2: requested height, 3: original width, 4: original height */
+				esc_html__('The resize dimensions you specified (%1$s x %2$s) are bigger than the original image (%3$s x %4$s). This is not allowed.', 'microthemer'),
 					$max_width, $max_height, $width, $height
 				) . '</p>'
 			);
@@ -1664,3 +1749,4 @@ DateCreated: '.date('Y-m-d').'
 	}
 
 }
+// phpcs:enable

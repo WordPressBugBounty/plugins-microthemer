@@ -12,6 +12,10 @@
 
 namespace Microthemer\Dependencies\Minify\Exceptions;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 use Microthemer\Dependencies\Minify\Exception;
 
 /**

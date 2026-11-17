@@ -1,42 +1,49 @@
 <?php
-// Stop direct call
-if(preg_match('#' . basename(__FILE__) . '#', $_SERVER['PHP_SELF'])) {
-	die('Please do not call this page directly.');
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
 // is edge mode active?
-if ($this->edge_mode['available'] and !empty($this->preferences['edge_mode'])){
+if (!empty($this->edge_mode['available']) and !empty($this->preferences['edge_mode'])){
 	$this->edge_mode['active'] = true;
 }
 
 // standalone needs dynamic JS called
 if ($page_context == 'tvr-microthemer-preferences.php'){
-	echo '<script type="text/javascript">';
 	include $this->thisplugindir . '/includes/js-dynamic.php';
-	echo '</script>';
+	wp_print_inline_script_tag($data);
 }
 
 $this->display_log();
+
+$preference_tabs = array(
+	esc_html_x('General', '(General Preferences)', 'microthemer' ),
+	esc_html__('Units', 'microthemer'),
+);
+if ($this->supportContent()) {
+	$preference_tabs[] = esc_html__('Amender', 'microthemer');
+}
+$preference_tabs[] = esc_html__('Inactive', 'microthemer');
+$preference_tabs[] = esc_html__('Legacy', 'microthemer');
 
 ?>
 
 <!-- Edit Preferences -->
 <form id="tvr-preferences" name='preferences_form' method="post" autocomplete="off"
-	action="admin.php?page=<?php echo $page_context;?>" >
+	action="<?php echo esc_url('admin.php?page=' . $page_context);?>">
 	<?php //wp_nonce_field('tvr_preferences_submit'); ?>
 	<input type="hidden" name="tvr_preferences_form" value="1" />
-	<?php echo $this->start_dialog(
+	<?php
+	 echo wp_kses( $this->start_dialog(
         'display-preferences',
-        esc_html__('Preferences', 'microthemer') . '<span class="dialog-sub-heading"> - <span class="link download-preferences">Download preferences</span></span>',
+        __('Preferences', 'microthemer'),
         'medium-dialog',
+		$preference_tabs,
 		array(
-			esc_html_x('General', '(General Preferences)', 'microthemer' ),
-			esc_html__('Units', 'microthemer'),
-			esc_html__('Amender', 'microthemer'), //$this->supportContent() ? esc_html__('Amender', 'microthemer') : '',
-			esc_html__('Inactive', 'microthemer'),
-			esc_html__('Legacy', 'microthemer')
+			'text' => __('Download preferences', 'microthemer'),
+			'link_class' => 'download-preferences'
 		)
-	); ?>
+	), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
 
 
 <div class="content-main dialog-tab-fields">
@@ -46,7 +53,7 @@ $this->display_log();
 	?>
 
 	<!-- Tab 1 (General Preferences) -->
-	<div class="dialog-tab-field dialog-tab-field-<?php echo ++$tab_count; ?> hidden show">
+	<div class="dialog-tab-field dialog-tab-field-<?php echo (int) ++$tab_count; ?> hidden show">
 
 		<?php
 		//$this->show_me = '<pre>potatoes: '.print_r($this->preferences, true).'</pre>';
@@ -62,7 +69,7 @@ $this->display_log();
 		              'explain' => __('Minify the CSS code - not necessary is you use an asset optimisation plugin' , 'microthemer')
 	              ),
 	              'color_as_hex' => array(
-		              'label' => __('Report color in hex values instead of RGB/A'),
+		              'label' => __('Report color in hex values instead of RGB/A', 'microthemer'),
 		              'explain' => __('By default, Microthemer will report computed CSS color values in RGB/A format. Set this to "Yes" if you prefer the hex format.', 'microthemer')
 	              ),
 	              'abs_image_paths' => array(
@@ -107,7 +114,8 @@ $this->display_log();
 		            ),
                     'add_block_classes_all' => array(
 	                    'label' => __('Always add classes to blocks (even outside of MT)', 'microthemer'),
-	                    'explain' => sprintf(__('When loading Gutenberg inside %s, it adds a unique class (e.g. "mctr-e5i34p") to all  blocks to make styling easier. You can also have this happen outside of %s if you prefer using separate tabs with synced CSS and content changes.', 'microthemer'), $this->appName, $this->appName)
+	                    /* translators: 1: application name, 2: application name */
+	                    'explain' => sprintf(__('When loading Gutenberg inside %1$s, it adds a unique class (e.g. "mctr-e5i34p") to all  blocks to make styling easier. You can also have this happen outside of %2$s if you prefer using separate tabs with synced CSS and content changes.', 'microthemer'), $this->appName, $this->appName)
                     ),
 	            )
             ),
@@ -138,21 +146,6 @@ $this->display_log();
 			            'label' => __('Enable edge mode. ', 'microthemer'),
 			            'link' => '<a target="_blank" href="'.$this->edge_mode['edge_forum_url'].'">' . __('Read about/comment here', 'microthemer') .'</a>',
 			            'explain' => $this->edge_mode['cta'],
-		            ),
-	            )
-            ),
-
-            // when amender is released
-            'addons' => array(
-	            'label' => __('Addons', 'microthemer'),
-	            'items' => array(
-		            'css_addon' => array(
-			            'label' => __('Enable Microthemer', 'microthemer'),
-			            'explain' => __('Install / uninstall the Microthemer addon', 'microthemer')
-		            ),
-		            'content_addon' => array(
-			            'label' => __('Enable Amender', 'microthemer'),
-			            'explain' => __('Install / uninstall the Amender addon', 'microthemer')
 		            ),
 	            )
             ),
@@ -225,20 +218,21 @@ $this->display_log();
 	            'label' => __('JavaScript', 'microthemer'),
 	            'items' => array(
 		            'monitor_js_errors' => array(
-			            'label' => __('Monitor general JavaScript errors on your site'),
-			            'explain' => sprintf(__('General JavaScript errors on your site can interfere with %s, and other plugins. %s can check for errors and warn you about them.', 'microthemer'), $this->appName, $this->appName)
+			            'label' => __('Monitor general JavaScript errors on your site', 'microthemer'),
+			            /* translators: 1: application name, 2: application name */
+	            'explain' => sprintf(__('General JavaScript errors on your site can interfere with %1$s, and other plugins. %2$s can check for errors and warn you about them.', 'microthemer'), $this->appName, $this->appName)
 		            ),
 		            'minify_js' => array(
 			            'label' => __('Minify published JavaScript files', 'microthemer'),
 			            'explain' => __('Minify the custom JavaScript you add - not necessary is you use an asset optimisation plugin' , 'microthemer')
 		            ),
 		            'active_scripts_footer' => array(
-			            'label' => __('Load global JavaScript in the footer'),
+			            'label' => __('Load global JavaScript in the footer', 'microthemer'),
 			            'explain' => __('Load your active-scripts.js file just before the closing body tag', 'microthemer')
 		            ),
 		            'active_scripts_deps' => array(
 			            'is_text' => 1,
-			            'label' => __('List WP script handles your global JS depends on'),
+			            'label' => __('List WP script handles your global JS depends on', 'microthemer'),
 			            'explain' => __('If your custom JavaScript depends on a library, enter the library handles (comma separated)', 'microthemer')
 		            ),
 	            )
@@ -249,44 +243,47 @@ $this->display_log();
 
         );
 
+		// preference categories added by extension components
+		$pref_cats = $this->extFilter('preference_categories', $pref_cats);
+
 		// output
-        echo $this->preferences_grid($pref_cats, 'main-preferences-grid');
+        echo wp_kses( $this->preferences_grid($pref_cats, 'main-preferences-grid'), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 
         ?>
 
 	</div>
 
     <!-- Tab 2 (CSS Units) -->
-    <div class="dialog-tab-field dialog-tab-field-<?php echo ++$tab_count; ?> hidden">
+    <div class="dialog-tab-field dialog-tab-field-<?php echo (int) ++$tab_count; ?> hidden">
         <?php include $this->thisplugindir . 'src/CSS/templates/css-units.php'; ?>
     </div>
 
 
-    <!-- Tab 3 (Amender) -->
-    <div class="dialog-tab-field dialog-tab-field-<?php echo ++$tab_count; ?> hidden">
-		<?php include $this->thisplugindir . 'src/Content/templates/content-preferences.php'; ?>
-    </div>
-
-    <?php
-    if ($this->supportContent()){
-        ?>
-
-        <?php
-    }
-    ?>
+	<?php if ($this->supportContent()): ?>
+		<!-- Tab 3 (Amender) -->
+		<div class="dialog-tab-field dialog-tab-field-<?php echo (int) ++$tab_count; ?> hidden">
+			<?php include $this->thisplugindir . 'src/Content/templates/content-preferences.php'; ?>
+		</div>
+	<?php endif; ?>
 
 	<!-- Tab 4 (Inactive) -->
-	<div class="dialog-tab-field dialog-tab-field-<?php echo ++$tab_count; ?> hidden">
+	<div class="dialog-tab-field dialog-tab-field-<?php echo (int) ++$tab_count; ?> hidden">
 		<ul class="form-field-list delete-upon-install">
 			<?php
 			// yes no options
 			$yes_no = array(
 				'clean_uninstall' => array(
-					'label' => sprintf(
+				'label' => sprintf(
+                            /* translators: %s: plugin type label */
                             __('Upon Uninstall, Delete ALL %s Data', 'microthemer'),
 						    'plugin'
                     ),
-					'explain' => sprintf(__('%s database settings and the contents of the /micro-themes folder are not deleted by default when you uninstall %s. But they can be if you set this option to Yes.', 'microthemer'), $this->appName, $this->appName),
+				'explain' => sprintf(
+					/* translators: 1: application name, 2: application name */
+					__('%1$s database settings and the contents of its folder in uploads are not deleted by default when you uninstall %2$s. But they can be if you set this option to Yes.', 'microthemer'),
+					$this->appName,
+					$this->appName
+				),
 				)
 			);
 			$this->output_radio_input_lis($yes_no);
@@ -295,29 +292,13 @@ $this->display_log();
 		</ul>
 
 		<div id="functions-php">
-			<div class="heading"><?php echo esc_html__('Uninstall, but keep your changes', 'microthemer'); ?></div>
-			<p class="instruction-text"><?php echo sprintf(esc_html__('As long as you don\'t set the above option to Yes, you can uninstall %s and still use the customisations you made with it. Simply copy and paste the code below at the bottom of your child theme\'s functions.php file. The code will not cause any problems when %s is active. It simply won\'t run. So you can safely paste and forget.', 'microthemer'), $this->appName, $this->appName); ?></p>
-			<textarea spellcheck="false"><?php
-				echo esc_html(
-					file_get_contents(
-						$this->thisplugindir . '/includes/inactive-loading/functions.php-code.txt',
-						FILE_USE_INCLUDE_PATH
-					)
-				);
-				?></textarea>
-            <br /><br /><br />
-            <div class="heading"><?php echo esc_html__('Alternatively, use a plugin', 'microthemer'); ?></div>
-            <p class="instruction-text"><?php echo esc_html__('If you are not familiar with editing PHP theme files, or you are using Oxygen Builder, you can also run the above code in the form of a simple plugin. 
-            This approach is necessary for Oxygen users because Oxygen disables the theme.', 'microthemer'); ?></p>
-            <p><a href="<?php echo $this->thispluginurl . 'includes/inactive-loading/microloader.zip'; ?>"><?php echo esc_html__('Download plugin', 'microthemer'); ?></a></p>
-
-            <p class="instruction-text"><?php echo sprintf(esc_html__('Simply install and activate the "microloader.zip" plugin, and then you can uninstall %s - the CSS will still apply.', 'microthemer'), $this->appName); ?></p>
-            <br /><br />
+			<div class="heading"><?php echo esc_html__('Deactivating keeps your changes', 'microthemer'); ?></div>
+			<p class="instruction-text"><?php /* translators: 1: application name, 2: application name */ echo sprintf(esc_html__('Deactivating or uninstalling %1$s never deletes your work unless you set the above option to Yes. Your styles stop loading while %2$s is inactive, and load again as soon as it is reactivated.', 'microthemer'), esc_html($this->appName), esc_html($this->appName)); ?></p>
 		</div>
 	</div>
 
     <!-- Tab 5 (Legacy) -->
-    <div class="dialog-tab-field dialog-tab-field-<?php echo ++$tab_count; ?> hidden">
+    <div class="dialog-tab-field dialog-tab-field-<?php echo (int) ++$tab_count; ?> hidden">
 
         <p>The following settings are rarely needed. Or, they only have relevance to previous versions but still need to be configurable.</p>
 
@@ -368,10 +349,6 @@ $this->display_log();
 				'compatibility' => array(
 					'label' => __('Compatibility', 'microthemer'),
 					'items' => array(
-						'wp55_jquery_version' => array(
-							'label' => __('Load a legacy version of jQuery', 'microthemer'),
-							'explain' => __('This is a temporary setting to fix issues some sites may have with the new version of jQuery and jQueryUI WordPress 5.6+ uses', 'microthemer'),
-						),
 						'bricks_container_hack' => array(
 							'label' => __('Enable Bricks grid workaround (BGW)', 'microthemer'),
 							'explain' => __('Ensure styles applied to Bricks container elements also work when Bricks is active - by creating special selectors that will be tagged with [BGW]', 'microthemer'),
@@ -397,7 +374,7 @@ $this->display_log();
 				),
 			);
 
-			echo $this->preferences_grid($options, 'main-preferences-grid');
+			echo wp_kses( $this->preferences_grid($options, 'main-preferences-grid'), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 
 			?>
         </ul>
@@ -406,11 +383,11 @@ $this->display_log();
 	<?php
 	// standalone needs inline button
 	if ($page_context == 'tvr-microthemer-preferences.php'){
-		echo $this->dialog_button(esc_html__('Save Preferences', 'microthemer'), 'span', 'save-preferences');
+		echo wp_kses( $this->dialog_button(esc_html__('Save Preferences', 'microthemer'), 'span', 'save-preferences'), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 	}
 	?>
 
 </div>
 
-<?php echo $this->end_dialog(esc_html__('Save Preferences', 'microthemer'), 'span', 'save-preferences'); ?>
+<?php echo wp_kses( $this->end_dialog(esc_html__('Save Preferences', 'microthemer'), 'span', 'save-preferences'), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
 </form>

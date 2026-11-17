@@ -2,6 +2,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 class Admin {
 
     // Use traits to organise this god class into related functions
@@ -12,6 +16,7 @@ class Admin {
         PreferencesTrait,
 	    SettingsTrait,
 	    FileTrait,
+	    StorageTrait,
 	    BlockTrait,
 	    FrontAndBackTrait,
 	    PackTrait;
@@ -54,7 +59,6 @@ class Admin {
 	var $sel_option_count = 0;
 	var $group_spacer_count = 0;
 	//var $sel_lookup = array();
-	var $trial = true;
 	var $initial_options_html = array();
 	var $imported_images = array();
 
@@ -85,6 +89,7 @@ class Admin {
 	var $shorthand = array();
 	var $auto_convert_map = array();
 	var $legacy_groups = array();
+	var $build_group_keys = array();
 	var $mob_preview = array();
 	var $propAliases = array();
 	var $cssFuncAliases = array();
@@ -142,7 +147,7 @@ class Admin {
 	var $custom_code = array();
 	var $custom_code_flat = array();
 	var $params_to_strip = array();
-    var $level_map = '';
+    var $level_map = array();
 	var $actionHookOrder = 999999;
 
     // Previously deprecated
@@ -152,12 +157,7 @@ class Admin {
 
 	var $debug_custom = '';
 	var $debug_pulled_data = TVR_DEBUG_DATA;
-	var $debug_current = TVR_DEBUG_DATA;
-	var $debug_import = TVR_DEBUG_DATA;
-	var $debug_merge = TVR_DEBUG_DATA;
 	var $debug_save = TVR_DEBUG_DATA;
-	var $debug_save_package = TVR_DEBUG_DATA;
-	var $debug_selective_export = TVR_DEBUG_DATA;
 	var $show_me = ''; // for quickly printing vars in the top toolbar
     var $setupError;
     var $maxUploadPrefSize = (1024 * 1024 * 10); // 10MB
@@ -236,7 +236,7 @@ class Admin {
 
 		$exists = !empty(
 		$wpdb->get_var(
-			$wpdb->prepare("SHOW TABLES LIKE %s", $table_name)
+			$wpdb->prepare("SHOW TABLES LIKE %s", $wpdb->esc_like($table_name))
 		)
 		);
 
@@ -244,496 +244,13 @@ class Admin {
 			return $exists;
 		}
 
-		$wpdb->query("SELECT id FROM $table_name");
+		$wpdb->query($wpdb->prepare("SELECT id FROM %i", $table_name));
 
 		return $exists && $wpdb->num_rows > 0;
 	}
 
 
-	function log_subscription_check($prefix = ''){
 
-		$s = $this->preferences[$prefix . 'subscription'];
-		$checks = $this->preferences[$prefix . 'subscription_checks'];
-		$pref_array[$prefix . 'subscription_checks'] = $checks;
-		$pref_array[$prefix . 'subscription_checks']['num']++;
-
-		// last try, max attempts reached
-		// could add a condition for max 3 days after renewal date, but holding off for now
-		if ($pref_array[$prefix . 'subscription_checks']['num'] >= $pref_array[$prefix . 'subscription_checks']['max']){
-			$pref_array[$prefix . 'subscription_checks']['stop_attempts'] = true;
-			$this->savePreferences($pref_array);
-			return 'subscription check failed';
-		}
-
-		// add some time before next check
-		else {
-			$extra_seconds = 12 * 60 * 60; // 12 hours
-
-			$initial_time = !empty($checks['next_time']) ? $checks['next_time'] : $this->time;
-			$pref_array[$prefix . 'subscription_checks']['next_time'] =
-				$initial_time + ($pref_array[$prefix . 'subscription_checks']['num'] * $extra_seconds);
-			$this->savePreferences($pref_array);
-			return 'defer';
-		}
-
-	}
-
-	// check subscription if past renewal_check date
-	function maybe_check_subscription($prefix = ''){
-
-		$p = $this->preferences;
-		$s = $p[$prefix . 'subscription'];
-		$checks = $p[$prefix . 'subscription_checks'];
-
-		// Note: renewal_check is 2 days after their subscription expires (to safely allow for timezone diffs)
-		$renewal_time = !empty($checks['next_time']) ? $checks['next_time'] : strtotime($s['renewal_check']);
-
-		// remote check conditions
-		$after_renewal_check = (!empty($s['renewal_check']) and $this->time > $renewal_time);
-		$higher_than_capped = (!empty($s['capped_version']) and
-		                       version_compare($s['capped_version'], $this->version) < 0);
-		$retro_check_needed = empty($p[$prefix . 'retro_sub_check_done']);
-
-		// if subscription check needed
-		if (
-			($after_renewal_check or $higher_than_capped or $retro_check_needed) and
-			!empty($p[$prefix . 'buyer_email']) and
-			!empty($p[$prefix . 'buyer_validated']) and
-			empty($checks['stop_attempts'])
-		){
-			//$this->show_me.= 'doing auto remote check';
-			// check if subscription is still active
-			$this->get_validation_response($p[$prefix . 'buyer_email'], 'scheduled', $prefix);
-		} else {
-			//$this->show_me.= 'NOT doing auto remote check';
-		}
-	}
-
-	function themeover_connection_url($email, $proxy = false, $prefix = ''){
-
-		$domain = $this->home_url;
-
-		$base_url = ($proxy)
-			? 'https://validate.themeover.com/'
-			: 'https://themeover.com/wp-content/tvr-auto-update/validate.php';
-
-        /*$test_endpoint = 'https://themeover-updated.test/';
-        if ($test_endpoint && TVR_DEV_MODE){
-            $base_url = $test_endpoint;
-        }*/
-
-		$params = $prefix . 'email='.rawurlencode($email)
-		          .'&domain='.$domain
-		          .'&mt_version='.$this->version;
-
-		 //Get local URL
-        //$this->show_me = $base_url . '?' . $params;
-
-		return $base_url.'?'.$params;
-
-	}
-
-
-	/**
-	 * Connect to themeover directly or via proxy fallback
-	 *
-	 * @param      $url
-	 * @param $email
-	 * @param bool $proxy
-	 *
-	 * @return array
-	 */
-	function connect_to_themeover($url, $email, $proxy = false, $prefix = '') {
-
-		$response = wp_remote_get($url, [
-			'headers' => [
-				'Accept' => 'application/json',
-				'User-Agent' => 'WordPress/' . get_bloginfo('version') . '; ' . home_url(),
-			],
-			'timeout' => 15
-		]);
-
-		if (is_wp_error($response)) {
-			// Optionally handle WP error here
-			$responseString = $response->get_error_message();
-			$responseCode = 0;
-		} else {
-			$responseString = wp_remote_retrieve_body($response);
-			$responseCode = wp_remote_retrieve_response_code($response);
-		}
-
-		$decodedResponse = json_decode($responseString, true);
-
-		// If we have a valid result, or already tried the proxy, return result
-		if (!empty($decodedResponse['message']) || $proxy) {
-			return array(
-				'responseString' => $responseString,
-				'url' => $url,
-				'code' => $responseCode
-			);
-		}
-
-		// Retry with proxy if initial attempt fails and proxy hasn't been tried
-		return $this->connect_to_themeover(
-			$this->themeover_connection_url($email, true, $prefix),
-			$email,
-			true,
-			$prefix
-		);
-	}
-
-	/*function connect_to_themeover($url, $email, $proxy = false, $prefix = ''){
-
-		//$url = $this->themeover_connection_url($email, $proxy);
-		//$responseString = wp_remote_fopen($url);
-		$result = $this->wp_remote_fopen($url);
-		$responseString = $result['body'];
-		$responseCode = $result['code'];
-		$response = json_decode($responseString, true);
-
-		//$this->show_me.= 'The response from '. $url . ': '. $responseString;
-
-		// if we have a valid result, or we have already tried the fallback proxy script, return result
-		if (!empty($response['message']) or $proxy){
-			return array(
-				'responseString' => $responseString,
-				'url' => $url,
-				'code' => $responseCode
-			);
-		}
-
-		// the initial connection was unsuccessful, possibly due to firewall rules, attempt proxy connection
-		else {
-			return $this->connect_to_themeover(
-				$this->themeover_connection_url($email, true, $prefix),
-                $email,
-                true,
-                $prefix
-			);
-		}
-
-	}*/
-
-	// check user can unlock / continue using MT
-	function get_validation_response($email, $context = 'unlock', $prefix = ''){
-
-		$pref_array = array(
-			$prefix . 'buyer_email' => $email
-		);
-		$was_capped_version = $this->is_capped_version($prefix);
-		$response = false;
-		//$url = $this->themeover_connection_url($email);
-		//$responseString = $this->connect_to_themeover($url, $email);
-
-		$connection_details = $this->connect_to_themeover(
-			$this->themeover_connection_url($email, false, $prefix),
-			$email,
-			$prefix
-		);
-
-		//wp_die('<pre>$connection_details: ' . print_r($connection_details, true) . '</pre>');
-
-		$responseString = $connection_details['responseString'];
-		$response_code = $connection_details['code'];
-		$url = $connection_details['url'];
-
-		//$this->show_me.= '<pre>$connection_details: ' . print_r($connection_details, true) . '</pre>';
-
-		/*$this->innoFirewall = array_merge($connection_details, array(
-					'debug' => array(
-						'responseString' => $responseString,
-						'decodedResponse' => json_decode($responseString, true),
-						'altDecoded' => $this->json('decode', $responseString)
-					)
-				));*/
-
-		// accommodate new json response format
-		if ( strpos($responseString, '{') !== false ){
-			$response = json_decode($responseString, true);
-			$validation = !empty($response['unlock']) ? $response['unlock'] : false;
-		} else {
-			// old response format - ha! this will never happen, only older versions of MT get old response format
-			$validation = $responseString && strlen($responseString) < 2;
-		}
-
-		/* Trigger firewall notification screen
-		 * $response['message'] = ''; // sebtest
-        $connection_details['url'] = 'https://validate.themeover.com/';
-		*/
-
-		// if no valid response, check for http issue
-		if (empty($response['message'])){
-
-			//$response_code = wp_remote_retrieve_response_code( wp_remote_get($url) ); // now collected in first request
-
-			if ($response_code != 200){
-				$response['message'] = 'connection error';
-				if (empty($response_code) && !empty($responseString)){
-					$response_code  = esc_html($responseString);
-				}
-			}
-
-			// we may have got a HTML captcha page response, display this
-			else {
-				$response['message'] = 'possible firewall issue';
-				$this->innoFirewall = array_merge($connection_details, array(
-					'debug' => array(
-						'responseString' => $responseString,
-						'decodedResponse' => $response,
-						//'altDecoded' => $this->json('decode', $responseString)
-					)
-				));
-			}
-
-			$response['code'] = $response_code;
-
-			// if scheduled subscription check, log num tries and bail if deferring
-			if ($context == 'scheduled'){
-				$response['message'] = $this->log_subscription_check($prefix);
-				if ($response['message'] == 'defer'){
-					return false;
-				}
-			}
-
-
-		}
-
-		// valid response format
-		else {
-
-			// save subscription response from server (includes renewal_check date)
-			$pref_array[$prefix . 'subscription'] = $response;
-
-			// reset subscription checks if manual unlock attempted
-			if ($context == 'unlock'){
-				$pref_array[$prefix . 'subscription_checks'] = $this->subscription_check_defaults;
-			}
-
-		}
-
-		$this->change_unlock_status($context, $validation, $pref_array, $response, $was_capped_version, $prefix);
-
-        return $validation;
-	}
-
-
-	function change_unlock_status($context, $validation, $pref_array, $response, $was_capped_version, $prefix = ''){
-
-		// regardless of unlock/lock no further need for retrospectively checking their subscription renewal
-		$pref_array[$prefix . 'retro_sub_check_done'] = 1;
-        $type = $prefix ? 'Amender' : 'Microthemer';
-
-		/* validation success */
-		if ($validation) {
-
-			$pref_array[$prefix . 'buyer_validated'] = 1;
-
-			if ($context == 'unlock'){
-				if (!$this->preferences[$prefix . 'buyer_validated']) {
-                    $pro_features = $type === 'Amender'
-                        ? esc_html__('You can now publish your amendments.', 'microthemer')
-                        : esc_html__('You can now use pro features.', 'microthemer');
-					$this->log(
-						$type.' ' . esc_html__('activation successful!', 'microthemer'),
-						'<p>' . esc_html__('Your license has been successfully validated. ', 'microthemer') .
-						$pro_features . '</p>',
-						'notice'
-					);
-				} else {
-
-					if ($was_capped_version){
-						if (empty($response['capped_version'])){
-							$this->log(
-								$type . ' ' . esc_html__('updates enabled', 'microthemer'),
-								'<p>' . esc_html__('You can now get the latest features.', 'microthemer') . '</p>',
-								'notice'
-							);
-						} else {
-							$this->log(
-								$type . ' ' . esc_html__('updates still limited ', 'microthemer'),
-								'<p>' . esc_html__('Your subscription must be renewed on themeover.com to enable modern features.', 'microthemer') . '</p>',
-								'warning'
-							);
-						}
-					}
-
-					else {
-						$this->log(
-							$type . ' ' . esc_html__('already validated', 'microthemer'),
-							'<p>' . esc_html__('Your license has already been validated. The pro version is currently active.', 'microthemer') . '</p>',
-							'notice'
-						);
-					}
-				}
-			}
-		}
-
-
-		/* validation fail */
-		else {
-
-			// do checks on why validation failed here and report to user
-			$pref_array[$prefix . 'buyer_validated'] = 0;
-
-			// prevent future subscription checks as we're already in free trial mode
-			$pref_array[$prefix . 'subscription']['renewal_check'] = false;
-
-			$explain = '';
-			$title_prefix = $type . ' ' . ($context == 'unlock' ? 'activation failed' : 'notice');
-
-			// check for returned message to give clue about problem
-			if (!empty($response['message'])){
-
-				//$response['message'] = 'Message <b>Fom another</b> site';
-
-				$title = $title_prefix . ' - ' . strip_tags($response['message']);
-
-				switch ($response['message']) {
-
-					case "missing info":
-						$explain = "<p>The required unlock credentials were not provided.</p>";
-						break;
-
-					case "invalid credentials":
-						$explain = '<p>The unlock credentials were invalid. Make sure you are entering 
-                                        the license key shown in 
-                                        <a target="_blank" href="https://themeover.com/my-account/">My Downloads</a></p>';
-						break;
-
-					case "subscription expired":
-						$explain = '<p>Your subscription has expired. This means you can only  
-                                        use Microthemer in free trial mode. To continue using Microthemer in 
-                                        full capacity please renew or upgrade via  
-                                        <a target="_blank" href="https://themeover.com/my-account/">My Downloads</a></p>';
-						break;
-
-					case "incorrect version":
-						$explain = '<p>Your expired subscription does not allow you to use this version 
-                                        ('.$this->version.') of Microthemer. You are eligible to use version '
-						           .$response['capped_version'].', which you can download from  
-                                        <a target="_blank" href="https://themeover.com/my-account/">My Downloads</a>. 
-                                        You can also renew or upgrade your subscription from there if you want to 
-                                        use this version of Microthemer.</p>';
-						break;
-
-					case "please upgrade":
-
-						$limit = intval($response['limit']);
-						$limit_lang = $limit === 1 ? 'domain' : 'domains';
-
-						$explain = '<p>Domain limit ('.intval($response['limit']).') reached. Your license permits installing '.$type.' on '.intval($response['limit']).' '.$limit_lang.' in total, not '.intval($response['limit']).' '.$limit_lang.' at any one time.</p>';
-
-						// extra text if they have already reached their limit
-						/*if (count($response['domains']) > 3){
-									$explain.= '<p>We started enforcing this restriction after learning that a
-                                            few people have been unclear about the terms
-                                            of the standard license. No worries if this includes you.</p>';
-								}*/
-
-						$explain.= '<p><a class="tvr-button" target="_blank" 
-                                        href="https://themeover.com/my-account/">Please upgrade 
-                                        to use '.$type.' on this domain</a></p>
-                                        
-                                        <h3>Domains you have installed '.$type.' on</h3>';
-
-						// display domains
-						$domains = '';
-						foreach ($response['domains'] as $key => $arr){
-							$domains.= '
-                            <li>
-                                <span class="domain-name">' . $arr['domain'] . '</span>
-                                <span class="install-date">' . $arr['date'] . '</span>
-                            </li>';
-						}
-
-						$explain.= '<ol>' . $domains . '</ol>';
-
-						break;
-
-
-					case "connection error":
-					case "proxy connection error":
-					case "subscription check failed":
-						$code_message = !empty($response_code) ? 'HTTP response code: '.esc_html($response_code) : '';
-						$explain = '<p>The connection to themeover.com was unsuccessful. 
-                                '.$code_message.'</p>
-                            
-                                <p>The connection to Themeover\'s server may have failed due to an 
-                                intermittent network error. Please ensure you are connected to the internet, 
-                                if working from localhost. <span class="link show-dialog" 
-                                rel="unlock-microthemer">Resubmitting your license key one 
-                                more time</span> may do the trick</p>
-                                
-                                <p>Or try <b>disabling any security plugins</b> that may be 
-                                blocking Microthemer\'s outbound connection. You can re-enable them after you 
-                                unlock Microthemer</p>
-                                
-                                <p>Finally, security settings on your server may block all outgoing PHP 
-                                connections to domains not on a trusted whitelist (e.g. sites that are not 
-                                wordpress.org). Ask your web host about temporarily unblocking themeover.com.</p>';
-						break;
-                    default:
-                        // If is not an MT response, but it includes a message
-                        $explain = '<p>Please reference the following IP address if you need to <a target="_blank" href="https://themeover.com/support/contact/">contact support</a></p>
-                        <p>IP Address: <b>'.esc_html(file_get_contents("http://ipecho.net/plain")).'</b></p>';
-                        break;
-
-				}
-
-			}
-
-			// unknown error
-			else {
-				$title = $title_prefix;
-				$explain = '<p>Your license could not be validated. Make sure you are entering 
-                                 the unlock code shown in <a target="_blank" href="https://themeover.com/my-account/">
-                                 My Downloads</a>. If you are still stuck,  
-                                <a target="_blank" href="https://themeover.com/support/contact/">please contact 
-                                support for assistance</a></p>';
-			}
-
-			$this->log($title, $explain);
-		}
-
-
-		if (!$this->savePreferences($pref_array)) {
-			$this->log(
-				esc_html__('Unlock status not saved', 'microthemer'),
-				'<p>' . esc_html__('Your validation status could not be saved. The program may need to be unlocked again.', 'microthemer') . '</p>'
-			);
-		}
-
-		return $pref_array['subscription'];
-	}
-
-	function invalidLic(){
-
-		$invalid = array(
-			'c9f79e3d1874f6cc044513ab5357c63d'
-		);
-
-		$current = md5($this->preferences['buyer_email']);
-
-		if ( in_array($current, $invalid) ){
-
-			$pref_array = array(
-				'buyer_email' => '',
-				'buyer_validated' => 0,
-				'used_invalid' => 1,
-				'subscription' => array(
-					'unlock' => false,
-					'renewal_check' => false,
-					'message' => ''
-				)
-			);
-
-			$this->savePreferences($pref_array);
-
-			return true;
-		}
-
-		return false;
-	}
 
     function dialogSectionTabs($data){
 
@@ -1014,28 +531,6 @@ class Admin {
 	}
 
 
-	// check if an url is valid
-	function is_valid_url( $url ) {
-		if ( '' != $url ) {
-			/* Using a HEAD request, we'll be able to know if the URL actually exists.
-					 * the reason we're not using a GET request is because it might take (much) longer. */
-			$response = wp_remote_head( $url, array( 'timeout' => 3 ) );
-			/* We'll match these status codes against the HTTP response. */
-			$accepted_status_codes = array( 200, 301, 302 );
-
-			/* If no error occured and the status code matches one of the above, go on... */
-			if ( ! is_wp_error( $response ) &&
-			     in_array( wp_remote_retrieve_response_code( $response ), $accepted_status_codes ) ) {
-				/* Target URL exists. Let's return the (working) URL */
-				return $url;
-			}
-			/* If we have reached this point, it means that either the HEAD request didn't work or that the URL
-					 * doesn't exist. This is a fallback so we don't show the malformed URL */
-			return '';
-		}
-		return $url;
-	}
-
 
 
 
@@ -1133,7 +628,7 @@ class Admin {
 		}
 
 		// maybe reset the reporting stats for the day
-        $today = date('Y-m-d');
+        $today = wp_date('Y-m-d');
 		$pref_array['reporting'] = isset($this->preferences['reporting'])
             ? $this->preferences['reporting']
             : $full_preferences['reporting'];
@@ -1183,7 +678,7 @@ class Admin {
 		// no need to backup if no settings have been saved
 		global $wpdb;
 		$this->maybeCreateOrUpdateRevsTable(); // only creates table if doesn't exist or needs updating
-		$wpdb->get_results("select id from ".$wpdb->prefix . "micro_revisions");
+		$wpdb->get_results($wpdb->prepare("SELECT id FROM %i", $wpdb->prefix . 'micro_revisions'));
 
 		$previous_version = !empty($this->preferences['previous_version'])
 			? $this->preferences['previous_version']
@@ -1196,8 +691,12 @@ class Admin {
 				$this->options,
 				$this->json_format_ua(
 					'display-preferences lg-icon',
-					esc_html__($previous_version.' settings (before updating to '.$this->version.')',
-						'microthemer')
+					sprintf(
+						/* translators: 1: previous plugin version, 2: new plugin version */
+						esc_html__('%1$s settings (before updating to %2$s)', 'microthemer'),
+						$previous_version,
+						$this->version
+					)
 				),
 				true, // otherwise error on new installs
 				$this->preferences, //$backup_preferences,
@@ -1256,15 +755,64 @@ class Admin {
 			$update_prefs = true;
 		}
 
+		// A saved pg_focus may name a group this build doesn't ship (e.g. 'mask' saved by a pro build,
+		// then the site updated to the wp.org build), so fall back to a group that always exists
+		if (!empty($this->propertyoptions) && !isset($this->propertyoptions[$this->preferences['pg_focus']])){
+			$this->preferences['pg_focus'] = 'font';
+			$update_prefs = true;
+		}
+
+		// Without the code editors there is no editor panel to show or dock
+		if (!$this->hasCodeEditors()){
+			foreach (array('show_code_editor', 'dock_editor_left') as $editor_pref){
+				if (!empty($this->preferences[$editor_pref])){
+					$this->preferences[$editor_pref] = 0;
+					$update_prefs = true;
+				}
+			}
+		}
+
+		// A docked AI panel reserves a right column, which is left empty if there is no AI panel,
+		// so dock settings in its place (as the layout presets do when AI isn't available)
+		if (!empty($this->preferences['dock_ai_right']) && !$this->aiAvailable()){
+			$this->preferences['dock_ai_right'] = 0;
+			$this->preferences['dock_settings_right'] = 1;
+			$update_prefs = true;
+		}
+
 		if ($update_prefs){
 			$this->savePreferences($this->preferences);
 		}
+
+		$this->code_free_layout = !$this->canEditCode();
+		$this->applyCodeFreeLayout();
 
 		// Version 7 has targeting enabled by default, but this used to be hard set to 0.
 		// So now we hard set to 'on' for initial load unless the user wants it off by default;
 		$this->preferences['hover_inspect'] = !empty($this->preferences['hover_inspect_off_initially']) ? 0 : 1;
 
 
+	}
+
+	// A user who may not edit code gets the layout builds without the editors have. This request
+	// only: the site's saved layout stays as it is for those who can edit code.
+	function applyCodeFreeLayout(){
+
+		if (!$this->code_free_layout){
+			return;
+		}
+
+		$this->preferences['show_code_editor'] = 0;
+		$this->preferences['dock_editor_left'] = 0;
+		if ($this->preferences['pg_focus'] === 'code'
+			|| ($this->preferences['pg_focus'] === 'html' && $this->hasCSSCapability())){
+			$this->preferences['pg_focus'] = 'font';
+		}
+		$top_panel = &$this->preferences['layout']['left']['top_panel']['current'];
+		if (empty($top_panel) || $top_panel === 'editor'){
+			$top_panel = 'styles';
+		}
+		unset($top_panel);
 	}
 
 	// update viewed_import_stylesheets list array
@@ -1312,9 +860,6 @@ class Admin {
 		// allow style tag atts to be updated if they are async
 		add_filter( 'script_loader_tag', array(&$this, 'customScriptAtts'), 10, 4 );
 
-		// Run pre-wordPress 5.6 jQuery and jQuery UI (temp fix for users with sites that still have issues)
-		$runLegacyJquery = !empty($this->preferences['wp55_jquery_version']);
-
 		// jQuery UI scripts
 		$jqueryUIScripts = array(
 			'core',
@@ -1331,25 +876,17 @@ class Admin {
 			'resizable',
 		);
 
-		// core jQuery and migrate script
+		// Use the jQuery, migrate, and jQuery UI versions registered by WordPress.
 		$jquery_scripts = array(
 			array(
 				'h' => 'jquery',
 				'alwaysInc' => 1,
-				'dequeue' => $runLegacyJquery,
-				'f' => $runLegacyJquery
-					? '../js-min/legacy-jquery/jquery.js'
-					: false,
 				//'in_footer' => true
 			),
 			array(
 				'h' => 'jquery-migrate',
 				'dep' => 'jquery',
 				'alwaysInc' => 1,
-				'dequeue' => $runLegacyJquery,
-				'f' => ($runLegacyJquery)
-					? '../js-min/legacy-jquery/jquery-migrate-1.4.1-wp.js'
-					: false,
 				//'in_footer' => true
 			)
 		);
@@ -1367,10 +904,6 @@ class Admin {
 				'h' => 'jquery-ui-'.$jqi,
 				'dep' => $jqueryUIDeps,
 				'alwaysInc' => 1,
-				'dequeue' => $runLegacyJquery,
-				'f' => $runLegacyJquery
-					? '../js-min/legacy-jquery/jquery-ui/'.$jqi.'.min.js'
-					: false,
 				//'in_footer' => false
 
 			);
@@ -1412,7 +945,7 @@ class Admin {
 
 			// mt core namespace
 			array('h' => 'tvr_core', 'f' => 'mt-core.js'),
-			array('h' => 'tvr_mcth_cssprops', 'f' => 'data/program-data.js'), // this will be dyn soon
+			array('h' => 'tvr_mcth_cssprops', 'f' => 'data/'.$this->programDataFile()), // this will be dyn soon
 
 			// js libraries (prefix name with mt- if I've edited the library)
 			// use ace2, ace4 and have /ace as sub dir for easy globs in gulp file
@@ -1430,8 +963,9 @@ class Admin {
 			//array('h' => 'tvr_gsap', 'f' => 'lib/gsap/gsap.min.js'), // not in use yet
 			/*array('h' => 'tvr_widget', 'f' => '../src/js/mt-widget.js'),
 					array('h' => 'tvr_transform', 'f' => '../src/js/mt-transform.js'),*/
-			array('h' => 'tvr_gridstack', 'f' => 'lib/gridstack/gridstack.js'),
-			array('h' => 'tvr_gridstack_ui', 'f' => 'lib/gridstack/gridstack.jQueryUI.js'),
+			// the grid editor's library (builds with the grid property group, bundled into js-min/mt-grid.js)
+			array('h' => 'tvr_gridstack', 'f' => 'lib/gridstack/gridstack.js', 'skipScript' => !$this->hasProPropertyOptions()),
+			array('h' => 'tvr_gridstack_ui', 'f' => 'lib/gridstack/gridstack.jQueryUI.js', 'skipScript' => !$this->hasProPropertyOptions()),
 			array('h' => 'tvr_extend_regexp', 'f' => 'lib/extend-native-regexp.js'),
 			//array('h' => 'tvr_mcth_colorbox', 'f' => 'lib/colorbox/1.6.4/jquery.colorbox-min.js'),
 			array('h' => 'tvr_spectrum', 'f' => 'lib/colorpicker/mt-spectrum.js', 'dep' => array( 'jquery' )),
@@ -1456,6 +990,13 @@ class Admin {
 			// custom modules
 			array('h' => 'tvr_main_and_worker', 'f' => '../js/worker/mt-main-and-worker.js'),
 			array('h' => 'tvr_utilities', 'f' => 'mod/mt-utilities.js'),
+			// inert MTai stand-in; self-disables when the real AI module loads after it
+			array('h' => 'tvr_ai_absent', 'f' => 'mod/mt-ai-absent.js'),
+			// grid value parsing (every build) and an inert MTgrid stand-in the grid editor replaces
+			array('h' => 'tvr_grid_values', 'f' => 'mod/mt-grid-values.js'),
+			array('h' => 'tvr_grid_absent', 'f' => 'mod/mt-grid-absent.js'),
+			// inert MThtml stand-in the Amender module replaces
+			array('h' => 'tvr_html_absent', 'f' => 'mod/mt-html-absent.js'),
 			array('h' => 'tvr_widget', 'f' => 'mod/mt-widget.js'),
 			array('h' => 'tvr_layout', 'f' => 'mod/mt-layout.js', 'page' => array(
 				$this->microthemeruipage
@@ -1468,12 +1009,13 @@ class Admin {
 			array('h' => 'tvr_mod_dd', 'f' => 'mod/mt-dom-data.js'),
 			array('h' => 'tvr_mod_save', 'f' => 'mod/mt-save.js'),
 			array('h' => 'tvr_mod_sass', 'f' => 'mod/mt-sass.js'),
-			array('h' => 'tvr_mod_grid', 'f' => 'mod/mt-grid.js'),
+			array('h' => 'tvr_mod_grid', 'f' => 'mod/mt-grid.js', 'skipScript' => !$this->hasProPropertyOptions()),
 			array('h' => 'tvr_mod_folder', 'f' => 'mod/mt-folder.js'),
-			array('h' => 'tvr_mod_html', 'f' => 'mod/mt-html.js'),
+			array('h' => 'tvr_mod_html', 'f' => 'mod/mt-html.js', 'skipScript' => !$this->hasContentDir()),
 
-			array('h' => 'tvr_mod_firebase', 'f' => 'mod/mt-ai-deps.js', 'page' => array($this->microthemeruipage), 'in_footer' => 1, 'strategy' => 'defer'),
-            array('h' => 'tvr_mod_ai', 'f' => 'mod/mt-ai.js', 'page' => array($this->microthemeruipage)),
+			// AI-enabled builds only
+			...($this->aiPanel ? $this->aiPanel->devScriptDefinitions($this->microthemeruipage) : array()),
+
 
             array('h' => 'tvr_mod_local', 'f' => 'mod/mt-local.js',
 			      'page' => array(
@@ -1498,16 +1040,32 @@ class Admin {
 			//array('h' => 'tvr_ace_html', 'f' => '../js-min/ace/mode-html.js', 'min' => 1),
 
 			// page specific (min)
-			array('h' => 'tvr_mod_firebase', 'f' => '../js-min/mt-ai-deps.js', 'page' => array($this->microthemeruipage), 'in_footer' => 1, 'strategy' => 'defer', 'min' => 1),
 			array('h' => 'tvr_sassjs', 'f' => '../js-min/sass/sass.js', 'alwaysInc' => 1, 'ifSASS'),
 			array('h' => 'tvr_deps', 'f' => '../js-min/deps.js', 'min' => 1),
-			array('h' => 'tvr_mcth_cssprops', 'f' => '../js-min/program-data.js', 'min' => 1,
-			      'skipScript' => !empty($this->preferences['inlineJsProgData']) ),
+
+			// AI-enabled builds only — after deps.js (defines TvrMT), before microthemer.js
+			// (aliases TvrMT.mod.MTai at load time)
+			...($this->aiPanel ? $this->aiPanel->minScriptDefinitions($this->microthemeruipage) : array()),
+
+			// the grid editor ships with the grid property group (not in the wp.org build) - after
+			// deps.js (MTgrid stand-in), before microthemer.js (aliases TvrMT.mod.MTgrid at load time)
+			array('h' => 'tvr_mod_grid', 'f' => '../js-min/mt-grid.js', 'min' => 1, 'skipScript' => !$this->hasProPropertyOptions()),
+
+			// the Amender module ships with the content classes (src/Content, not in the wp.org build) -
+			// after deps.js (MThtml stand-in), before microthemer.js
+			array('h' => 'tvr_mod_html', 'f' => '../js-min/mt-html.js', 'min' => 1, 'skipScript' => !$this->hasContentDir()),
+
+			// loaded even when translated program data is inlined (non-English sites), which is laid
+			// over it: the static file keeps the full property map lite needs to parse pro CSS
+			array('h' => 'tvr_mcth_cssprops', 'f' => '../js-min/'.$this->programDataFile(), 'min' => 1),
 			array('h' => 'tvr_main_ui', 'f' => '../js-min/microthemer.js', 'min' => 1, 'page' => array($this->microthemeruipage)),
 			array('h' => 'tvr_broadcast', 'f' => '../js-min/mt-broadcast.js', 'min' => 1, 'page' => array($this->microthemeruipage)),
 			array('h' => 'tvr_man', 'f' => '../js-min/packs.js', 'min' => 1, 'page' => 'other'),
 			array('h' => 'tvr_fonts', 'f' => '../js-min/fonts.js', 'min' => 1, 'page' => array($this->fontspage)),
 			array('h' => 'tvr_detached', 'f' => '../js-min/detached-preview.js', 'min' => 1, 'page' => array($this->detachedpreviewpage)),
+
+			// scripts of extension components (dev and min definitions, as above)
+			...$this->extFilter('ui_scripts', array(), $this->microthemeruipage),
 
 		);
 
@@ -1520,19 +1078,20 @@ class Admin {
 		// output scripts based on various conditions
 		$js_path = $this->thispluginurl.'js/';
 		$v = '?v='.$this->version;
+		$current_page = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
 		foreach ($scripts as $key => $arr){
 			$dep = !empty($arr['dep']) ? $arr['dep'] : false;
 			$do_script = true;
 
 			// filter out page specific scripts
 			if (!empty($arr['page'])){
-				if ( is_array($arr['page']) and !in_array($_GET['page'], $arr['page'])){
+				if ( is_array($arr['page']) and !in_array($current_page, $arr['page'])){
 					$do_script = false;
 				}
 				if ($arr['page'] == 'other' and
-				    ($_GET['page'] == $this->microthemeruipage or
-				     $_GET['page'] == $this->fontspage or
-				     $_GET['page'] == $this->detachedpreviewpage
+				    ($current_page == $this->microthemeruipage or
+				     $current_page == $this->fontspage or
+				     $current_page == $this->detachedpreviewpage
 				    )){
 					$do_script = false;
 				}
@@ -1584,6 +1143,14 @@ class Admin {
 
 
 		}
+
+		// the static program data is site-independent, so its loader templates hold a
+		// {pluginUrl} token for this site's plugin URL
+		wp_add_inline_script(
+			'tvr_mcth_cssprops',
+			'(function(loaders, url){ for (var key in loaders) { loaders[key] = loaders[key].split("{pluginUrl}").join(url); } })'
+			. '(TvrMT.data.templates.loaders || {}, ' . wp_json_encode($this->thispluginurl) . ');'
+		);
 
 		// firebase config
 		/*wp_localize_script('tvr_mod_firebase', 'tvrFirebaseConfig', array(
@@ -1648,6 +1215,7 @@ class Admin {
 		// This can be done in dev mode only (also, some servers don't like creating JS files)
 		if (TVR_DEV_MODE){ // temp disable and false
 			$this->write_mt_version_specific_js();
+			$this->write_lite_program_data();
 		}
 
 		//$this->get_site_pages(); // for debug
@@ -1876,8 +1444,9 @@ class Admin {
 		header("Pragma: no-cache");
 	}
 
-	// color variables and customisable panel sizes for left and right sidebars
-	function add_dyn_inline_css(){
+	// color variables and customisable panel sizes for left and right sidebars: style handle => CSS
+	// (mt-layout.js updates the panel sizes live through their <style id="{handle}-inline-css">)
+	function dyn_inline_css(){
 
         //wp_die('layout <pre>' . print_r($this->preferences['layout'], 1) . '</pre>');
 
@@ -1894,7 +1463,7 @@ class Admin {
 		$gridColumnsFooter = '';
 		foreach ($column_sizes as $i => $size) {
 
-			$mainSize = $size.'px ';
+			$mainSize = (int) $size.'px ';
 			$footerSize = $mainSize;
             $columnNumber = $i+1;
 
@@ -1910,7 +1479,7 @@ class Admin {
 		}
 
         // Right columns
-		$rightColumn = $layout['right']['column_sizes'][1].'px';
+		$rightColumn = (int) $layout['right']['column_sizes'][1].'px';
         $effectiveRightColumn = $layout['right']['effective_num_columns'] > 0 ? $rightColumn : 0;
         $mainAndPlaceholder = '1fr 0 ';
 		$gridColumns.= $mainAndPlaceholder . $effectiveRightColumn;
@@ -1918,26 +1487,15 @@ class Admin {
 
 		// color variables
 		$colorVariablesRuleSet = !empty($this->preferences['mt_color_variables_css'])
-			? '.sp-container .tile-color, .tvr-input-wrap .var-color-box, .mt-color-picker { '.strip_tags($this->preferences['mt_color_variables_css']).' }'
+			? '.sp-container .tile-color, .tvr-input-wrap .var-color-box, .mt-color-picker { '.wp_strip_all_tags($this->preferences['mt_color_variables_css']).' }'
 			: '';
 
-		echo '
-                <style id="mt_color_variables">'.$colorVariablesRuleSet.' </style>
-                <style id="main-interface-columns">
-                    .visual-view {
-                        grid-template-columns: '.$gridColumns.';
-                    }
-                </style>
-                <style id="mt-footer-columns">
-                    #advanced-wizard {
-                        grid-template-columns: '.$gridColumnsFooter.';
-                    }
-                </style>
-                <style id="inspection-columns">
-                    .wizard-panes { 
-                        grid-template-columns: 1fr minmax(auto, '.$inspCols[0].'px) minmax(auto, '.$inspCols[1].'px);
-                    }
-                </style>';
+		return array(
+			'mt-color-variables' => wp_strip_all_tags($colorVariablesRuleSet),
+			'main-interface-columns' => '.visual-view { grid-template-columns: ' . $gridColumns . '; }',
+			'mt-footer-columns' => '#advanced-wizard { grid-template-columns: ' . $gridColumnsFooter . '; }',
+			'inspection-columns' => '.wizard-panes { grid-template-columns: 1fr minmax(auto, ' . (int) $inspCols[0] . 'px) minmax(auto, ' . (int) $inspCols[1] . 'px); }',
+		);
 
 	}
 
@@ -1983,6 +1541,17 @@ class Admin {
 		wp_register_style( 'tvr_mcth_styles', $main_css_file.'?v='.$this->version );
 		wp_enqueue_style( 'tvr_mcth_styles' );
 
+		// stylesheets of extension components (after the main one)
+		$this->extAction('styles', 'tvr_mcth_styles');
+
+		// icon font, color variables and panel sizes
+		wp_add_inline_style('tvr_mcth_styles', $this->load_icon_font());
+		foreach ($this->dyn_inline_css() as $handle => $css){
+			wp_register_style($handle, false, array('tvr_mcth_styles'), $this->version);
+			wp_enqueue_style($handle);
+			wp_add_inline_style($handle, $css);
+		}
+
 		// extra styles for fonts page
 		if ($_GET['page'] === $this->fontspage){
 			wp_register_style( 'tvr_font_styles', $this->thispluginurl.'css/'.$fonts_css_file.'?v='.$this->version );
@@ -2023,29 +1592,48 @@ class Admin {
 		// the above options caused issues - and it seems to work with browser sync...
 		$dir = $this->thispluginurl . $rel_path;
 
-		$preload = '<link rel="preload" as="font" crossorigin="anonymous" href="'.$dir.'microthemer.woff2?v='.$this->version.'" />';
-		$fontFace = "
-                <style>
-                     @font-face {
-                      font-family: 'microthemer';
-                      src: url(".$dir . 'microthemer.woff2?v='.$this->version.") format('woff2'),
-                           url(".$dir . 'microthemer.woff?v='.$this->version.") format('woff');
-                      font-weight: normal;
-                      font-style: normal;
-                    }   
-                </style>";
+		$woff2_url = $dir.'microthemer.woff2?v='.$this->version;
+		$woff_url = $dir.'microthemer.woff?v='.$this->version;
+		$fontFace = "@font-face {
+			font-family: 'microthemer';
+			src: url('" . esc_url($woff2_url) . "') format('woff2'),
+				url('" . esc_url($woff_url) . "') format('woff');
+			font-weight: normal;
+			font-style: normal;
+		}";
 
-		if ($return){
-			return $fontFace;
-		} else {
-			echo $preload . "\n" . $fontFace;
-		}
+		// a <style> element for the site preview (inserted by frontend.js), or just the CSS (see add_css)
+		return $return ? '<style>' . $fontFace . '</style>' : $fontFace;
+	}
+
+	// pro-only property groups live in a separate file the wp.org build ships without
+	function proPropertyOptionsFile() {
+		return $this->thisplugindir . 'includes/property-options-pro.inc.php';
+	}
+
+	function hasProPropertyOptions() {
+		return file_exists($this->proPropertyOptionsFile());
+	}
+
+	// Free-text code editing - the full CSS/JS editors and the per-selector code editor (the 'code'
+	// property group) - ships with the pro property map. The wp.org build only outputs CSS generated
+	// from form fields, so there it neither shows these editors nor saves or outputs custom code.
+	function hasCodeEditors() {
+		return $this->hasProPropertyOptions();
+	}
+
+	// the static program data carries UI templates for the build's property groups, so each build loads its own copy
+	function programDataFile() {
+		return $this->hasProPropertyOptions() ? 'program-data.js' : 'program-data-lite.js';
 	}
 
 	// build array for property/value input fields
-	function getPropertyOptions() {
+	// ($include_pro = false builds the lite map, for writing lite's program data templates in dev mode)
+	function getPropertyOptions($include_pro = true) {
 		$propertyOptions = array();
 		$legacy_groups = array();
+		$this->property_option_groups = array();
+		$this->auto_convert_map = array();
 		$this->animatable = array(
 
 			array(
@@ -2058,11 +1646,36 @@ class Admin {
 			)
 		);
 		include $this->thisplugindir . 'includes/property-options.inc.php';
+
+		// everything downstream simply reflects whichever groups exist in $propertyOptions
+		if ($include_pro && $this->hasProPropertyOptions()) {
+			include $this->proPropertyOptionsFile();
+		}
+
 		$this->propertyoptions = $propertyOptions;
+
+		// Every group-ish key this build can render options for: the property groups
+		// themselves plus the sub-group and tab-control keys that selector data can also
+		// be keyed by. Settings keyed by anything outside this set belong to a build that
+		// isn't installed, so UnavailableSettings preserves them on save rather than
+		// reading their absence as a deletion.
+		//
+		// This has to be derived here rather than in write_mt_version_specific_js(), which
+		// builds the same maps but only runs in dev mode — leaving build_group_keys empty
+		// in every real install, where preserve_group_keyed_maps() then bails out and the
+		// preservation silently does nothing.
+		$this->build_group_keys = array_fill_keys(array_keys($propertyOptions), true);
 
 		// populate $property_option_groups, $auto_convert_map, and animatable array
 		foreach ($propertyOptions as $prop_group => $array){
 			foreach ($array as $prop => $meta) {
+				// group-ish keys selector data may use besides the group name
+				if ( !empty($meta['sub_slug']) ){
+					$this->build_group_keys[$meta['sub_slug']] = true;
+				}
+				if ( !empty($meta['tab_control']) ){
+					$this->build_group_keys[$meta['tab_control']] = true;
+				}
 				// pg group
 				if ( !empty($meta['pg_label']) ){
 					$pg_label = $meta['pg_label'];
@@ -2150,21 +1763,62 @@ class Admin {
 		return $gc_css_match;
 	}
 
+	// Write the wp.org build's static program data (dev mode only, where the pro file exists).
+	// It keeps the full property map, which lite needs to parse CSS saved with pro properties
+	// (e.g. in the selector code view) without corrupting it, but its UI templates are built
+	// from the lite map, so no pro group UI ships in lite. No AI panel in lite either.
+	function write_lite_program_data() {
+
+		if (!$this->hasProPropertyOptions()){
+			return;
+		}
+
+		$build_state = array(
+			'aiPanel', 'coreOnly', 'moduleUI', 'propertyoptions', 'property_option_groups', 'auto_convert_map',
+			'animatable', 'legacy_groups', 'build_group_keys', 'input_wrap_templates'
+		);
+		$saved = array();
+		foreach ($build_state as $prop){
+			$saved[$prop] = $this->$prop;
+		}
+
+		$this->aiPanel = false;
+		$this->coreOnly = true;
+		$this->moduleUI = false;
+
+		// templates from the lite map (input wraps are collected while rendering fields)
+		$this->getPropertyOptions(false);
+		$this->input_wrap_templates = array();
+		$lite_templates = $this->html_templates();
+
+		// program data from the full map
+		foreach (array('propertyoptions', 'property_option_groups', 'auto_convert_map', 'animatable', 'legacy_groups', 'build_group_keys') as $prop){
+			$this->$prop = $saved[$prop];
+		}
+		$this->write_mt_version_specific_js('js/data', false, 'program-data-lite.js', $lite_templates);
+
+		foreach ($saved as $prop => $value){
+			$this->$prop = $value;
+		}
+	}
+
 	// create static JS file for property options etc that relate to the current version of MT
-	function write_mt_version_specific_js($dir = 'js/data', $inline = false) {
+	// ($templates overrides the HTML templates, for lite's copy)
+	function write_mt_version_specific_js($dir = 'js/data', $inline = false, $file_name = 'program-data.js', $templates = null) {
 
 		$write_file = '';
 
 		if (!$inline){
 
 			// Create new file if it doesn't already exist
-			$js_file = $this->thisplugindir . $dir . '/program-data.js';
+			$js_file = $this->thisplugindir . $dir . '/' . $file_name;
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- DEV_MODE only; regenerates shipped program-data.js.
 			$write_file = @fopen($js_file, 'w');
 
 			if (!$write_file) {
 				$this->log(
 					esc_html__('Permission Error', 'microthemer'),
-					'<p>' . sprintf( esc_html__('WordPress does not have permission to update: %s', 'microthemer'), $this->root_rel($js_file) . '. '.$this->permissionshelp ) . '</p>'
+					'<p>' . sprintf( /* translators: %s: file path */ esc_html__('WordPress does not have permission to update: %s', 'microthemer'), $this->root_rel($js_file) . '. '.$this->permissionshelp ) . '</p>'
 				);
 
 				return 0;
@@ -2326,7 +1980,14 @@ class Admin {
 		$css_props = array();
 
 		// we need a collection of props for pg tabs
-		$pg_tab_props = array();
+		// The grid item maps are read unconditionally by the CSS compiler and grid
+		// overlay, so they must exist even in builds that omit the grid group.
+		$pg_tab_props = array(
+			'grid' => array(
+				'griditems' => array(),
+				'allgriditems' => array(),
+			),
+		);
 
 		// for mapping a pgtab control to a group
 		$pg_tab_map = array();
@@ -2542,7 +2203,9 @@ class Admin {
 					// get preset animations from include file
 					elseif ($prop == 'animation_name'){
 						$animation_names = array();
-						include $this->thisplugindir . 'includes/animation/animation-code.inc.php';
+						if (file_exists($this->thisplugindir . 'includes/animation/animation-code.inc.php')){
+							include $this->thisplugindir . 'includes/animation/animation-code.inc.php';
+						}
 						$combo[$prop] = $animation_names;
 					}
 
@@ -2928,17 +2591,10 @@ class Admin {
 			$this->builder_sync_tabs
 		);
 
-        // AI combobox menus
-        $combo['ai_actions'] = array(
-            $this->aiData['actions']['generate']['label'],
-	        $this->aiData['actions']['edit']['label'],
-        );
-        $combo['ai_scope'] = $this->to_autocomplete_arr(array(
-	        $this->aiData['actions']['generate']['label'] => $this->aiData['actions']['generate']['scope'],
-	        $this->aiData['actions']['edit']['label'] => $this->aiData['actions']['edit']['scope'],
-        ));
-		$combo['ai_commit_css'] = $this->aiData['actions']['generate']['commit']['type']['css'];
-		$combo['ai_commit_html'] = $this->aiData['actions']['generate']['commit']['type']['html'];
+        // AI combobox menus (AI-enabled builds only)
+        if ($this->aiPanel){
+	        $combo = $this->aiPanel->comboboxData($combo);
+        }
 
 		// options for choosing the stylesheet loading order
 		$combo['stylesheet_order_options'] = $this->stylesheet_order_options;
@@ -2950,6 +2606,10 @@ class Admin {
 		$combo['enq_js'] = array( 'jquery', 'jquery-form', 'jquery-color', 'jquery-masonry', 'masonry', 'jquery-ui-core', 'jquery-ui-widget', 'jquery-ui-accordion', 'jquery-ui-autocomplete', 'jquery-ui-button', 'jquery-ui-datepicker', 'jquery-ui-dialog', 'jquery-ui-draggable', 'jquery-ui-droppable', 'jquery-ui-menu', 'jquery-ui-mouse', 'jquery-ui-position', 'jquery-ui-progressbar', 'jquery-ui-selectable', 'jquery-ui-resizable', 'jquery-ui-selectmenu', 'jquery-ui-sortable', 'jquery-ui-slider', 'jquery-ui-spinner', 'jquery-ui-tooltip', 'jquery-ui-tabs', 'jquery-effects-core', 'jquery-effects-blind', 'jquery-effects-bounce', 'jquery-effects-clip', 'jquery-effects-drop', 'jquery-effects-explode', 'jquery-effects-fade', 'jquery-effects-fold', 'jquery-effects-highlight', 'jquery-effects-pulsate', 'jquery-effects-scale', 'jquery-effects-shake', 'jquery-effects-slide', 'jquery-effects-transfer', 'wp-mediaelement', 'schedule', 'suggest', 'thickbox', 'hoverIntent', 'jquery-hotkeys', 'sack', 'quicktags', 'iris', 'json2', 'plupload', 'plupload-all', 'plupload-html4', 'plupload-html5', 'plupload-flash', 'plupload-silverlight', 'underscore', 'backbone' );
 		sort($combo['enq_js']);
 
+
+		// (build_group_keys is derived in getPropertyOptions(), which runs in every build —
+		// it used to be set here, where $propertyOptions is not in scope and which only
+		// runs in dev mode)
 
 		// the full program data in one array
 		$prog = array(
@@ -2977,7 +2637,7 @@ class Admin {
 			'css_func_map' =>  $css_func_map,
 			'unsupported_css_func_map' =>  $unsupported_css_func_map,
 			'params_to_strip' =>  $this->params_to_strip,
-			'suggested_screen_layouts' => $this->suggested_screen_layouts,
+			// (suggested_screen_layouts is in the dynamic data - see js-dynamic.php)
             'exportable_preferences' => array_merge(
 	            array_keys($this->default_preferences),
 	            array_keys($this->default_preferences_exportable),
@@ -2989,20 +2649,19 @@ class Admin {
                     "auto_folders_page"
                 )
             ),
-            // Help users find addons not indexed separately by NPM
-            'npm_addons' => array(
-                    'three' => array(
-                            'browse' => 'https://cdn.jsdelivr.net/npm/three@{version}/examples/jsm/'
-                    ),
-                    'gsap' => array(
-                            'browse' => 'https://cdn.jsdelivr.net/npm/gsap/'
-                    )
-            ),
-            'native_packages' => json_decode(file_get_contents($this->thisplugindir . 'includes/native-packages.json'))
 		);
 
-		$data.= 'TvrMT.data.prog = ' . json_encode($prog) . ';' . "\n\n";
-		$data.= 'TvrMT.data.templates = ' . json_encode($this->html_templates()) . ';' . "\n\n";
+		// npm dependency browser data (only the Amender module, mt-html.js, uses it)
+		if ($this->moduleUI){
+			$prog = array_merge($prog, $this->moduleUI->programData());
+		}
+
+		// inline (translated) data is laid over the static file rather than replacing it, as
+		// lite's runtime property map lacks the pro groups the static map has
+		$data.= $inline
+			? 'TvrMT.data.prog = TvrMT.mergeData(TvrMT.data.prog, ' . wp_json_encode($prog) . ');' . "\n\n"
+			: 'TvrMT.data.prog = ' . wp_json_encode($prog) . ';' . "\n\n";
+		$data.= 'TvrMT.data.templates = ' . wp_json_encode($templates !== null ? $templates : $this->html_templates()) . ';' . "\n\n";
 
 		// if the server can't overwrite an external JS file, add it inline with other dynamic JS
 		if ($inline){
@@ -3010,7 +2669,10 @@ class Admin {
 		}
 
 		else {
+			// DEV_MODE only regenerates shipped program-data.js; production uses the bundled file or inline JS.
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,PluginCheck.CodeAnalysis.WriteFile.PluginDirectoryWrite
 			fwrite($write_file, $data);
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
 			fclose($write_file);
 		}
 
@@ -3085,18 +2747,23 @@ class Admin {
 				'data-neg' => esc_attr__('disable_toggle_tooltip', 'microthemer'),
 			)),
 
-			'dependency_row' => $this->dependency_row(),
-            'snippet_dependency_row' => $this->snippet_dependency_row(),
-			'detected_package_item' => $this->detected_package_item(),
-			'whitelist_ui' => $this->whitelist_ui_template(),
-			'whitelist_ui_item' => $this->whitelist_ui_item('domain_name'),
-
 			//'primary_context_menu_trigger' => $this->element_meta_template('primary'),
 
 			//'oncanvas_feedback_template' =>$this->oncanvas_feedback_template()
 
 
 		);
+
+		// only the Amender module (mt-html.js) uses the npm dependency UI
+		if ($this->moduleUI){
+			$templates = array_merge($templates, $this->moduleUI->templates());
+		}
+
+		// only the AI assistant (mt-ai.js) uses the domain whitelist UI
+		if ($this->aiPanel){
+			$templates['whitelist_ui'] = $this->whitelist_ui_template();
+			$templates['whitelist_ui_item'] = $this->whitelist_ui_item('domain_name');
+		}
 
 		return $templates; //$this->strip_tabs_and_line_breaks($templates); // not working but could be fixed maybe?
 
@@ -3138,192 +2805,6 @@ class Admin {
 	}
     
 
-
-	function dependency_table(){
-
-        $onLocal = !empty($this->preferences['npm_default_local']) ? ' on' : '';
-
-        return '
-        <div class="dependency-table-wrap">
-            
-             <div class="dependency-table-header">
-                 <div class="search-dependencies tvr-input-wrap">
-                    <input id="mt-npm-search" type="text" autocomplete="off" rel="npm_dependencies" data-autofill="" class="combobox has-arrows search-npm" name="search_npm" value="" placeholder="Search npm or enter jsDelivr URL">
-                    <span class="combo-arrow tvr-field-arrow"></span>
-                    <span class="mt-clear-field"></span>
-                    <div class="cdn-local mt-binary-buttons'.$onLocal.'" data-run="mod.MThtml.npm.toggleDefaultDepDelivery">
-                        <span class="binary-button-option" rel="0">CDN</span>
-                        <span class="binary-button-option" rel="1">Local</span>
-                    </div>
-                    <div id="add-npm-dependency" class="tvr-button add-npm-dependency">Add</div>
-                </div>
-                <div class="dependency-notifications"></div>
-             </div>
-            
-            
-            <div class="dependency-columns">
-                <div class="import-column">Default import</div>
-                <div class="package-column">Package</div>
-                <div class="size-column">Size</div>
-                <div class="version-column">Version</div>
-                <div class="about-column">Docs</div>
-                <div class="delivery-column">Delivery</div>
-                <div class="in-use-column">In use</div>
-                <div class="delete-column">Delete</div>
-            </div>
-            <div class="dependency-rows"></div>
-            
-        </div>';
-	}
-
-	function dependency_row(){
-		return '
-        <div class="dependency-row" data-package="{value}">
-            <div class="copy-import-syntax">
-                 '.$this->iconFont('copy', array(
-                    'class' => 'copy-import-syntax-icon',
-                    'title' => esc_attr__('Copy import declaration', 'microthemer')
-                )).'
-            </div>
-            <div class="import-field field-has-form">
-                <span class="import-hint">import </span>
-                <div class="npm-import-form edit-dep-form hidden">
-                    <input type="text" class="npm-import-input" name="npm_import_input" value="{importSyntax}" />
-                    <div class="tvr-button update-import-syntax update-npm-dependency">Update</div>
-                </div>
-                <span class="npm-import main-text">{importSyntax}</span>
-                '.$this->iconFont('edit', array(
-                    'class' => 'edit-import-syntax edit-dependency',
-                    'title' => esc_attr__('Change default import syntax', 'microthemer')
-                )).'
-            </div>
-            <div class="package-field main-text">
-                <span class="import-hint">from </span>
-                <a target="_blank" href="{linkToFile}" data-local="'.$this->micro_root_url . 'mt/js/draft/npm/{local}" data-cdn="https://cdn.jsdelivr.net/npm/{cdn}">"{value}"</a>
-                 <span class="tvr-button tvr-gray browse-package-addons {hiddenAddons}" data-browse="{browseAddons}">Addons</span>
-            </div>
-            <div class="size-field">
-               {size} KB
-            </div>
-            <div class="version-field field-has-form">
-                <div class="npm-version-form edit-dep-form hidden">
-                    <span class="tvr-input-wrap">
-                         <input type="text" class="npm-version-input combobox has-arrows" name="npm_version_input" rel="npm_version_input"  value="{version}" />
-                        <span class="combo-arrow"></span>
-                    </span>
-                   
-                    <div class="tvr-button update-npm-version update-npm-dependency">Update</div>
-                </div>
-                <span class="npm-version main-text">{version}</span>
-                '.$this->iconFont('edit', array(
-                    'class' => 'edit-version edit-dependency',
-                    'title' => esc_attr__('Change version', 'microthemer')
-                )).'
-            </div>
-            <div class="about-field">
-                '.$this->iconFont('docs', array(
-                    'class' => 'package-readme-link',
-                    'title' => esc_attr__('View Readme info', 'microthemer'),
-                    'tag' => 'a',
-                    'href' => "https://www.jsdelivr.com/package/npm/{rel}",
-                    'target' => "_blank"
-                )).'
-            </div>
-            <div class="delivery-field">
-                <div class="cdn-local mt-binary-buttons" data-run="mod.MThtml.npm.toggleDepDelivery">
-                    <span class="binary-button-option" rel="0">CDN</span>
-                    <span class="binary-button-option" rel="1">Local</span>
-                </div>
-            </div>
-            <div class="in-use-field">{inUse}</div>
-            <div class="delete-field">
-                '.$this->iconFont('bin', array(
-                    'class' => 'delete-dependency',
-                    'title' => esc_attr__('Delete library', 'microthemer')
-                )).'
-            </div>
-        </div>';
-	}
-
-	function snippet_dependency_table(){
-		return '
-        <div class="snippet-dependency-table-wrap">
-            
-            <div class="dependency-columns">
-                <div class="single-import-column">
-                <span>Import</span>
-                 '.$this->iconFont('add', array(
-                    'class' => 'add-snippet-dependency-icon',
-                    'title' => esc_attr__('Add package', 'microthemer'),
-                    'data-label' => esc_attr__('add', 'microthemer')
-                )).'
-                </div>
-                <div class="single-package-column">
-                    <span title="Add any JavaScript packages this snippet needs (optional)">Package</span>
-                    '.$this->iconFont('cog', array(
-                        'rel' => 'mt-enqueue-js',
-                        'class' => 'show-dialog',
-                        'title' => esc_attr__('Manage installed packages', 'microthemer')
-                    )).'
-                </div>
-            </div>
-            
-            <div class="dependency-rows"></div>
-            
-        </div>';
-	}
-
-	function snippet_dependency_row(){
-		return '
-        <div class="snippet-dependency-row" data-package="{value}" data-rel="{rel}">
-          
-            <div class="snippet-import-field">
-                 <input type="text" class="snippet-dep-adjust snippet-import-input" placeholder="{importSyntaxPlaceholder}" value="{manualImportSyntax}" />
-            </div>
-            <div class="snippet-package-field">
-                <span class="tvr-input-wrap">
-                    <input type="text" class="snippet-dep-adjust snippet-select-package combobox has-arrows" placeholder="{autoPackName}" data-appto="#style-components" value="{manualPackName}" rel="current_npm_dependencies" />
-                    <span class="combo-arrow"></span>
-                </span>
-            </div>
-            <div class="snippet-remove-package-field">
-                 '.$this->iconFont('disable', array(
-				'class' => 'snippet-disable-package-icon {autoDisabled} {disabledHidden}',
-				'title' => esc_attr__('Disable auto-added package', 'microthemer')
-			    )).
-               $this->iconFont('minus', array(
-				'class' => 'snippet-remove-package-icon {removeHidden}',
-				'title' => esc_attr__('Remove package', 'microthemer')
-			)).'
-            </div>
-        </div>';
-	}
-
-	function detected_package_item(){
-        return '
-        <li class="detected-pacakge-item" data-package="{packName}" data-rel="{rel}">
-            <div class="detected-package-result">
-                <span class="mt-loader-icon hidden"></span>
-                '.
-               $this->iconFont( 'tick-box-unchecked', array(
-                    'class' => 'fake-checkbox on',
-                )). '' .
-               $this->iconFont('check-circle', array(
-		        'class' => 'detected-dependency-success hidden',
-		        'title' => esc_attr__('Package added', 'microthemer')
-                )).
-               $this->iconFont('times-circle-regular', array(
-                    'class' => 'detected-dependency-failed hidden',
-                    'title' => esc_attr__('Package not added', 'microthemer')
-                )).'
-            </div>
-            <div class="detected-package-name">
-                <span>{packName} <span class="package-size-hint">({size} KB)</span></span>
-            </div>
-            
-        </li>
-        ';
-	}
 
 	function key_computed_info(){
 
@@ -3503,7 +2984,8 @@ class Admin {
 	function loaders_template(){
 
 		// loading gif common atts
-		$loader_com = 'class="ajax-loader small" src="'.$this->thispluginurl.'/images/';
+		// {pluginUrl} is replaced on the client (see the tvr_mcth_cssprops inline script)
+		$loader_com = 'class="ajax-loader small" src="{pluginUrl}images/';
 
 		return array(
 			'default' => '<img id="loading-gif-template" '.$loader_com.'ajax-loader-green.gif" />',
@@ -3521,6 +3003,7 @@ class Admin {
 		$short = __('Error saving settings', 'microthemer');
 		$long =
 			'<p>' . sprintf(
+				/* translators: %s: link HTML to email error report */
 				esc_html__('Please %s. The error report sends us information about your current Microthemer settings, server and browser information, and your WP admin email address. We use this information purely for replicating your issue and then contacting you with a solution.', 'microthemer'),
 				'<span id="email-error" class="link">' . __('click this link to email an error report to Themeover', 'microthemer') . '</span>'
 			) . '</p>
@@ -3726,6 +3209,10 @@ class Admin {
 
 		$html = '';
 
+		if (!is_array($this->css_filters)){
+			return $html;
+		}
+
 		$i = 0;
 		foreach ($this->css_filters as $key => $arr){
 			if ($i === 0){
@@ -3779,7 +3266,7 @@ class Admin {
 		ob_start();
 		?>
 
-		<div id="mt-suggestions-<?php echo $context; ?>" class="scrollable-area mt-suggestions radio-set-container">
+		<div id="mt-suggestions-<?php echo esc_attr($context); ?>" class="scrollable-area mt-suggestions radio-set-container">
 
 			<div class="mt-panel-header existing-selector-heading">
 				<div class="mt-panel-title"><?php echo esc_html__('Resume an existing selector', 'microthemer'); ?></div>
@@ -3816,13 +3303,13 @@ class Admin {
 				<div class="mt-selector-adjustments">
 
 					<ul class="fav-filters css-filter-list">
-						<?php echo $this->fav_css_filters; ?>
+						<?php echo wp_kses( $this->fav_css_filters, \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
 					</ul>
 
 					<?php
 					$specificity_high = !empty($this->preferences['specificity_preference']) ? ' on' : '';
 					?>
-					<div class="mt-ui-toggle uit-par specificity-preference<?php echo $specificity_high; ?>" data-aspect="specificity_preference">
+					<div class="mt-ui-toggle uit-par specificity-preference<?php echo esc_attr($specificity_high); ?>" data-aspect="specificity_preference">
                                     <span class="specificity-label"
                                           title="<?php esc_attr_e('Sort by CSS specificity', 'microthemer'); ?>">
                                         <?php esc_html_e('Specificity', 'microthemer'); ?>:
@@ -3862,7 +3349,7 @@ class Admin {
 	// output a list of css filters (pseudo classes, elements, page-specific)
 	function css_filter_list($filters, $type, $heading) {
 		$html = '
-				<div class="filter-heading">'.$heading.'</div>';
+				<div class="filter-heading">'.esc_html($heading).'</div>';
 		$num_items = count($filters);
 		$index = 0;
 
@@ -3884,9 +3371,9 @@ class Admin {
 		// loop through normalised $filters
 		foreach ($split_filters as $i => $f){
 			$html.= '
-					<ul class="css-filter-list flist-'.$type.' cssfl-index-'.$i.'">';
+					<ul class="css-filter-list flist-'.esc_attr($type).' cssfl-index-'.(int) $i.'">';
 			foreach($f as $key => $arr){
-				$text = !empty($arr['text']) ? $arr['text'] : $key;
+				$text = esc_html(!empty($arr['text']) ? $arr['text'] : $key);
 				$edClass = !empty($arr['editable']) ? ' filter-editable' : '';
 				$li =
 					$this->ui_toggle(
@@ -4034,18 +3521,18 @@ class Admin {
 
         $html = '';
 		// labels
-		$yes_label = __('Yes', 'microthemer' );
-		$no_label = __('No', 'microthemer' );
+		$yes_label = esc_html__('Yes', 'microthemer' );
+		$no_label = esc_html__('No', 'microthemer' );
 
 		foreach ($opts as $key => $array) {
 
 			// skip edge mode if not available
-			if ($key == 'edge_mode' and !$this->edge_mode['available']){
+			if ($key == 'edge_mode' and empty($this->edge_mode['available'])){
 				continue;
 			}
 
 			// common
-			$input_name = 'tvr_preferences['.$key.']';
+			$input_name = 'tvr_preferences['.esc_attr($key).']';
 			$array['link'] = ( !empty($array['link']) ) ? $array['link'] : '';
 
 			// if radio
@@ -4070,14 +3557,14 @@ class Admin {
 				$form_options = '
                 <span class="yes-wrap p-option-wrap">
                     <input type="radio" autocomplete="off" class="radio"
-                       name="'.$input_name.'" value="'.$yes_val.'" '.$yes_checked.' />
+                       name="'.$input_name.'" value="'.esc_attr($yes_val).'" '.$yes_checked.' />
                        '.$this->iconFont('radio-btn-unchecked', array('class' => 'fake-radio '.$yes_on)).'
                  
                     <span class="ef-label">'.$yes_label.'</span>
                 </span>
                 <span class="no-wrap p-option-wrap">
                     <input type="radio" autocomplete="off" class="radio"
-                       name="'.$input_name.'" value="'.$no_val.'" '.$no_checked.' />
+                       name="'.$input_name.'" value="'.esc_attr($no_val).'" '.$no_checked.' />
                      '.$this->iconFont('radio-btn-unchecked', array('class' => 'fake-radio '.$no_on)).'
                     <span class="ef-label">'.$no_label.'</span>
                 </span>';
@@ -4118,11 +3605,11 @@ class Admin {
 				}
 				// do we want to add a data attribute (quick and dirty way to support one att)
 				if (!empty($array['extra_info'])){
-					$extra_info = ' data-info="'. $array['extra_info'].'"';
+					$extra_info = ' data-info="'.esc_attr($array['extra_info']).'"';
 				}
 
 				if (!empty($array['prop'])){
-					$extra_info.= ' data-prop="'. $array['prop'].'"';
+					$extra_info.= ' data-prop="'.esc_attr($array['prop']).'"';
 				}
 
 				// exception for css unit set (keep blank)
@@ -4133,18 +3620,18 @@ class Admin {
 				// is it a combobox?
 				if (!empty($array['combobox'])){
 					$class = 'combobox has-arrows';
-					$rel = 'rel="'.$array['combobox'].'"';
-					$arrow = '<span class="combo-arrow '.$arrow_class.'"></span>';
+					$rel = 'rel="'.esc_attr($array['combobox']).'"';
+					$arrow = '<span class="combo-arrow '.esc_attr($arrow_class).'"></span>';
 				}
 
 				if (!empty($input_id)){
-					$input_id = 'id="'.$input_id.'"';
+					$input_id = 'id="'.esc_attr($input_id).'"';
 				}
 
 				$form_options = '
                 <span class="tvr-input-wrap">
                     <input '.$input_id.' type="text" autocomplete="off" name="'.$input_name.'"  
-                    class="'.$class . ' ' . $input_class.'" '.$rel . $extra_info.'
+                    class="'.esc_attr($class . ' ' . $input_class).'" '.$rel . $extra_info.'
                     value="'. esc_attr($input_value).'" />'
                 .$arrow .
                 '</span>';
@@ -4152,17 +3639,17 @@ class Admin {
 
 			// sometimes we use empty cell after
 			if (!empty($array['empty_before'])){
-				$html.= '<li class="empty-cell empty-before-'.$key.'"></li>';
+				$html.= '<li class="empty-cell empty-before-'.esc_attr($key).'"></li>';
 			}
 
 			$li_class.= ' mt-pref-' . $key;
 
 			// the option
 			$html.= '
-            <li class="'.$li_class.'">
+            <li class="'.esc_attr($li_class).'">
                 <label>
                     <span title="'.esc_attr($array['explain']).'">
-                        '.esc_html($array['label']) . ' ' . $array['link'].'
+                        '.esc_html($array['label']) . ' ' . wp_kses($array['link'], array('a' => array('href' => array(), 'target' => array()))).'
                     </span>
                 </label>
                 '.$form_options.'
@@ -4170,7 +3657,7 @@ class Admin {
 
 			// sometimes we use empty cell after
 			if (!empty($array['empty_after'])){
-				$html.= '<li class="empty-cell empty-after-'.$key.'"></li>';
+				$html.= '<li class="empty-cell empty-after-'.esc_attr($key).'"></li>';
 			}
 		}
 
@@ -4186,13 +3673,13 @@ class Admin {
 
 		// generate the HTML
 		$html = '
-        <ul id="'.$settings_class.'" class="mt-form-settings '.$settings_class.'">';
+        <ul id="'.esc_attr($settings_class).'" class="mt-form-settings '.esc_attr($settings_class).'">';
 
 		foreach ($pref_cats as $cat_key => $cat_array){
 
 			$html.= '
-            <li class="empty-cell empty-before-'.$cat_key.'"></li>
-            <li class="preference-category pref-cat-'.$cat_key.'">'.$cat_array['label'].'</li>';
+            <li class="empty-cell empty-before-'.esc_attr($cat_key).'"></li>
+            <li class="preference-category pref-cat-'.esc_attr($cat_key).'">'.esc_html($cat_array['label']).'</li>';
 
 			$html.= $this->preferences_grid_items($cat_array['items']);
 		}
@@ -4215,7 +3702,7 @@ class Admin {
 			$yes_val = ($key == 'draft_mode') ? $this->current_user_id : 1;
 
 			// skip edge mode if not available
-			if ($key == 'edge_mode' and !$this->edge_mode['available']){
+			if ($key == 'edge_mode' and empty($this->edge_mode['available'])){
 				continue;
 			}
 
@@ -4223,16 +3710,16 @@ class Admin {
 			$this->preferences['manual_recompile_all_css'] = 0;
 
 			?>
-			<li class="fake-radio-parent <?php echo $hidden; ?>" xmlns="http://www.w3.org/1999/html">
+			<li class="fake-radio-parent <?php echo esc_attr($hidden); ?>" xmlns="http://www.w3.org/1999/html">
 				<label>
 							<span title="<?php echo esc_attr($array['explain']); ?>">
-								<?php echo esc_html($array['label']) . $array['link']; ?>
+								<?php echo esc_html($array['label']) . wp_kses($array['link'], array('a' => array('href' => array(), 'target' => array()))); ?>
 							</span>
 				</label>
 
 				<span class="yes-wrap p-option-wrap">
 							<input type='radio' autocomplete="off" class='radio'
-							       name='tvr_preferences[<?php echo $key; ?>]' value='<?php echo $yes_val; ?>'
+							       name='tvr_preferences[<?php echo esc_attr($key); ?>]' value='<?php echo esc_attr($yes_val); ?>'
 								<?php
 								if ( !empty($this->preferences[$key])) {
 									echo 'checked="checked"';
@@ -4243,13 +3730,13 @@ class Admin {
 								?>
                             />
                             <?php
-                            echo $this->iconFont('radio-btn-unchecked', array('class' => 'fake-radio '.$on))
+                            echo wp_kses( $this->iconFont('radio-btn-unchecked', array('class' => 'fake-radio '.$on)), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() )
                             ?>
 
 							<span class="ef-label"><?php esc_html_e('Yes', 'microthemer'); ?></span>
 						</span>
 				<span class="no-wrap p-option-wrap">
-							<input type='radio' autocomplete="off" class='radio' name='tvr_preferences[<?php echo $key; ?>]' value='0'
+							<input type='radio' autocomplete="off" class='radio' name='tvr_preferences[<?php echo esc_attr($key); ?>]' value='0'
 								<?php
 								if ( (empty($this->preferences[$key]))
 									// exception for mq set overwrite as this isn't stored as a global preference
@@ -4263,7 +3750,7 @@ class Admin {
 								?>
                             />
                              <?php
-                             echo $this->iconFont('radio-btn-unchecked', array('class' => 'fake-radio '.$on))
+                             echo wp_kses( $this->iconFont('radio-btn-unchecked', array('class' => 'fake-radio '.$on)), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() )
                              ?>
 							<span class="ef-label"><?php esc_html_e('No', 'microthemer'); ?></span>
 						</span>
@@ -4302,7 +3789,7 @@ class Admin {
 			}
 			// do we want to add a data attribute (quick and dirty way to support one att)
 			if (!empty($array['extra_info'])){
-				$extra_info = ' data-info="'. $array['extra_info'].'"';
+				$extra_info = ' data-info="'.esc_attr($array['extra_info']).'"';
 			}
 
 			// exception for css unit set (keep blank)
@@ -4313,26 +3800,26 @@ class Admin {
 			// is it a combobox?
 			if (!empty($array['combobox'])){
 				$class = 'combobox has-arrows';
-				$rel = 'rel="'.$array['combobox'].'"';
-				$arrow = '<span class="combo-arrow '.$arrow_class.'"></span>';
+				$rel = 'rel="'.esc_attr($array['combobox']).'"';
+				$arrow = '<span class="combo-arrow '.esc_attr($arrow_class).'"></span>';
 			}
 
 			if (!empty($input_id)){
-				$input_id = 'id="'.$input_id.'"';
+				$input_id = 'id="'.esc_attr($input_id).'"';
 			}
 
 			?>
-			<li class="tvr-input-wrap <?php echo $hidden; ?>">
+			<li class="tvr-input-wrap <?php echo esc_attr($hidden); ?>">
 				<label class="text-label">
 							<span title="<?php echo esc_attr($array['explain']); ?>">
 								<?php echo esc_html($array['label']); ?>
 							</span>
 				</label>
 				<input type='text' autocomplete="off" name='<?php echo esc_attr($input_name); ?>'
-					<?php echo $input_id; ?>
-					   class="<?php echo $class . ' ' . $input_class; ?>" <?php echo $rel . $extra_info; ?>
+					<?php echo wp_kses( $input_id, \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
+					   class="<?php echo esc_attr($class . ' ' . $input_class); ?>" <?php echo wp_kses( $rel . $extra_info, \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
 					   value='<?php echo esc_attr($input_value); ?>' />
-				<?php echo $arrow; ?>
+				<?php echo wp_kses( $arrow, \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); ?>
 			</li>
 			<?php
 		}
@@ -4346,7 +3833,7 @@ class Admin {
 		$table_name = $wpdb->prefix . "micro_content";
 		$table_ver_num = get_option($this->html_mods_ver_name);
 
-		if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") != $table_name
+		if (!$this->check_table_exists($table_name)
 		    || $table_ver_num < $this->db_chg_in_ver) {
 
 			$charset_collate = $wpdb->get_charset_collate();
@@ -4392,7 +3879,7 @@ class Admin {
 		// only execute following code if table doesn't exist.
 		// dbDelta function wouldn't overwrite table,
 		// But table version num shouldn't be updated with current plugin version if it already exists
-		if( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) != $table_name or
+		if( !$this->check_table_exists($table_name) or
 		    $micro_ver_num < $this->db_chg_in_ver) {
 
 			$charset_collate = '';
@@ -4538,18 +4025,28 @@ class Admin {
 			$max_revisions = 1;
 		}
 
-		$maybe_exclude_backups = !$upgrade_backup ? 'and upgrade_backup != 1' : '';
+		$include_upgrade_backups = $upgrade_backup ? 1 : 0;
 
 		// check if an old revision needs to be deleted
-		$wpdb->get_results("select id from $table_name 
-				where saved != 1 $maybe_exclude_backups order by id asc");
+		$wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT id FROM %i WHERE saved != 1 AND ( %d = 1 OR upgrade_backup != 1 ) ORDER BY id ASC",
+				$table_name,
+				$include_upgrade_backups
+			)
+		);
 
 		// this will not delete saved or backups for regular saves. And wont delete saved backups ever.
 		if ($wpdb->num_rows > $max_revisions) {
-			$excess_rows = ($wpdb->num_rows - $max_revisions);
-			$sql = "delete from $table_name 
-                    where saved != 1 $maybe_exclude_backups order by id asc limit $excess_rows";
-			$wpdb->query($sql);
+			$excess_rows = (int) ( $wpdb->num_rows - $max_revisions );
+			$wpdb->query(
+				$wpdb->prepare(
+					"DELETE FROM %i WHERE saved != 1 AND ( %d = 1 OR upgrade_backup != 1 ) ORDER BY id ASC LIMIT %d",
+					$table_name,
+					$include_upgrade_backups,
+					$excess_rows
+				)
+			);
 		}
 
 		return $revision_id;
@@ -4560,15 +4057,15 @@ class Admin {
 		$table_name = $wpdb->prefix . "micro_revisions";
 		$wpdb->query(
 			$wpdb->prepare(
-				"update $table_name set saved = %d where id = %d",
-				$rev_save_status, $rev_id
+				"update %i set saved = %d where id = %d",
+				$table_name, $rev_save_status, $rev_id
 			)
 		);
 	}
 
 	// adjust unix time stamp for local time
 	function adjust_unix_timestamp_for_local($unix_timestamp, $format = 'timestamp'){
-		$mysql_format = get_date_from_gmt( date( 'Y-m-d H:i:s', $unix_timestamp ) );
+		$mysql_format = get_date_from_gmt( gmdate( 'Y-m-d H:i:s', $unix_timestamp ) );
 		return $format === 'timesptamp'
 			? strtotime($mysql_format)
 			: $mysql_format;
@@ -4586,38 +4083,44 @@ class Admin {
 
 		if ( $diff < 60 ) {
 			//$since = $diff . ' secs';
-			$since = sprintf( _n( '%s sec', '%s secs', $diff ), $diff );
+			/* translators: %s: number of seconds */
+			$since = sprintf( _n( '%s sec', '%s secs', $diff, 'microthemer' ), $diff );
 		} elseif ( $diff < HOUR_IN_SECONDS ) {
 			$mins = round( $diff / MINUTE_IN_SECONDS );
 			if ( $mins <= 1 )
 				$mins = 1;
 			/* translators: min=minute */
-			$since = sprintf( _n( '%s min', '%s mins', $mins ), $mins );
+			$since = sprintf( _n( '%s min', '%s mins', $mins, 'microthemer' ), $mins );
 		} elseif ( $diff < DAY_IN_SECONDS && $diff >= HOUR_IN_SECONDS ) {
 			$hours = round( $diff / HOUR_IN_SECONDS );
 			if ( $hours <= 1 )
 				$hours = 1;
-			$since = sprintf( _n( '%s hour', '%s hours', $hours ), $hours );
+			/* translators: %s: number of hours */
+			$since = sprintf( _n( '%s hour', '%s hours', $hours, 'microthemer' ), $hours );
 		} elseif ( $diff < WEEK_IN_SECONDS && $diff >= DAY_IN_SECONDS ) {
 			$days = round( $diff / DAY_IN_SECONDS );
 			if ( $days <= 1 )
 				$days = 1;
-			$since = sprintf( _n( '%s day', '%s days', $days ), $days );
+			/* translators: %s: number of days */
+			$since = sprintf( _n( '%s day', '%s days', $days, 'microthemer' ), $days );
 		} elseif ( $diff < MONTH_IN_SECONDS && $diff >= WEEK_IN_SECONDS ) {
 			$weeks = round( $diff / WEEK_IN_SECONDS );
 			if ( $weeks <= 1 )
 				$weeks = 1;
-			$since = sprintf( _n( '%s week', '%s weeks', $weeks ), $weeks );
+			/* translators: %s: number of weeks */
+			$since = sprintf( _n( '%s week', '%s weeks', $weeks, 'microthemer' ), $weeks );
 		} elseif ( $diff < YEAR_IN_SECONDS && $diff >= MONTH_IN_SECONDS ) {
 			$months = round( $diff / MONTH_IN_SECONDS );
 			if ( $months <= 1 )
 				$months = 1;
-			$since = sprintf( _n( '%s month', '%s months', $months ), $months );
+			/* translators: %s: number of months */
+			$since = sprintf( _n( '%s month', '%s months', $months, 'microthemer' ), $months );
 		} elseif ( $diff >= YEAR_IN_SECONDS ) {
 			$years = round( $diff / YEAR_IN_SECONDS );
 			if ( $years <= 1 )
 				$years = 1;
-			$since = sprintf( _n( '%s year', '%s years', $years ), $years );
+			/* translators: %s: number of years */
+			$since = sprintf( _n( '%s year', '%s years', $years, 'microthemer' ), $years );
 		}
 		return $since;
 	}
@@ -4732,11 +4235,24 @@ class Admin {
 		// get the full array of revisions
 		global $wpdb;
 		$table_name = $wpdb->prefix . "micro_revisions";
-		$limit = $summary ? ' limit 10' : '';
 		//$revs = $wpdb->get_results("select id, user_action, data_size, date_format(time, '%D %b %Y %H:%i') as datetime");
 		/*$revs = $wpdb->get_results("select id, user_action, data_size, unix_timestamp(time) as unix_timestamp
 				from $table_name order by id desc");*/
-		$revs = $wpdb->get_results("select id, user_action, data_size, time, saved from $table_name order by id desc".$limit);
+		if ($summary) {
+			$revs = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT id, user_action, data_size, time, saved FROM %i ORDER BY id DESC LIMIT %d",
+					$table_name, 10
+				)
+			);
+		} else {
+			$revs = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT id, user_action, data_size, time, saved FROM %i ORDER BY id DESC",
+					$table_name
+				)
+			);
+		}
 		$total_rows = $wpdb->num_rows;
 
 		// if no revisions, explain
@@ -4839,7 +4355,8 @@ class Admin {
                 data-pos="'.$save_rev_pos.'" data-neg="'.$save_rev_neg.'" title="'.$rev_save_title.'"
                 rel="'.$rev->id.'"></span>';
 
-			$niceDate = date('l jS \of F Y H:i:s', $local_timestamp);
+			$niceDate = wp_date('l jS \of F Y H:i:s', $local_timestamp);
+			/* translators: %s: human-readable time difference */
 			$timeOutput = $summary ? $niceDate : sprintf(esc_html__('%s ago', 'microthemer'), $time_ago);
 			// todo need to have live JS time ago
 			//$timeOutput = sprintf(esc_html__('%s ago', 'microthemer'), $time_ago);
@@ -4893,7 +4410,7 @@ class Admin {
         // get the revision
 		global $wpdb;
 		$table_name = $wpdb->prefix . "micro_revisions";
-		$rev = $wpdb->get_row( $wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $rev_key) );
+		$rev = $wpdb->get_row( $wpdb->prepare("SELECT * FROM %i WHERE id = %d", $table_name, $rev_key) );
 
 		// signal that all selectors should be recompiled (to ensure latest data structure)
 		$this->update_preference('manual_recompile_all_css', 1);
@@ -4914,7 +4431,10 @@ class Admin {
 	        $rev->settings = unserialize($rev->settings);
 	        // add css units, mq keys (extra tabs) etc to settings display correctly
 	        $filtered_json = $this->filter_incoming_data('restore', $rev->settings);
-	        update_option($this->optionsName, $filtered_json);
+	        $stored_options = $this->options;
+	        $this->options = $filtered_json;
+	        $this->keepStoredCustomCode($stored_options);
+	        update_option($this->optionsName, $this->options);
 	        $this->options = get_option($this->optionsName); // this DB interaction doesn't seem necessary...
         }
 
@@ -5102,7 +4622,7 @@ class Admin {
 		return !empty($this->preferences['allow_scss']);
 	}
 
-	// check if a file exists in /micro-themes dir (various different paths are valid with SASS @imports)
+	// check if a file exists in storage folder (various different paths are valid with SASS @imports)
 	function check_sass_file_exists($path){
 
 		$files = $this->file_structure;
@@ -5169,9 +4689,11 @@ class Admin {
 	}
 
 	// process preferences form
+	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by microthemer_ajax_actions() via check_ajax_referer('mcth_simple_ajax', '_wpnonce'), which gates this whole call path.
 	function process_preferences_form(){
 
-		$pref_array = $this->deep_unescape($_POST['tvr_preferences'], 0, 1, 1);
+		// unslashed and sanitized per field (Schemas::preferencesForm)
+		$pref_array = $this->posted_preferences_form();
 		$pref_array['num_saves'] = ++$this->preferences['num_saves'];
 
 		if (empty($this->preferences['auto_publish_mode'])){
@@ -5197,7 +4719,7 @@ class Admin {
 
 		// if they changed !important or SCSS settings do full recompile
 		if ($this->preference_settings_changed(['css_important', 'allow_scss'],
-			$this->preferences, $_POST['tvr_preferences'])){
+			$this->preferences, $pref_array)){
 			$pref_array['manual_recompile_all_css'] = 1;
 		}
 
@@ -5230,6 +4752,7 @@ class Admin {
                     )
                 )
         ));
+	// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	// update the preferences array with the new units when the user saves the preferences
@@ -5277,16 +4800,28 @@ class Admin {
 	}
 
 	// update the iframe preview url
-	function maybe_set_preview_url($nonce_key = false){
+	function maybe_set_preview_url($nonce_action = 'mt-preview-nonce'){
+
+		// this saves preview preferences, so the request must carry a valid nonce for the
+		// caller's context (mt-preview-nonce for toolbar/UI links, mcth_simple_ajax for ajax)
+		if ( ! isset( $_REQUEST['_wpnonce'] )
+		     || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['_wpnonce'] ) ), $nonce_action ) ) {
+			wp_die( 'Security check failed' );
+		}
 
 		// update preview url in DB and get title and post/page ID
 		$pref_array = array();
-		$url = strip_tags(rawurldecode($_GET['mt_preview_url']));
+		// Live demo sends the exact sentinel "1"; avoid numeric coercion and detect it before esc_url_raw().
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- unslashed and sanitized on this same line; rawurldecode() sits in between only so percent-encoded characters survive, which the sniff cannot follow
+		$raw_preview_url = rawurldecode(wp_unslash($_GET["mt_preview_url"]));
+		$url = ($raw_preview_url === '1') ? '1' : esc_url_raw($raw_preview_url);
 		$label = isset($_GET['mt_path_label'])
-			? strip_tags(rawurldecode($_GET['mt_path_label']))
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- unslashed and sanitized on this same line; rawurldecode() sits in between only so percent-encoded characters survive, which the sniff cannot follow
+			? sanitize_text_field(rawurldecode(wp_unslash($_GET["mt_path_label"])))
 			: false;
 		$item_id = isset($_GET['mt_item_id'])
-			? strip_tags(rawurldecode($_GET['mt_item_id']))
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- unslashed and sanitized on this same line; rawurldecode() sits in between only so percent-encoded characters survive, which the sniff cannot follow
+			? sanitize_text_field(rawurldecode(wp_unslash($_GET["mt_item_id"])))
 			: false;
 
 		$pref_array['preview_url'] = Common::strip_page_builder_and_other_params($url);
@@ -5294,17 +4829,18 @@ class Admin {
 		$pref_array['preview_item_id'] = $item_id;
 
 		// path won't be set if this is triggered after user clicked WP Toolbar MT link
-		if (!empty($_GET['mt_preview_path'])){
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- unslashed here, validated and sanitized by same_site_path(); rawurldecode() sits in between only so percent-encoded characters survive
+		$path = !empty($_GET['mt_preview_path']) ? $this->same_site_path(rawurldecode(wp_unslash($_GET['mt_preview_path']))) : '';
+		if ($path !== ''){
 
-			// get path and strip builder and other params
-			$path = strip_tags(rawurldecode($_GET['mt_preview_path']));
+			// strip builder and other params
 			$path = Common::strip_page_builder_and_other_params($path);
 
 			//wp_die('$path: '.$_GET['mt_preview_path']);
 
 			// if the preview URL is 1, we should use the site_url with the path
 			// this is used on the live demo
-			if (intval($url) === 1){
+			if ($url === '1'){
 				$pref_array['preview_url'] = untrailingslashit($this->site_url).$path;
 			}
 
@@ -5374,14 +4910,6 @@ class Admin {
 		return false;
 	}
 
-	// check if we're on the demo site
-	function is_demo_site(){
-		return preg_match(
-			'/^https?:\/\/(livedemo|beta)\.themeover\.(com|local)/',
-			$this->site_url
-		);
-	}
-
 	// Microthemer UI page
 	function microthemer_ui_page() {
 
@@ -5405,13 +4933,16 @@ class Admin {
                 $prefix = 'amender_';
 
                 // if they provided an import file, load that
+                // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
                 if (!empty($_FILES['preferences_file']['name'])){
 
+	                // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
 	                $filePath = $_FILES['preferences_file']['tmp_name'];
 	                $fileSize = filesize($filePath);
 	                $fileInfo = finfo_open(FILEINFO_MIME_TYPE);
 	                $fileType = finfo_file($fileInfo, $filePath);
-                    $ext = $this->get_extension($_FILES['preferences_file']['name']);
+                    // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
+                    $ext = $this->get_extension(sanitize_file_name(wp_unslash($_FILES['preferences_file']['name'])));
                     $max = ' (max '.(floor($this->maxUploadPrefSize / 1000000)).'MB)';
 
                     // validate
@@ -5421,6 +4952,7 @@ class Admin {
 	                    $error = 'File size too big' . $max;
 	                } elseif ($fileType !== 'application/json' || $ext !== 'json'){
 		                $error = 'Incorrect file type. You must upload a .json file';
+	                // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
 	                } elseif ($_FILES['preferences_file']['error']){
 	                    $phpFileUploadErrors = array(
 		                    1 => 'The uploaded file exceeds the upload_max_filesize directive in php.ini',
@@ -5433,7 +4965,9 @@ class Admin {
 	                    );
 
                         // allow for PHP to add more error codes without failing
+                        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
                         if (isset($phpFileUploadErrors[ $_FILES['preferences_file']['error'] ])){
+	                        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES tmp_name/error/size are set by PHP, not sent by the client; the client-supplied name is passed through sanitize_file_name() where it is used
 	                        $error = $phpFileUploadErrors[ $_FILES['preferences_file']['error'] ];
                         } else {
 	                        $error = 'Unknown error';
@@ -5476,15 +5010,15 @@ class Admin {
                 // else save the handful of preferences
                 else {
 
-                    foreach ($_POST['tvr_preferences'] as $key => $value){
-                        switch($key){
-                            case 'buyer_email':
-	                        case $prefix . 'buyer_email':
-	                            $pref_array[$key] = strip_tags($value);
-                                break;
-                            default:
-	                            $pref_array[$key] = intval($value);
-                                break;
+                    $setup_prefs = isset($_POST['tvr_preferences']) && is_array($_POST['tvr_preferences'])
+                        ? map_deep(wp_unslash($_POST['tvr_preferences']), 'sanitize_text_field')
+                        : array();
+                    foreach ($setup_prefs as $key => $value){
+                        // text fields added to the setup form by extension components
+                        if ($this->extFilter('setup_text_field', false, $key)){
+                            $pref_array[sanitize_key($key)] = sanitize_text_field($value);
+                        } else {
+                            $pref_array[sanitize_key($key)] = intval($value);
                         }
                     }
 
@@ -5498,31 +5032,14 @@ class Admin {
                 $pref_array['reporting'] = $this->preferences['reporting'];
 				$pref_array['reporting']['permission'] = array();
                 if (isset($_POST['reporting_permission']) && is_array($_POST['reporting_permission'])){
-	                foreach ($_POST['reporting_permission'] as $key => $value){
-		                $pref_array['reporting']['permission'][$key] = intval($value);
+	                foreach (array_map('intval', wp_unslash($_POST['reporting_permission'])) as $key => $value){
+		                $pref_array["reporting"]["permission"][sanitize_key($key)] = $value;
 	                }
                 }
 				$this->savePreferences($pref_array);
 
-				// try to unlock if they supply a new Micerothemer license key
-                if (!empty($_POST['tvr_preferences']['buyer_email'])){
-	                $response = $this->get_validation_response($_POST['tvr_preferences']['buyer_email']);
-                    if (!$response){
-                        $error = 'Unlock fail';
-                    }
-                }
-
-				// try to unlock if they supply a new Amender license key
-				if (!empty($_POST['tvr_preferences'][$prefix . 'buyer_email'])){
-					$response = $this->get_validation_response(
-                        $_POST['tvr_preferences'][$prefix . 'buyer_email'],
-                        'unlock',
-						$prefix
-                    );
-					if (!$response){
-						$error = 'Unlock fail';
-					}
-				}
+				// extension components process their setup fields (an error reopens the setup screen)
+				$error = $this->extFilter('setup_saved', $error, $prefix);
 
 				// add to revision table
                 $save_data = '';
@@ -5549,25 +5066,11 @@ class Admin {
 
 			}
 
-			// validate email todo make this an ajax request, with user feedback
-			/*if (isset($_POST['tvr_ui_validate_submit'])) {
-
-				check_ajax_referer( 'tvr_validate_form', 'validate_nonce' );
-
-				// tvr_validate_form
-				$this->get_validation_response($_POST['tvr_preferences']['buyer_email']);
-			}*/
-
-            // make it possible to set an invalid license key
-			$this->invalidLic();
+			$this->extAction('ui_request');
 
 			// if user navigates from front to MT via toolbar, set previous front page in preview
+			// (nonce verified inside maybe_set_preview_url — fails early on missing/invalid)
 			if (isset($_GET['mt_preview_url'])) {
-
-				if (!$this->is_demo_site() && !wp_verify_nonce($_REQUEST['_wpnonce'], 'mt-preview-nonce')) {
-					die( 'Security check failed' );
-				}
-
 				$this->maybe_set_preview_url();
 			}
 
@@ -5583,9 +5086,7 @@ class Admin {
 			// ensure Preview URL matches HTTPS in admin
 			$this->ensure_iframe_protocol_matches_admin();
 
-			// maybe check valid subscription for MT and Amender
-			$this->maybe_check_subscription();
-			$this->maybe_check_subscription($prefix);
+			$this->extAction('before_ui', $prefix);
 
 			// Display user interface
 			include $this->thisplugindir . 'includes/tvr-microthemer-ui.php';
@@ -5639,27 +5140,34 @@ class Admin {
 		// output all help snippets
 		$i = 1;
 		foreach ($propertyOptions as $property_group_name => $prop_array) {
+			$group_url = add_query_arg(
+				array(
+					'page' => $this->docspage,
+					'prop_group' => $property_group_name,
+				),
+				admin_url('admin.php')
+			);
 			$ul_class = $arrow_cls = '';
 			if ($i&1) { $ul_class.= 'odd'; }
 			if ($property_group_name == $cur_prop_group) { $ul_class.= ' show-content'; $arrow_cls = 'on'; }
 			//if ($property_group_name == 'code') continue;
 			?>
-			<ul id="<?php echo $property_group_name; ?>"
-			    class="css-index <?php echo $ul_class; ?> accordion-menu">
+			<ul id="<?php echo esc_attr($property_group_name); ?>"
+			    class="css-index <?php echo esc_attr($ul_class); ?> accordion-menu">
 
 				<li class="css-group-heading accordion-heading">
 
 					<?php
-					echo $this->iconFont(str_replace('_', '-', $property_group_name), array(
+					echo wp_kses( $this->iconFont(str_replace('_', '-', $property_group_name), array(
 						'class' => 'no-click pg-icon',
-					));
-					echo $this->iconFont('chevron-right', array(
+					)), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
+					echo wp_kses( $this->iconFont('chevron-right', array(
 						'class' => 'menu-arrow accordion-menu-arrow '.$arrow_cls,
 						//'title' => 'Open/close group'
-					));
+					)), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 					?>
 
-					<span class="text-for-group"><?php echo $this->property_option_groups[$property_group_name]; ?></span>
+					<span class="text-for-group"><?php echo esc_html($this->property_option_groups[$property_group_name]); ?></span>
 
 					<?php
 
@@ -5668,20 +5176,21 @@ class Admin {
 
 				<?php
 				foreach ($prop_array as $property_id => $array) {
+					$property_url = add_query_arg('prop', $property_id, $group_url);
 					$li_class = '';
 					$cssf = str_replace('_', '-', $property_id);
 					$icon_name = !empty($array['icon-name']) ? $array['icon-name'] : $cssf;
 					if ($property_id == $cur_property) { $li_class.= 'current'; }
 					//if (!empty($array['field-class'])) { $li_class.= ' '.$array['field-class']; }
 					?>
-				<li class="property-item accordion-item <?php echo $li_class; ?>">
-					<a href="<?php echo 'admin.php?page=' . $this->docspage; ?>&prop=<?php echo $property_id; ?>&prop_group=<?php echo $property_group_name; ?>">
+				<li class="property-item accordion-item <?php echo esc_attr($li_class); ?>">
+					<a href="<?php echo esc_url($property_url); ?>">
 
-						<span class="option-text"><?php echo $array['label']; ?></span>
+						<span class="option-text"><?php echo esc_html($array['label']); ?></span>
 						<?php
-						echo $this->iconFont($icon_name, array(
+						echo wp_kses( $this->iconFont($icon_name, array(
 							'class' => 'no-click'
-						));
+						)), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 						?>
 					</a>
 
@@ -5710,14 +5219,14 @@ class Admin {
 			$ui_class = '';
 			require_once($this->thisplugindir . 'includes/common-inline-assets.php');
 
-			echo '
+			echo wp_kses( '
                     <div id="tvr" class="wrap tvr-wrap">
-                        <span id="ajaxUrl" rel="' . $this->wp_ajax_url.'"></span>
-                        <span id="returnUrl" rel="admin.php?page=' . $this->preferencespage.'"></span>
+                        <span id="ajaxUrl" rel="' . esc_attr($this->wp_ajax_url).'"></span>
+                        <span id="returnUrl" rel="' . esc_attr('admin.php?page='.$this->preferencespage).'"></span>
                         <div id="pref-standalone">
                             <div id="full-logs">
                                 '.$this->display_log().'
-                            </div>';
+                            </div>', \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 			include $this->thisplugindir . 'includes/tvr-microthemer-preferences.php';
 			echo '
                         </div>';
@@ -5751,16 +5260,16 @@ class Admin {
 			require_once($this->thisplugindir . 'includes/common-inline-assets.php');
 
 			echo '
-                    <div id="tvr" class="wrap tvr-wrap '.$ui_class.'">
-                        <span id="ajaxUrl" rel="'.$this->wp_ajax_url.'"></span>
-                        <span id="returnUrl" rel="admin.php?page=' . $this->preferencespage.'"></span>
+                    <div id="tvr" class="wrap tvr-wrap '.esc_attr($ui_class).'">
+                        <span id="ajaxUrl" rel="'.esc_attr($this->wp_ajax_url).'"></span>
+                        <span id="returnUrl" rel="'.esc_attr('admin.php?page='.$this->preferencespage).'"></span>
                         <div id="preview-standalone">';
 
 			include $this->thisplugindir . 'includes/tvr-microthemer-preview-wrap.php';
 
 			// Detach certain UI elements from the main window
 			// and move them to to the detached when active
-			echo '
+			echo wp_kses( '
                             <div id="mt-context-menu" 
                             class="detached-alt-controls detached-mt-context-menu" 
                             data-popupName="contextMenu">'.
@@ -5768,7 +5277,7 @@ class Admin {
 			     // selector modifier options (must come before targeting options for fav filters)
 			     $this->context_menu_content(array(
 				     'base_key' => 'suggestions',
-				     'title' => esc_html__('Targeting options', 'microthemer'),
+				     'title' => __('Targeting options', 'microthemer'),
 				     'sections' => array(
 					     $this->targeting_suggestions('menu')
 				     )
@@ -5778,7 +5287,7 @@ class Admin {
                         
                  <div id="advanced-wizard" class="detached-alt-controls detached-advanced-wizard"></div>
                             
-                 <div id="style-components"></div>';
+                 <div id="style-components"></div>', \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 
                  echo '
                 </div>
@@ -5803,7 +5312,8 @@ class Admin {
 			<p class='need-help'><b><?php esc_html_e('Need Help?', 'microthemer'); ?></b>
 				<?php echo wp_kses(
 					sprintf(
-						__('Browse Our <span %s>Video Guides</span> and <span %s>Tutorials</span> or <span %s>Search Our Forum</span>', 'microthemer'),
+						/* translators: 1: HTML attributes for Video Guides span, 2: HTML attributes for Tutorials span, 3: HTML attributes for Search Our Forum span */
+						__('Browse Our <span %1$s>Video Guides</span> and <span %2$s>Tutorials</span> or <span %3$s>Search Our Forum</span>', 'microthemer'),
 						'class="help-trigger" rel="' . $this->thispluginurl.'includes/help-videos.php',
 						'class="help-trigger" rel="' . $this->thispluginurl.'includes/tutorials.php',
 						'class="help-trigger" rel="' . $this->thispluginurl.'includes/search-forum.php'
@@ -5820,7 +5330,7 @@ class Admin {
 			// in Chrome and Edge - haven't tested Safari yet
 			http://php.net/manual/en/function.get-browser.php */
 	function check_browser(){
-		$u_agent = $_SERVER['HTTP_USER_AGENT'];
+		$u_agent = isset($_SERVER["HTTP_USER_AGENT"]) ? sanitize_text_field(wp_unslash($_SERVER["HTTP_USER_AGENT"])) : "";
 		$ub = $u_agent; //'unknown-browser';
 
 		//return $ub;
@@ -5883,11 +5393,11 @@ class Admin {
 					$safe_mode = 'Off';
 				}
 				?>
-				&nbsp;Operating System:<br />&nbsp;<b><?php echo PHP_OS; ?> (<?php echo (PHP_INT_SIZE * 8) ?> Bit)</b><br />
+				&nbsp;Operating System:<br />&nbsp;<b><?php echo esc_html(PHP_OS); ?> (<?php echo (PHP_INT_SIZE * 8) ?> Bit)</b><br />
 
-				&nbsp;MySQL Version:<br />&nbsp;<b><?php echo $sql_version; ?></b><br />
-				&nbsp;PHP Version:<br />&nbsp;<b><?php echo PHP_VERSION; ?></b><br />
-				&nbsp;PHP Safe Mode:<br />&nbsp;<b><?php echo $safe_mode; ?></b><br />
+				&nbsp;MySQL Version:<br />&nbsp;<b><?php echo esc_html($sql_version); ?></b><br />
+				&nbsp;PHP Version:<br />&nbsp;<b><?php echo esc_html(PHP_VERSION); ?></b><br />
+				&nbsp;PHP Safe Mode:<br />&nbsp;<b><?php echo esc_html($safe_mode); ?></b><br />
 			<?php
 			}
 			*/
@@ -5934,11 +5444,11 @@ class Admin {
 					$this->file_structure = array();
 				}
 
-				// check for micro-themes folder, create if doesn't already exist
+				// check for storage folder, create if doesn't already exist
 				if ( !is_dir($dir_name) ) {
 					if ( !wp_mkdir_p($dir_name) ) {
 						$this->log(
-							esc_html__('/micro-themes folder error', 'microthemer'),
+							esc_html__('Storage folder error', 'microthemer'),
 							'<p>' .
 							sprintf(
 								esc_html__('WordPress was not able to create the %s directory.', 'microthemer'),
@@ -5993,18 +5503,51 @@ class Admin {
 			}*/
 
 
+	// a root-relative URL path on this site (e.g. /about/?x=1), sanitized, or '' for anything else
+	function same_site_path($path){
+
+		$path = trim((string) $path);
+
+		if ($path === '' || $path[0] !== '/' || strpos($path, '//') === 0 || strpos($path, '\\') !== false){
+			return '';
+		}
+
+		$path = esc_url_raw($path);
+
+		return ($path === '' || wp_parse_url($path, PHP_URL_HOST)) ? '' : $path;
+	}
+
+	// the folder plugins are installed in (this plugin's parent folder)
+	function plugins_dir(){
+		return wp_normalize_path(dirname(untrailingslashit($this->thisplugindir)));
+	}
+
+	// a file path shortened for notifications: relative to the folder that holds uploads and plugins
+	function display_path($path){
+
+		$path = wp_normalize_path($path);
+		$uploads = wp_upload_dir(null, false);
+
+		// wp-content first, as a multisite's uploads folder is a site's folder under uploads/sites
+		foreach (array(wp_normalize_path(WP_CONTENT_DIR), dirname(wp_normalize_path($uploads['basedir'])), dirname($this->plugins_dir())) as $base){
+			if ($base && strpos($path, $base . '/') === 0){
+				return substr($path, strlen($base));
+			}
+		}
+
+		return '/' . basename($path);
+	}
+
 	// display abs file path relative to the root dir (for notifications)
 	function root_rel($path, $markup = true, $url = false, $actual_path = false) {
 
-		// normalise \/ slashes
-		$abspath_fs = untrailingslashit(str_replace('\\', '/', ABSPATH));
 		$path = str_replace('\\', '/', $path);
 
 		if ($markup == true) {
-			$rel_path = '<b><i>/' . str_replace($abspath_fs, '', $path) . '</i></b>';
+			$rel_path = '<b><i>' . esc_html($this->display_path($path)) . '</i></b>';
 		}
 		else {
-			$rel_path = str_replace($abspath_fs, '', $path);
+			$rel_path = $this->display_path($path);
 		}
 
 		// root relative url (works on mixed ssl sites and if WP is in a subfolder of the doc root - getenv())
@@ -6072,7 +5615,11 @@ class Admin {
 			// compare atts against a white list (rather than atts =>)
 			$attPattern = '/^(id|class|style|title|href|target|data-.+?|rel|preserveAspectRatio)$/';
 			if (!is_null($value) && preg_match($attPattern, $key)){
-				$atts_string.= $key . '="'.$value.'" ';
+				// Client-side URL templates need their {placeholder}; esc_url() strips the braces.
+				$is_url_template = $key === 'href' && strpos((string) $value, '{') !== false;
+				$escaped_value = $key === 'href' && !$is_url_template ? esc_url($value) : esc_attr($value);
+				$escaped_key = strpos($key, 'data-') === 0 ? 'data-'.sanitize_key(substr($key, 5)) : $key;
+				$atts_string.= $escaped_key . '="'.$escaped_value.'" ';
 			}
 		}
 
@@ -6106,6 +5653,7 @@ class Admin {
 			// output an icon font or just the classes / atts
 			case 'f':
 				$tag = !empty($config['tag']) ? $config['tag'] : 'span';
+				$tag = in_array($tag, array('a', 'button', 'div', 'i', 'span'), true) ? $tag : 'span';
 				if (!empty($config['onlyClass'])){
 					$icon = $config['class'];
 				} else if (!empty($config['onlyAtts'])){
@@ -6159,7 +5707,7 @@ class Admin {
 		// maybe add some text alongside the icon
 		if (!empty($config['adjacentText'])){
 			$text_atts_string = $this->array_to_html_atts($config['adjacentText']);
-			$icon.= '<span '.$text_atts_string.'>'.$config['adjacentText']['text'].'</span>';
+			$icon.= '<span '.$text_atts_string.'>'.esc_html($config['adjacentText']['text']).'</span>';
 		}
 
 		// maybe wrap icon with a div
@@ -6198,10 +5746,71 @@ class Admin {
 
 	// get extension
 	function get_extension($file) {
-		$tmp = explode('?', $file);
-		$file = $tmp[0];
+		// strip the query string and fragment, matching how local_path_from_url() and get_safe_url() name files
+		$file = preg_replace('/[#?].*$/', '', (string) $file);
 		$ext = strtolower(substr($file, strrpos($file, '.') + 1));
 		return $ext;
+	}
+
+	/**
+	 * Map a same-site URL to a filesystem path under known WP/MT directories.
+	 * Returns the path even if the file is missing (for existence checks).
+	 * Avoids HTTP fetches that fail on local SSL (e.g. Herd .test certs).
+	 */
+	function local_path_from_url($uri) {
+
+		$uri = preg_replace('/[#?].*$/', '', (string) $uri);
+		if ($uri === '') {
+			return false;
+		}
+
+		// Protocol-relative → absolute
+		if (strpos($uri, '//') === 0) {
+			$uri = (is_ssl() ? 'https:' : 'http:') . $uri;
+		}
+
+		// Root-relative → absolute on this site's host
+		elseif (strpos($uri, '/') === 0) {
+			$uri = preg_replace('#^(https?://[^/]+).*$#i', '$1', home_url()) . $uri;
+		}
+
+		if (!preg_match('/^https?:\/\//i', $uri)) {
+			return false;
+		}
+
+		// storage, media library, themes and plugins (anything else is fetched over HTTP)
+		$uploads = wp_upload_dir(null, false);
+		$url_bases = array(
+			untrailingslashit($this->micro_root_url) => untrailingslashit(wp_normalize_path($this->micro_root_dir)),
+			untrailingslashit($uploads['baseurl']) => untrailingslashit(wp_normalize_path($uploads['basedir'])),
+			untrailingslashit(get_theme_root_uri()) => untrailingslashit(wp_normalize_path(get_theme_root())),
+			untrailingslashit(plugins_url()) => $this->plugins_dir(),
+		);
+
+		// Match regardless of http vs https (local stacks often redirect)
+		$expanded = array();
+		foreach ($url_bases as $url_base => $dir_base) {
+			$expanded[$url_base] = $dir_base;
+			if (stripos($url_base, 'http://') === 0) {
+				$expanded['https://' . substr($url_base, 7)] = $dir_base;
+			} elseif (stripos($url_base, 'https://') === 0) {
+				$expanded['http://' . substr($url_base, 8)] = $dir_base;
+			}
+		}
+
+		foreach ($expanded as $url_base => $dir_base) {
+			if (stripos($uri, $url_base . '/') !== 0 && strcasecmp($uri, $url_base) !== 0) {
+				continue;
+			}
+			$rel = ltrim(substr($uri, strlen($url_base)), '/');
+			$rel = wp_normalize_path(rawurldecode($rel));
+			if ($rel === '' || preg_match('/(^|\/)\.\.(\/|$)/', $rel)) {
+				continue;
+			}
+			return $dir_base . '/' . $rel;
+		}
+
+		return false;
 	}
 
 	// use wp_remote_fopen with some validation checks
@@ -6222,32 +5831,70 @@ class Admin {
 		// bail if not correct extension
 		if (!empty($config['allowed_ext']) && !in_array($this->get_extension($uri), $config['allowed_ext'])) {
 			$this->log(
-				esc_html__('Disallowed file extension', 'microthemer') . ':' . $this->get_extension($uri),
+				esc_html__('Disallowed file extension', 'microthemer') . ':' . esc_html($this->get_extension($uri)),
 				'<p>Please enter an URL with one of the following extensions: '.
-				implode(', ', $config['allowed_ext']). '</p>',
+				esc_html(implode(', ', $config['allowed_ext'])). '</p>',
 				'error'
 			);
 			return false;
 		}
 
-		// check if file exists
-		if (!$this->url_exists($uri)){
-			return false;
-		}
+		// Prefer local filesystem for same-site URLs (avoids local SSL / redirect issues)
+		$local_path = $this->local_path_from_url($uri);
+		if ($local_path !== false) {
+			// the file actually read must have an allowed extension, not just the URL text
+			if (!empty($config['allowed_ext'])
+			    && !in_array($this->get_extension($local_path), $config['allowed_ext'], true)) {
+				$this->log(
+					esc_html__('Disallowed file extension', 'microthemer'),
+					'<p>' . esc_html($uri) . '</p>',
+					'error'
+				);
+				return false;
+			}
+			if (!is_readable($local_path) || !is_file($local_path)) {
+				$this->log(
+					esc_html__('File does not exist', 'microthemer'),
+					'<p>'.esc_html($uri).'</p>'
+				);
+				return false;
+			}
+			$r['content'] = file_get_contents($local_path);
+			if ($r['content'] === false || $r['content'] === '') {
+				$this->log(
+					esc_html__('File is empty', 'microthemer'),
+					'<p>'.esc_html($uri).'</p>',
+					$msg_type
+				);
+				return false;
+			}
+		} else {
+			// check if file exists
+			if (!$this->url_exists($uri)){
+				return false;
+			}
 
-		// it seems ok so get contents of file into string
-		if (!$r['content'] = wp_remote_fopen($uri)){
-			$this->log(
-				esc_html__('File is empty', 'microthemer'),
-				'<p>'.esc_html($uri).'</p>',
-				$msg_type
-			);
-			return false;
+			// it seems ok so get contents of file into string
+			if (!$r['content'] = wp_remote_fopen($uri)){
+				$this->log(
+					esc_html__('File is empty', 'microthemer'),
+					'<p>'.esc_html($uri).'</p>',
+					$msg_type
+				);
+				return false;
+			}
 		}
 
 		// do we need to save as file in tmp dir?
 		if (!empty($config['tmp_file'])){
-			$r['tmp_file'] = $this->thistmpdir . basename($uri);
+			// sanitize_file_name() neutralises double extensions like x.php.png; the extension
+			// must still be one the caller allowed
+			$tmp_name = sanitize_file_name(basename(preg_replace('/[#?].*$/', '', $uri)));
+			if ($tmp_name === '' || (!empty($config['allowed_ext'])
+			    && !in_array($this->get_extension($tmp_name), $config['allowed_ext'], true))){
+				return false;
+			}
+			$r['tmp_file'] = $this->thistmpdir . $tmp_name;
 			$this->write_file($r['tmp_file'], $r['content']);
 		}
 
@@ -6256,12 +5903,26 @@ class Admin {
 
 	// check if an URL exists (WP can return 404 custom page giving illusion file exists)
 	function url_exists($url) {
-		$response = wp_remote_get( esc_url_raw($url) );
-		// my half-done ssl on localhost fails here, so warn others
+
+		// Same-site: check disk first (Herd/local SSL often breaks wp_remote_get)
+		$local_path = $this->local_path_from_url($url);
+		if ($local_path !== false) {
+			if (is_file($local_path) && is_readable($local_path)) {
+				return true;
+			}
+			$this->log(
+				esc_html__('File does not exist', 'microthemer'),
+				'<p>'.esc_html($url).'</p>'
+			);
+			return false;
+		}
+
+		// wp_safe_remote_get rejects internal/loopback targets (SSRF); same-site URLs were handled from disk above
+		$response = wp_safe_remote_get( esc_url_raw($url) );
 		if ( is_wp_error( $response ) ) {
 			$str = '';
 			foreach ($response->errors as $key => $err_arr){
-				$str.= '<p>'.$key.': '.implode(', ', $err_arr).'</p>';
+				$str.= '<p>'.esc_html($key).': '.esc_html(implode(', ', $err_arr)).'</p>';
 			}
 			$this->log(
 				esc_html__('Could not get file', 'microthemer'),
@@ -6611,8 +6272,17 @@ class Admin {
 	 ***/
 
 	// ui dialog html (start)
-	function start_dialog($id, $heading, $class = '', $tabs = array() ) {
+	// $sub_heading: optional link after the heading, e.g.
+	// array('text' => 'Skip setup', 'link_class' => 'close-dialog', 'class' => 'mt-skip-setup')
+	function start_dialog($id, $heading, $class = '', $tabs = array(), $sub_heading = array() ) {
 		$content_class = '';
+
+		$sub_heading_html = '';
+		if (!empty($sub_heading['text'])){
+			$sub_heading_html = '<span class="dialog-sub-heading '.esc_attr($sub_heading['class'] ?? '').'"> - '
+				. '<span class="link '.esc_attr($sub_heading['link_class'] ?? '').'">'.esc_html($sub_heading['text']).'</span>'
+				. '</span>';
+		}
 		// set dialog specific classes
 		if ($id != 'manage-design-packs' and $id != 'program-docs' and $id != 'display-css-code'){
 			$content_class.= 'scrollable-area';
@@ -6627,7 +6297,6 @@ class Admin {
 
 		$icons = array( // todo
 			'mt-initial-setup' => 'box-open',
-			'unlock-microthemer' => 'unlock-alt',
 			'display-preferences' => 'cog',
 			'edit-media-queries' => 'devices',
 			'mt-enqueue-js' => 'js',
@@ -6642,14 +6311,17 @@ class Admin {
 			'view-pack-file' => 'view-code'
 		);
 
-		$html = '<div id="'.$id.'-dialog" class="tvr-dialog '.$class.'">
+		// dialogs added by extension components
+		$icons = $this->extFilter('dialog_icons', $icons);
+
+		$html = '<div id="'.esc_attr($id).'-dialog" class="tvr-dialog '.esc_attr($class).'">
 				<div class="dialog-main">
 					<div class="dialog-inner">
 						<div class="dialog-header">
 						    '.$this->iconFont($icons[$id], array(
 				'class' => 'dialog-icon'
 			)).'
-							<span class="text">'.$heading.'</span>
+							<span class="text">'.esc_html($heading).$sub_heading_html.'</span>
 							<span class="dialog-status"><span class="dialog-status-inner"></span></span>
 							 '.$this->iconFont('times-circle-regular', array(
 				'class' => 'close-dialog'
@@ -6668,8 +6340,8 @@ class Admin {
 			$html.='
 					<div class="dialog-tabs query-tabs">
 						<input class="dialog-focus" type="hidden"
-						name="tvr_mcth[non_section]['.$dialog_tab_param.']"
-						value="'.$active_tab.'" />';
+						name="tvr_mcth[non_section]['.esc_attr($dialog_tab_param).']"
+						value="'.esc_attr($active_tab).'" />';
 
 			// maybe add functionality to remember pref tab at a later date.
 			for ($i = 0; $i < count($tabs); $i++) {
@@ -6694,23 +6366,23 @@ class Admin {
 
 				$html .= '
 							<span class="' . ($i == $active_tab ? 'active' : '' )
-				         . ' mt-tab dialog-tab dialog-tab-'.$i.' dialog-tab-'.$tab_class.'" rel="'.$i.'">
-								' . $tab_name . '
+				         . ' mt-tab dialog-tab dialog-tab-'.(int) $i.' dialog-tab-'.esc_attr($tab_class).'" rel="'.(int) $i.'">
+								' . esc_html($tab_name) . '
 							</span>';
 			}
 			$html .= '
 					</div>';
 		}
-		$html .= '<div class="dialog-content '.$content_class.'">';
+		$html .= '<div class="dialog-content '.esc_attr($content_class).'">';
 		return $html;
 	}
 
 	function dialog_button($button_text, $type, $class, $title = ''){
-		$tAttr = $title ? 'title="'.$title.'"' : '';
+		$tAttr = $title ? 'title="'.esc_attr($title).'"' : '';
 		if ($type == 'span'){
-			$button = '<span class="tvr-button dialog-button '.$class.'" '.$tAttr.'>'.$button_text.'</span>';
+			$button = '<span class="tvr-button dialog-button '.esc_attr($class).'" '.$tAttr.'>'.esc_html($button_text).'</span>';
 		} else {
-			$button = '<input name="tvr_'.strtolower(str_replace('-', '_', $class)).'_submit"
+			$button = '<input name="tvr_'.esc_attr(strtolower(str_replace('-', '_', $class))).'_submit"
 					type="submit" value="'. esc_attr($button_text) .'"
 					class="tvr-button dialog-button" '.$tAttr.' />';
 		}
@@ -6736,11 +6408,11 @@ class Admin {
 	// output clear icon for section, selector, tab, or pg
 	function clear_icon($level, $extra = false){
 
-		$title = esc_attr__('Clear', 'microthemer') .  ' ' . $this->level_map[$level];
+		$title = __('Clear', 'microthemer') .  ' ' . (isset($this->level_map[$level]) ? $this->level_map[$level] : $level);
 
-		$data_att = $extra ? 'data-'.$extra['key'].'="'.$extra['value'].'"' : '';
+		$data_att = $extra ? 'data-'.sanitize_key($extra['key']).'="'.esc_attr($extra['value']).'"' : '';
 
-		return '<span class="'.$this->iconFont('eraser', array('onlyClass' => 1)).' clear-icon" title="'.$title.'" data-input-level="'.$level.'" '.$data_att.'></span>';
+		return '<span class="'.esc_attr($this->iconFont('eraser', array('onlyClass' => 1))).' clear-icon" title="'.esc_attr($title).'" data-input-level="'.esc_attr($level).'" '.$data_att.'></span>';
 	}
 
 
@@ -6879,7 +6551,7 @@ class Admin {
                 </span>
              </span>
 			
-			 '.$this->snippet_dependency_table() .'
+			 '.($this->moduleUI ? $this->moduleUI->snippet_dependency_table() : '') .'
  
         </div>' .
 
@@ -6928,13 +6600,14 @@ class Admin {
 			$title = $pos;
 		}
 
-		$id = $id ? 'id="'.$id.'"' : '';
+		$id = $id ? 'id="'.esc_attr($id).'"' : '';
 
 		// determine tagname
 		$tag = !empty($config['tag']) ? $config['tag'] : 'span';
+		$tag = in_array($tag, array('button', 'div', 'label', 'li', 'span'), true) ? $tag : 'span';
 
 		// css_filter needs to pass
-		$pref_sub_key = !empty($config['pref_sub_key']) ? 'data-pref_sub_key="'.$config['pref_sub_key'].'"' : '';
+		$pref_sub_key = !empty($config['pref_sub_key']) ? 'data-pref_sub_key="'.esc_attr($config['pref_sub_key']).'"' : '';
 
 		// e.g. css modifier has a checkbox
 		$inner_icon = !empty($config['inner_icon']) ? $config['inner_icon'] : '';
@@ -6945,19 +6618,19 @@ class Admin {
 			foreach ($config['dataAtts'] as $dat => $dat_val){
 
 				if ($dat_val !== ''){
-					$dataAtts.= 'data-'.$dat.'="'.$dat_val.'" ';
+					$dataAtts.= 'data-'.sanitize_key($dat).'="'.esc_attr($dat_val).'" ';
 				}
 			}
 		}
 
 		// Note: uit-par may need to be var
 		$html = '
-				<'.$tag.' '.$id.' class="mt-ui-toggle uit-par '.$class.'" title="'.$title.'"
-					  data-pos="'.$pos.'"
-					  data-neg="'.$neg.'"
+				<'.$tag.' '.$id.' class="mt-ui-toggle uit-par '.esc_attr($class).'" title="'.esc_attr($title).'"
+					  data-pos="'.esc_attr($pos).'"
+					  data-neg="'.esc_attr($neg).'"
 					  '.$dataAtts.'
 					  '.$pref_sub_key.'
-					  data-aspect="'.$aspect.'">';
+					  data-aspect="'.esc_attr($aspect).'">';
 
 		// add text if not an icon
 		if (!empty($config['text'])){
@@ -6973,9 +6646,9 @@ class Admin {
 			if (!empty($config['css_filter']['editable'])){
 
 				$ed = $config['css_filter']['editable'];
-				$rel = !empty($ed['combo']) ? 'rel="'.$ed['combo'].'"' : '';
+				$rel = !empty($ed['combo']) ? 'rel="'.esc_attr($ed['combo']).'"' : '';
 				$combo = '<span class="tvr-input-wrap">'.
-				         '<input type="text" class="combobox cssfilter-combo" name="'.$ed['str'].'" '.$rel.'
+				         '<input type="text" class="combobox cssfilter-combo" name="'.esc_attr($ed['str']).'" '.$rel.'
 						value="'.esc_attr(trim($ed['str'], "()")).'" />
 						</span>';
 
@@ -7075,36 +6748,37 @@ class Admin {
 		// icon specific
 		if ($con == 'disabled'){
 			$icon_class.= ' '.$this->iconFont('disable', array('onlyClass' => 1)).' '.$level.'-disabled';
-			$pos_title = esc_attr__('Disable', 'microthemer') .  ' ' . $this->level_map[$level];
-			$neg_title = esc_attr__('Enable', 'microthemer') .  ' ' . $this->level_map[$level];
+			$level_label = isset($this->level_map[$level]) ? $this->level_map[$level] : $level;
+			$pos_title = __('Disable', 'microthemer') .  ' ' . $level_label;
+			$neg_title = __('Enable', 'microthemer') .  ' ' . $level_label;
 			if ($level === 'pgtab'){
 				$data_atts_arr['tab-group'] = $tabGroup;
 			}
 		} elseif ($con == 'chained') {
 			$icon_class.= ' '.$this->iconFont('chain', array('onlyClass' => 1)).' '.$subgroup.'-chained';
-			$pos_title = esc_attr__('Link fields', 'microthemer');
-			$neg_title = esc_attr__('Unlink fields', 'microthemer');
+			$pos_title = __('Link fields', 'microthemer');
+			$neg_title = __('Unlink fields', 'microthemer');
 		} elseif ($con == 'important') {
-			$pos_title = esc_attr__('Add !important', 'microthemer');
-			$neg_title = esc_attr__('Remove !important', 'microthemer');
+			$pos_title = __('Add !important', 'microthemer');
+			$neg_title = __('Remove !important', 'microthemer');
 			$icon_inside = '';
 			$icon_class.= ' ' . $this->iconFont('warning-square', array('onlyClass' => 1));
 		}
 
 		elseif ($con == 'flexitem' || $con == 'griditem') {
 			$icon_class.= ' dynamic-fields-toggle';
-			$pos_title = esc_attr__('Show item fields', 'microthemer');
-			$neg_title = esc_attr__('Show container fields', 'microthemer');
+			$pos_title = __('Show item fields', 'microthemer');
+			$neg_title = __('Show container fields', 'microthemer');
 			// default icon text is 'container' overridden below if toggle is on
 			//$icon_inside = esc_html__('Container', 'microthemer');
 			// if flex item/container toggle
-			$data_atts_arr['text-pos'] = esc_attr__('Item', 'microthemer');
-			$data_atts_arr['text-neg'] = esc_attr__('Container', 'microthemer');
+			$data_atts_arr['text-pos'] = __('Item', 'microthemer');
+			$data_atts_arr['text-neg'] = __('Container', 'microthemer');
 
 		} elseif ($con == 'gradient') {
 			$icon_class.= ' dynamic-fields-toggle';
-			$pos_title = esc_attr__('Show gradient fields', 'microthemer');
-			$neg_title = esc_attr__('Show background-image fields', 'microthemer');
+			$pos_title = __('Show gradient fields', 'microthemer');
+			$neg_title = __('Show background-image fields', 'microthemer');
 		}
 
 		// generate input if item is on
@@ -7147,7 +6821,7 @@ class Admin {
 				$name = 'tvr_mcth[non_section][important]'.$imp_key.'['.$section_name.']['.$css_selector.']['.$group.']['.$prop.']';
 			}
 
-			$input = '<input class="input-toggle-tracker '.$tracker_class.'" type="hidden" name="'.$name.'" value="1" />';
+			$input = '<input class="input-toggle-tracker '.esc_attr($tracker_class).'" type="hidden" name="'.esc_attr($name).'" value="1" />';
 			$icon_class.= ' active';
 		}
 
@@ -7156,15 +6830,15 @@ class Admin {
 		//$test = 'yes' . implode($data_atts_arr);
 		if (!empty($data_atts_arr)){
 			foreach ($data_atts_arr as $dat => $dat_val){
-				$dataAtts.= 'data-'.$dat.'="'.$dat_val.'" ';
+				$dataAtts.= 'data-'.sanitize_key($dat).'="'.esc_attr($dat_val).'" ';
 			}
 			//$test = 'person';
 			;				}
 
 		// generate icon
-		$icon = '<span '.$icon_id.' class="'.$icon_class.'" title="'.$title.'" data-pos="'.$pos_title.'"
-				data-neg="'.$neg_title.'"  data-input-type="'.$con.'" '.$dataAtts.' 
-							data-input-level="'.$level.'">'.$icon_inside.'</span>';
+		$icon = '<span '.$icon_id.' class="'.esc_attr($icon_class).'" title="'.esc_attr($title).'" data-pos="'.esc_attr($pos_title).'"
+				data-neg="'.esc_attr($neg_title).'"  data-input-type="'.esc_attr($con).'" '.$dataAtts.'
+							data-input-level="'.esc_attr($level).'">'.$icon_inside.'</span>';
 
 		// with feather on tabs, icon and input are output separately
 		if ($con == 'disabled'){
@@ -7294,7 +6968,7 @@ class Admin {
 			if ($subset === 'dialog-footer' and empty($arr2['dialog'])) continue;
 
             // no need for AI option if they don't want AI
-            if ($item_key === 'dock_ai_right' && !empty($this->preferences['disable_ai'])){
+            if ($item_key === 'dock_ai_right' && !$this->aiAvailable()){
                 continue;
             }
 
@@ -7476,9 +7150,14 @@ class Admin {
 		return $data_attr;
 	}
 
+	// the AI panel only exists in AI-enabled builds, and users can turn it off
+	function aiAvailable(){
+		return $this->aiPanel && empty($this->preferences['disable_ai']);
+	}
+
 	function suggested_screen_layouts(){
 
-        $allowAI = empty($this->preferences['disable_ai']);
+        $allowAI = $this->aiAvailable();
 
 		$sm = array(
 			//'expand_device_tabs' => 1,
@@ -7489,7 +7168,7 @@ class Admin {
 			'full_height_left_sidebar' => 1, // this is now the default for CSS icons
 			'dock_folders_left' => 1,
 			'dock_styles_left' => 1,
-			'dock_editor_left' => 1,
+			'dock_editor_left' => $this->hasCodeEditors() ? 1 : 0,
 			'left_sidebar_columns' => 1,
             'right_sidebar_columns' => 1,
 		);
@@ -8544,8 +8223,6 @@ class Admin {
 	// menu section html
 	function menu_section_html($section_name, $array) {
 
-		$section_name = esc_attr($section_name); //=esc
-
 		// get folder display name
 		$display_section_name = $this->get_folder_name_inc_legacy($section_name, $array);
 
@@ -8577,11 +8254,11 @@ class Admin {
 				$sec_class.= ' hasValues';
 			}
 		}
-		$folder_title = esc_attr__("Reorder folder", 'microthemer');
+		$folder_title = __("Reorder folder", 'microthemer');
 
 		ob_start();
 		?>
-		<li id="<?php echo 'strk-'.$section_name; ?>" class="section-tag strk strk-sec <?php echo $sec_class; ?>">
+		<li id="<?php echo esc_attr('strk-'.$section_name); ?>" class="section-tag strk strk-sec <?php echo esc_attr($sec_class); ?>">
 
             <?php
             // hidden input fields for storing folder values
@@ -8615,8 +8292,8 @@ class Admin {
 
             foreach ($hiddenInputs as $nameExtension => $inputData){
 
-                echo '<input type="hidden" class="section-data-'.$inputData['class'].'"
-			       name="tvr_mcth['.$section_name.'][this]'.$nameExtension.'"
+                echo '<input type="hidden" class="section-data-'.esc_attr($inputData['class']).'"
+			       name="tvr_mcth['.esc_attr($section_name).'][this]'.esc_attr($nameExtension).'"
 			       value="'.esc_attr($inputData['value']).'" />';
             }
             ?>
@@ -8625,19 +8302,19 @@ class Admin {
 
                         <span class="item-icon folder-item-icon">
                             <?php
-                            echo $this->iconFont('folder-filled', array(
+                            echo wp_kses( $this->iconFont('folder-filled', array(
 	                            'class' => 'folder-icon sortable-icon',
 	                            'title' => $folder_title,
 	                            'data-title' => $folder_title
-                            ));
+                            )), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
                             ?>
                         </span>
 
 				<span class="section-name item-name">
 						    <span class="name-text selector-count-state"
-						          rel="<?php echo $selector_count_state; ?>"><?php echo $display_section_name; ?></span><?php
+						          rel="<?php echo esc_attr($selector_count_state); ?>"><?php echo esc_html($display_section_name); ?></span><?php
 					if ($selector_count_state > 0) {
-						echo '<span class="folder-count-wrap count-wrap"> (<span class="folder-state-count state-count">'.$selector_count_state.'</span>)</span>';
+						echo '<span class="folder-count-wrap count-wrap"> (<span class="folder-state-count state-count">'.(int)$selector_count_state.'</span>)</span>';
 					}
 					// update global $total_selectors count
 					$this->total_selectors = $this->total_selectors + $selector_count_state;
@@ -8645,10 +8322,10 @@ class Admin {
 						</span>
 
 				<?php
-				echo $this->item_manage_icons('section', $section_name, array(
+				echo wp_kses( $this->item_manage_icons('section', $section_name, array(
 					'disabled' => $disabled,
 					'context' => 'folders-menu',
-				));
+				)), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 				?>
 
 			</div>
@@ -8989,11 +8666,6 @@ class Admin {
 
 		$style_count_state = $this->selector_has_values($section_name, $css_selector, $array, true);
 
-		// trial disabled (all sels will be editable even in free trial in future)
-		/*if (!$this->preferences['buyer_validated'] and $this->sel_count > 15 ) {
-			$sel_class.= 'mt-trial-disabled'; // visually signals disabled and, prevents editing
-		}*/
-
 		// user disabled
 		$disabled = false;
 		if (!empty($array['disabled'])){
@@ -9010,7 +8682,7 @@ class Admin {
 		if (is_array($array) and !empty($array['label'])){
 			$labelCss = explode('|', $array['label']);
 			// convert my custom quote escaping in recognised html encoded single/double quotes
-			$selector_title = esc_attr(str_replace('cus-', '&', $labelCss[1]));
+			$selector_title = str_replace('cus-', '&', $labelCss[1]);
 		} else {
 			$labelCss = array('', '');
 			$array['label'] = '';
@@ -9021,11 +8693,11 @@ class Admin {
         $xpath = !empty($array['xpath']) ? $array['xpath'] : '';
 
 		?>
-		<li id="<?php echo 'strk-'.$section_name.'-'.$css_selector; ?>" class="selector-tag strk strk-sel <?php echo $sel_class; ?>">
+		<li id="<?php echo esc_attr('strk-'.$section_name.'-'.$css_selector); ?>" class="selector-tag strk strk-sel <?php echo esc_attr($sel_class); ?>">
 
-			<input type='hidden' class='selector-label' name='tvr_mcth[<?php echo $section_name; ?>][<?php echo $css_selector; ?>][label]' value='<?php echo $array['label']; ?>' />
-            <input type='hidden' class='selector-xpath' name='tvr_mcth[<?php echo $section_name; ?>][<?php echo $css_selector; ?>][xpath]' value='<?php echo esc_attr($xpath); ?>' />
-            <input type='hidden' class='selector-multi-key-html' name='tvr_mcth[<?php echo $section_name; ?>][<?php echo $css_selector; ?>][multi_key][html]' value='' />
+			<input type='hidden' class='selector-label' name='tvr_mcth[<?php echo esc_attr($section_name); ?>][<?php echo esc_attr($css_selector); ?>][label]' value='<?php echo esc_attr($array['label']); ?>' />
+            <input type='hidden' class='selector-xpath' name='tvr_mcth[<?php echo esc_attr($section_name); ?>][<?php echo esc_attr($css_selector); ?>][xpath]' value='<?php echo esc_attr($xpath); ?>' />
+            <input type='hidden' class='selector-multi-key-html' name='tvr_mcth[<?php echo esc_attr($section_name); ?>][<?php echo esc_attr($css_selector); ?>][multi_key][html]' value='' />
 
 
 			<div class="sel-row item-row">
@@ -9033,21 +8705,21 @@ class Admin {
                         <span class="item-icon">
 
                             <?php
-                            echo $this->iconFont('spotlight', array(
+                            echo wp_kses( $this->iconFont('spotlight', array(
 	                            'class' => 'highlight-preview',
-	                            'title' => esc_attr__("Highlight selector", 'microthemer')
-                            ));
+	                            'title' => __("Highlight selector", 'microthemer')
+                            )), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 
-                            echo $this->iconFont('target', array(
+                            echo wp_kses( $this->iconFont('target', array(
 	                            'class' => 'selector-sortable-icon sortable-icon',
-	                            'title' => esc_attr__("Reorder selector", 'microthemer')
-                            ));
+	                            'title' => __("Reorder selector", 'microthemer')
+                            )), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
                             ?>
                         </span>
 
-				<span class="selector-name item-name change-selector" title="<?php echo $selector_title; ?>">
+				<span class="selector-name item-name change-selector" title="<?php echo esc_attr($selector_title); ?>">
 						    <span class="name-text style-count-state change-selector"
-						          rel="<?php echo $style_count_state; ?>"><?php echo esc_html($labelCss[0]); ?>
+						          rel="<?php echo esc_attr($style_count_state); ?>"><?php echo esc_html($labelCss[0]); ?>
                             </span>
 						</span>
 
@@ -9055,10 +8727,10 @@ class Admin {
 
 				<?php
 
-				echo $this->item_manage_icons('selector', $css_selector, array(
+				echo wp_kses( $this->item_manage_icons('selector', $css_selector, array(
 					'disabled' => $disabled,
 					'context' => 'folders-menu',
-				));
+				)), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 				?>
 
 			</div>
@@ -9276,15 +8948,15 @@ class Admin {
 
 			$class = $base_key.'-'.$key;
 			$name = str_replace('-', '_', $class);
-			$input_class = !empty($item['inputClass']) ? ' '.$item['inputClass'] : '';
-			$input_rel = !empty($item['rel']) ? 'rel="'.$item['rel'].'"' : '';
-			$label_class = !empty($item['labelClass']) ? ' class="'.$item['labelClass'].'" ' : '';
+			$input_class = !empty($item['inputClass']) ? ' '.esc_attr($item['inputClass']) : '';
+			$input_rel = !empty($item['rel']) ? 'rel="'.esc_attr($item['rel']).'"' : '';
+			$label_class = !empty($item['labelClass']) ? ' class="'.esc_attr($item['labelClass']).'" ' : '';
 
-			$fields.= '<label'.$label_class.'>'.$item['label'].'</label>';
+			$fields.= '<label'.$label_class.'>'.esc_html($item['label']).'</label>';
 
 			if ($item['type'] === 'input'){
 
-                $inputField = '<input type="text" '.$input_rel.' class="'.$class.'-input'.$input_class.'" name="'.$name.'" />';
+                $inputField = '<input type="text" '.$input_rel.' class="'.esc_attr($class).'-input'.$input_class.'" name="'.esc_attr($name).'" />';
 
                 if (!empty($item['combo'])){
 	                $fields.= '<div class="tvr-input-wrap">' .$inputField
@@ -9305,13 +8977,13 @@ class Admin {
 		// add the button
         if (!empty($form['button'])){
 	        $button_class = !empty($form['button']['class']) ? ' '.$form['button']['class'] : '';
-	        $fields.= '<span class="tvr-button '.$base_key.'-button '.$button_class.'">'.$form['button']['text'].'</span>';
+	        $fields.= '<span class="tvr-button '.esc_attr($base_key).'-button '.esc_attr($button_class).'">'.esc_html($form['button']['text']).'</span>';
         }
 
 		// wrap if required
 		if (!empty($form['wrap'])){
 			$wrap_class = !empty($form['wrapClass']) ? ' '.$form['wrapClass'] : '';
-			$html.= '<div class="mt-cm-form '.$base_key.'-form'.$wrap_class.'">'.$fields.'</div>';
+			$html.= '<div class="mt-cm-form '.esc_attr($base_key).'-form'.esc_attr($wrap_class).'">'.$fields.'</div>';
 		} else {
 			$html.= $fields;
 		}
@@ -9339,7 +9011,7 @@ class Admin {
 		// wrap if required
 		if (!empty($config['wrap'])){
 			$wrap_class = !empty($config['wrapClass']) ? ' '.$config['wrapClass'] : '';
-			$html.= '<div class="mt-cm-actions '.$base_key.'-actions'.$wrap_class.'">'.$icon_html.'</div>';
+			$html.= '<div class="mt-cm-actions '.esc_attr($base_key).'-actions'.esc_attr($wrap_class).'">'.$icon_html.'</div>';
 		} else {
 			$html.= $icon_html;
 		}
@@ -9364,7 +9036,7 @@ class Admin {
 		}
 
 		return '
-			    <div id="'.$id.'" class="cm-'.$base_key.$class.'" data-title="'.$title.'">
+			    <div id="'.esc_attr($id).'" class="cm-'.esc_attr($base_key.$class).'" data-title="'.esc_attr($title).'">
 			        '. $html .'
                 </div>';
 
@@ -9378,7 +9050,7 @@ class Admin {
 
 		return '
 			    <div class="mt-panel-header">
-                    <div class="mt-panel-title'.$title_class.'">'.$heading.'</div>
+                    <div class="mt-panel-title'.esc_attr($title_class).'">'.esc_html($heading).'</div>
                     '.( !empty($config['close']) ?  $this->iconFont('times-circle-regular', array('class' => 'close-context-menu')) : '').'                                   
                 </div>';
 	}
@@ -9389,7 +9061,11 @@ class Admin {
 			return '';
 		}
 
-		return ' style="height: ' . $this->preferences['layout'][$side]['size'] . 'px"';
+		$size = isset($this->preferences['layout'][$side]['size'])
+			? (float) $this->preferences['layout'][$side]['size']
+			: 0;
+
+		return ' style="height: ' . $size . 'px"';
 	}
 
 	function panel_resizers($config){
@@ -9478,6 +9154,10 @@ class Admin {
 			$i++;
 			$class = '';
 
+			// The code and Amender groups stay in the page, as the program data expects them and code
+			// opens the first category, but a user who may not edit code gets no way to open them
+			$code_locked = in_array($property_group_name, array('code', 'html'), true) && !$this->canEditCode();
+
 			// check if we are starting a new property group category
 			$first_item = $this->get_first_item( $this->propertyoptions[$property_group_name] );
 			$new_pg_cat = (!empty($first_item['new_pg_cat']) and empty($done[$property_group_name]))
@@ -9490,7 +9170,7 @@ class Admin {
 				$html.= $close_pg_cat_li . '
                         <li class="new-pg-cat new-pg-cat-'.$property_group_name.'">
                             <div class="pg-cat-sub">
-                                <div class="new-pg-cat-label">'.$new_pg_cat.'</div>';
+                                <div class="new-pg-cat-label">'.($code_locked && $property_group_name === 'code' ? '' : $new_pg_cat).'</div>';
 				$done[$property_group_name] = true;
 			}
 
@@ -9512,7 +9192,7 @@ class Admin {
 			$html.= $this->icon($icon_name, array(
 				'type' => $icon_type,
 				'dir' => $icon_dir,
-				'class' => 'pg-icon pg-icon-'.$property_group_name,
+				'class' => 'pg-icon pg-icon-'.$property_group_name . ($code_locked ? ' hidden' : ''),
 				'rel' => $property_group_name,
 				'title' => $tooltip,
 				'adjacentText' => array(
@@ -9580,6 +9260,10 @@ class Admin {
 				$pg_focus);
 		}
 
+		// The DOM is one of the UI data sources. Persist opaque values for groups
+		// and properties unavailable in this build without rendering any controls.
+		$unavailable_inputs = $this->unavailable_property_inputs($section_name, $css_selector, $array);
+
 		$html.=
 
 			// whole property group
@@ -9591,9 +9275,70 @@ class Admin {
 			// single template/auto row
 			$this->mt_hor_scroll_buttons('gridrows', 'li') .
 
-			'</ul>';
+			'</ul>' .
+			$unavailable_inputs;
 
 		return $html;
+	}
+
+	function unavailable_property_inputs($section_name, $css_selector, $selector) {
+		$html = $this->hidden_data_inputs(
+			UnavailableSettings::styles($selector, $this->propertyoptions),
+			array($section_name, $css_selector, 'styles')
+		);
+
+		$m_queries = !empty($this->options['non_section']['m_query']) && is_array($this->options['non_section']['m_query'])
+			? $this->options['non_section']['m_query']
+			: array();
+		foreach ($m_queries as $mq_key => $sections) {
+			if (!isset($sections[$section_name][$css_selector]) || !is_array($sections[$section_name][$css_selector])) {
+				continue;
+			}
+
+			$html.= $this->hidden_data_inputs(
+				UnavailableSettings::styles($sections[$section_name][$css_selector], $this->propertyoptions),
+				array('non_section', 'm_query', $mq_key, $section_name, $css_selector, 'styles')
+			);
+		}
+
+		$important = !empty($this->options['non_section']['important']) && is_array($this->options['non_section']['important'])
+			? $this->options['non_section']['important']
+			: array();
+		$html.= $this->unavailable_important_inputs(
+			isset($important[$section_name][$css_selector]) ? $important[$section_name][$css_selector] : array(),
+			array('non_section', 'important', $section_name, $css_selector)
+		);
+
+		if (!empty($important['m_query']) && is_array($important['m_query'])) {
+			foreach ($important['m_query'] as $mq_key => $sections) {
+				$html.= $this->unavailable_important_inputs(
+					isset($sections[$section_name][$css_selector]) ? $sections[$section_name][$css_selector] : array(),
+					array('non_section', 'important', 'm_query', $mq_key, $section_name, $css_selector)
+				);
+			}
+		}
+
+		return $html;
+	}
+
+	function unavailable_important_inputs($groups, $trail) {
+		return $this->hidden_data_inputs(
+			UnavailableSettings::groups($groups, $this->propertyoptions),
+			$trail
+		);
+	}
+
+	function hidden_data_inputs($data, $trail) {
+		$html = '';
+		if (is_array($data)) {
+			foreach ($data as $key => $value) {
+				$html.= $this->hidden_data_inputs($value, array_merge($trail, array($key)));
+			}
+			return $html;
+		}
+
+		$name = 'tvr_mcth[' . implode('][', array_map('esc_attr', $trail)) . ']';
+		return '<input type="hidden" class="mt-preserved-unavailable-setting" name="' . $name . '" value="' . esc_attr($data) . '" />';
 	}
 
 	function mt_hor_scroll_buttons($type, $el = 'li'){
@@ -9678,7 +9423,7 @@ class Admin {
 	// does the selector contain any styles?
 	function selector_has_values($section_name, $css_selector, $array, $deep){
 
-		return !empty($array['compiled_css']) || !empty($array['styles']['html']);
+		return $this->renderableSelectorCSS($array) !== '' || !empty($array['styles']['html']);
 	}
 
 	// does the folder contain any styles?
@@ -9942,14 +9687,7 @@ class Admin {
                         'data-mtc' => 'mod.MThtml.refreshPreview'
                     )).'
 	            </div>
-	            <div class="amender-upgrade">
-	                '.$this->iconFont('unlock-alt', array(
-                        'class' => 'unlock-amender',
-                    )).'
-	                <span>
-	                    <a target="_blank" href="https://themeover.com/pricing/?contentView=amender">Purchase a license</a> to publish
-	                </span>
-	            </div>
+	            '.$this->extFilter('content_group_notice', '').'
 	            <div class="microthemer-addon">
                      '.$this->icon(
 			        'add',
@@ -10058,8 +9796,12 @@ class Admin {
 			$html.= '<div class="grid-divider-or-spacer"></div>';
 		}
 
-		// merge to allow for new properties added to property-options.inc.php (array with values must come 2nd)
-		$property_group_array = array_merge($this->propertyoptions[$property_group_name], $property_group_array);
+		// Merge stored values only for properties represented by the active map.
+		// Unavailable properties are emitted as hidden inputs at selector scope.
+		$property_group_array = array_merge(
+			$this->propertyoptions[$property_group_name],
+			array_intersect_key($property_group_array, $this->propertyoptions[$property_group_name])
+		);
 
 		$this->group_spacer_count = 0;
 
@@ -10419,7 +10161,8 @@ class Admin {
 						'microthemer') . '</p>
 								<p>' . wp_kses(
 						sprintf(
-							__('Please <span %s>review (and possibly rename) the imported media queries</span>. Note: they are marked with "(imp)", which you can remove from the label name once you\'ve reviewed them.', 'microthemer'),
+							/* translators: %s: HTML attributes for the span element */
+							__('Please <span %1$s>review (and possibly rename) the imported media queries</span>. Note: they are marked with "(imp)", which you can remove from the label name once you\'ve reviewed them.', 'microthemer'),
 							'class="link show-dialog" rel="edit-media-queries"' ),
 						array( 'span' => array() )
 					) . ' </p>',
@@ -10433,9 +10176,14 @@ class Admin {
             $merge_preferences = $filtered_json['non_section']['meta']['merge_preferences'];
 	        $pref_array = array();
             if (is_array($merge_preferences)){
+	            // only the preferences getRelevantPreferences() writes on export (imported packs are untrusted)
+	            $allowed_prefs = array();
+	            $this->getRelevantPreferences($allowed_prefs, $merge_preferences);
                 foreach($merge_preferences as $key => $pref_value){
 
-                    $pref_array[$key] = $pref_value;
+                    if (array_key_exists($key, $allowed_prefs)){
+	                    $pref_array[$key] = $pref_value;
+                    }
 
                     // No longer needed in the options
 	                unset($filtered_json['non_section']['meta']['merge_preferences'][$key]);
@@ -10446,7 +10194,7 @@ class Admin {
         }
 
         // import npm_dependencies if provided npm_dependencies
-		if (!empty($filtered_json['non_section']['combine_preferences']['npm_dependencies'])){
+		if (!empty($filtered_json['non_section']['combine_preferences']['npm_dependencies']) && $this->canEditCode()){
 
 			$npm_dependencies = &$filtered_json['non_section']['combine_preferences']['npm_dependencies'];
 
@@ -10470,29 +10218,6 @@ class Admin {
 		unset($filtered_json['non_section']['active_queries']);
 		unset($filtered_json['non_section']['npm_dependencies']);
 		unset($filtered_json['non_section']['active_snippets']);
-
-		// just for debugging
-		if ($this->debug_import) {
-
-			// get this before modifying in any way
-			//$debug_mqs['incoming_active_queries'] = $data['non_section']['active_queries'];
-			$debug_mqs['orig'] = $this->preferences['m_queries'];
-			$debug_mqs['new'] = $mq_analysis['new'];
-			$debug_mqs['merged'] = $debug_mqs['new'] ? $pref_array['m_queries'] : false;
-			$debug_mqs['mq_analysis'] = $mq_analysis;
-
-			$debug_file = $this->debug_dir . 'debug-'.$con.'.txt';
-			$write_file = @fopen($debug_file, 'w');
-			$data = '';
-			$data.= "\n\n### 1. Key Debug Analysis \n\n";
-			$data.= print_r($debug_mqs, true);
-			$data.= "\n\n### 2. The UNMODIFIED incoming data\n\n";
-			$data.= print_r($data, true);
-			$data.= "\n\n### 3. The (potentially) MODIFIED incoming data\n\n";
-			$data.= print_r($filtered_json, true);
-			fwrite($write_file, $data);
-			fclose($write_file);
-		}
 
 		// return the filtered data and mq analysis
 		return $filtered_json;
@@ -10541,18 +10266,6 @@ class Admin {
 
 	// merge the new settings with the current settings
 	function merge($orig_settings, $new_settings) {
-		// create debug merge file if set at top of script
-		if ($this->debug_merge) {
-			$debug_file = $this->debug_dir . 'debug-merge.txt';
-			$write_file = @fopen($debug_file, 'w');
-			$data = '';
-			$data.= "\n\n" . __('### The to existing options (before merge)', 'microthemer') . "\n\n";
-			$data.= print_r($orig_settings, true);
-
-			$data .= "\n\n" . esc_html__('### The imported options (before any folder renaming)', 'microthemer') . "\n\n";
-			$data .= print_r($new_settings, true);
-
-		}
 		if (is_array($new_settings)) {
 			// check if search needs to be done on important and m_query arrays
 			$mq_arr = $imp_arr = false;
@@ -10614,11 +10327,6 @@ class Admin {
 			}
 
 
-			if ($this->debug_merge) {
-				$data .= "\n\n" . esc_html__('### The imported options (after folder renaming)', 'microthemer') . "\n\n";
-				$data .= print_r($new_settings, true);
-			}
-
 			// now that we've checked for and corrected possible name conflicts
 			// merge the arrays (recursively to avoid overwriting)
 			$merged_settings = $this->array_merge_recursive_distinct($orig_settings, $new_settings);
@@ -10642,12 +10350,6 @@ class Admin {
 		}
 		// maybe do some more processing here
 
-		if ($this->debug_merge) {
-			$data.= "\n\n" . __('### The Merged options', 'microthemer') . "\n\n";
-			$data.= print_r($merged_settings, true);
-			fwrite($write_file, $data);
-			fclose($write_file);
-		}
 		return $merged_settings;
 	}
 
@@ -10730,7 +10432,7 @@ class Admin {
 
 		// convert to json string
 		elseif ($action == 'encode'){
-			if (!$json_str = json_encode($data)) {
+			if (!$json_str = wp_json_encode($data)) {
 				$this->log(
 					esc_html__('Encode json error', 'microthemer'),
 					'<p>' . esc_html__('WordPress failed to convert your settings into json.', 'microthemer') . '</p>'
@@ -10744,7 +10446,7 @@ class Admin {
 	// slightly modified version of wp_remote_fopen where we also get the response code
 	function wp_remote_fopen( $uri ) {
 
-		$parsed_url = parse_url( $uri );
+		$parsed_url = wp_parse_url( $uri );
 
 		if ( ! $parsed_url || ! is_array( $parsed_url ) ) {
 			return false;

@@ -12,6 +12,10 @@
 
 namespace Microthemer\Dependencies\Minify;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /**
  * JavaScript Minifier Class.
  *

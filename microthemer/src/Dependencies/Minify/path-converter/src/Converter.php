@@ -2,6 +2,10 @@
 
 namespace Microthemer\Dependencies\Minify\PathConverter;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /**
  * Convert paths relative from 1 file to another.
  *

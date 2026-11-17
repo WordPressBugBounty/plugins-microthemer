@@ -115,6 +115,36 @@
     "category": "pebbles"
   },
   {
+    "label": "[drop]",
+    "value": "mask-image/rounded/drop.svg",
+    "category": "rounded"
+  },
+  {
+    "label": "[lozenger-up]",
+    "value": "mask-image/rounded/lozenger-up.svg",
+    "category": "rounded"
+  },
+  {
+    "label": "[opacity-circles]",
+    "value": "mask-image/rounded/opacity-circles.svg",
+    "category": "rounded"
+  },
+  {
+    "label": "[quote]",
+    "value": "mask-image/rounded/quote.svg",
+    "category": "rounded"
+  },
+  {
+    "label": "[side-tunnel]",
+    "value": "mask-image/rounded/side-tunnel.svg",
+    "category": "rounded"
+  },
+  {
+    "label": "[tunnel]",
+    "value": "mask-image/rounded/tunnel.svg",
+    "category": "rounded"
+  },
+  {
     "label": "[doughnut]",
     "value": "mask-image/sharp/doughnut.svg",
     "category": "sharp"
@@ -148,35 +178,5 @@
     "label": "[slant]",
     "value": "mask-image/sharp/slant.svg",
     "category": "sharp"
-  },
-  {
-    "label": "[drop]",
-    "value": "mask-image/rounded/drop.svg",
-    "category": "rounded"
-  },
-  {
-    "label": "[lozenger-up]",
-    "value": "mask-image/rounded/lozenger-up.svg",
-    "category": "rounded"
-  },
-  {
-    "label": "[opacity-circles]",
-    "value": "mask-image/rounded/opacity-circles.svg",
-    "category": "rounded"
-  },
-  {
-    "label": "[quote]",
-    "value": "mask-image/rounded/quote.svg",
-    "category": "rounded"
-  },
-  {
-    "label": "[side-tunnel]",
-    "value": "mask-image/rounded/side-tunnel.svg",
-    "category": "rounded"
-  },
-  {
-    "label": "[tunnel]",
-    "value": "mask-image/rounded/tunnel.svg",
-    "category": "rounded"
   }
 ]

@@ -1,61 +1,42 @@
 <?php
 
-// Stop direct call
-if(preg_match('#' . basename(__FILE__) . '#', $_SERVER['PHP_SELF'])) {
-	die('Please do not call this page directly.');
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
-// get property options
+// get property options (pro groups load only when the pro definitions file is present)
 include 'property-options.inc.php';
+if (file_exists(__DIR__ . '/property-options-pro.inc.php')) {
+	include 'property-options-pro.inc.php';
+}
 
 $ui_class = '';
 require_once('common-inline-assets.php');
 ?>
 
-<div id="tvr" class='wrap tvr-wrap tvr-docs <?php echo $ui_class; ?>'>
+<div id="tvr" class='wrap tvr-wrap tvr-docs <?php echo esc_attr($ui_class); ?>'>
 	<div id='tvr-docs'>
 
-		<!-- Google Search -->
+		<!-- Support links -->
 		<div id="g-search">
 			<div class="support-header-wrap">
 				<ul id="external-links">
 					<li class="doc-item external">
-						<a target="_blank" class="video" href="<?php echo $this->demo_video; ?>">Demo<br />Video</a>
+						<a target="_blank" class="video" href="<?php echo esc_url($this->demo_video); ?>">Demo<br />Video</a>
 					</li>
 					<li class="doc-item external">
-						<a target="_blank" href="http://themeover.com/support/">Online<br />Docs</a>
+						<a target="_blank" href="https://themeover.com/support/">Online<br />Docs</a>
 					</li>
 					<li class="doc-item external">
-						<a target="_blank" href="http://themeover.com/forum/">Support<br />Forum</a>
+						<a target="_blank" href="https://themeover.com/forum/">Support<br />Forum</a>
 					</li>
 				</ul>
-				<script>
-					(function() {
-						var cx = '000071969491634751241:fbvdr_lfrxg';
-						var gcse = document.createElement('script');
-						gcse.type = 'text/javascript';
-						gcse.async = true;
-						gcse.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') +
-						'//www.google.com/cse/cse.js?cx=' + cx;
-						// when
-						gcse.onreadystatechange = gcse.onload = function() {
-
-						};
-						var s = document.getElementsByTagName('script')[0];
-						s.parentNode.insertBefore(gcse, s);
-					})();
-				</script>
-				<gcse:searchbox enableAutoComplete="true"></gcse:searchbox>
 			</div>
 		</div>
 
 		<div id="docs-container">
 
 			<div id="docs-content">
-
-				<div id="g-results">
-					<gcse:searchresults linkTarget="_blank"></gcse:searchresults>
-				</div>
 
 				<?php
 
@@ -75,28 +56,28 @@ require_once('common-inline-assets.php');
 				if (isset($_GET['prop_group']) or isset($_GET['prop'])) {
 
 					// single property
-					$prop_group = htmlentities($_GET['prop_group']);
-					$property = htmlentities($_GET['prop']);
+					$prop_group = sanitize_key(wp_unslash($_GET["prop_group"]));
+					$property = sanitize_key(wp_unslash($_GET["prop"]));
 					$pg_arr = $propertyOptions[$prop_group];
 					$p_arr = $propertyOptions[$prop_group][$property];
 					$cssf = str_replace('_', '-', $property);
 					$icon_name = !empty($array['icon-name']) ? $array['icon-name'] : $cssf;
 					?>
-					<div id='<?php echo $property; ?>' class='ref-details docs-box'>
+					<div id='<?php echo esc_attr($property); ?>' class='ref-details docs-box'>
 						<h3 class="main-title">
 
 							<span class="t-text">
-								<?php echo $p_arr['label']; ?>
+								<?php echo esc_html($p_arr['label']); ?>
 							</span>
 							<?php
-							echo $this->iconFont($icon_name, array(
+							echo wp_kses( $this->iconFont($icon_name, array(
 								'class' => 'no-click'
-							));
+							)), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 							?>
 
 						</h3>
 						<div class="inner-box">
-							<p><?php echo $p_arr['ref_desc']; ?></p>
+							<p><?php echo wp_kses_post($p_arr['ref_desc']); ?></p>
 							<?php
 							if (!empty($p_arr['ref_values']) and is_array($p_arr['ref_values'])){
 								?>
@@ -113,7 +94,7 @@ require_once('common-inline-assets.php');
 									foreach ($p_arr['ref_values'] as $value => $desc) {
 										?>
 										<tr <?php if ($i&1) { echo 'class="odd"'; } ?>>
-											<td class="value"><?php echo $value; ?></td><td><?php echo $desc; ?></td>
+											<td class="value"><?php echo esc_html($value); ?></td><td><?php echo wp_kses_post($desc); ?></td>
 										</tr>
 										<?php
 										++$i;
@@ -155,13 +136,13 @@ require_once('common-inline-assets.php');
 						);
 						// css ref
 						if (!empty($p_arr['ref_links']) and is_array($p_arr['ref_links'])){
-							echo '<h3>'.$p_arr['label'].' References</h3>
+							echo '<h3>'.esc_html($p_arr['label']).' References</h3>
 							<ul>';
 							foreach ($p_arr['ref_links'] as $key => $url){
 								echo '
 								<li>
-									<a target="_blank" href="'.$url.'">'
-										.$ref_map[$key]['name'].': ' . str_replace('_', '-', $property ). '
+									<a target="_blank" href="'.esc_url($url).'">'
+										.esc_html($ref_map[$key]['name']).': ' . esc_html(str_replace('_', '-', $property )). '
 									</a>
 								</li>';
 							}
@@ -181,13 +162,13 @@ require_once('common-inline-assets.php');
 							} else {
 								$scope = $p_arr['label'];
 							}
-							echo '<h3>'.$scope.' Tutorials</h3>
+							echo '<h3>'.esc_html($scope).' Tutorials</h3>
 							<ul>';
 							foreach ($p_arr['tutorials'] as $key => $arr){
 								echo '
 								<li>
-									<a target="_blank" href="'.$arr['url'].'">'
-									.$arr['title'].'
+									<a target="_blank" href="'.esc_url($arr['url']).'">'
+									.esc_html($arr['title']).'
 									</a>
 								</li>';
 							}

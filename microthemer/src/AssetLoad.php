@@ -11,9 +11,6 @@ if (!defined( 'ABSPATH')) {
  * AssetLoad
  *
  * Minimal functionality to add CSS, JS (user animation), body classes, Google Fonts, and the viewport meta tag.
- * This file is copied to /wp-content/micro-themes upon activation, to support deactivating Microthemer.
- * It can be manually included as a standalone file using require(ABSPATH . '/wp-content/micro-themes/AssetLoad.php');
- * Alternatively, it can be installed as a simple plugin: microloader.zip
  */
 
 if (!class_exists('\Microthemer\AssetLoad')){
@@ -22,7 +19,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 		use FrontAndBackTrait;
 
-		var $pluginVersion = '7.5.3.9';
+		var $pluginVersion = '7.5.5.8';
 		protected $isBlockEditorScreen;
 		var $logicSettings = array();
 		public $context = 'load';
@@ -119,32 +116,11 @@ if (!class_exists('\Microthemer\AssetLoad')){
 			}
 		}
 
-		// get the directory path for /wp-content/micro-themes/, accounting for multisite
+		// where the generated CSS/JS lives (see Helper::storage)
 		function getPaths(){
-
-			$microDir = '/micro-themes/';
-			$url = content_url();
-			$dir = WP_CONTENT_DIR;
-
-			// Not multisite
-			if (!is_multisite()) {
-				$this->rootUrl = $url . $microDir;
-				$this->rootDir = $dir . $microDir;
-				return;
-			}
-
-			// It is multisite, resolve the path
-			$blog_id = get_current_blog_id();
-			$primarySite = $blog_id === 1;
-			$sitesPath = file_exists( $dir . "/blogs.dir/")
-				? '/blogs.dir'
-				: '/uploads/sites';
-			$subPath = $primarySite
-				? $microDir
-				: '/' . $blog_id . $microDir;
-
-			$this->rootUrl = $url . $sitesPath . $subPath;
-			$this->rootDir = $dir . $sitesPath . $subPath;
+			$storage = Helper::storage();
+			$this->rootUrl = $storage['url'];
+			$this->rootDir = $storage['dir'];
 		}
 
 		function checkAdminVsFront(){
@@ -371,9 +347,9 @@ if (!class_exists('\Microthemer\AssetLoad')){
 						$async = !empty($folder['css_async']);
 						//echo '$cssFile: ' . $url . $cssFileName . '?' . $this->cacheParam;
 
-						// force file_get_contents to get a non-cached version of the file
+						// Force a non-cached read of the CSS file for inline delivery.
 						if ($inline){
-							touch($cssFile);
+							clearstatcache( true, $cssFile );
 						}
 
 						// load the CSS file
@@ -411,9 +387,10 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 			if (!empty($this->asyncAssets['css'][$handle])){
 
-				// The media print method - works in all browsers and doesn't change resource priority
-				$html = '<link rel="stylesheet" href="'.$href.'" id="'.$handle.'-css" 
-						media="print" onload="this.onload=null; this.media=\''.$media.'\';">'
+				// The media print method - works in all browsers and doesn't change resource priority.
+				// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- Rewriting an already-enqueued style tag for async load.
+				$html = '<link rel="stylesheet" href="'.esc_url($href).'" id="'.esc_attr($handle).'-css" 
+						media="print" onload="this.onload=null; this.media=\''.esc_attr($media).'\';">'
 				        . $noscript;
 			}
 
@@ -532,7 +509,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				// general page logic
 				$pageLogic = $isAdminPostPageEdit
 					? '\Microthemer\is_public_or_admin("'.$slug.'")'
-					:  '\Microthemer\is_post_or_page('.$post_id.', "'.$post->post_title.'")'; // 'is_'.$type.'("'.$slug.'")';
+					:  '\Microthemer\is_post_or_page('.$post_id.', "'.str_replace(array('"', '\\'), '', $post->post_title).'")'; // 'is_'.$type.'("'.$slug.'")';
 
 				$logic = $pageLogic;
 

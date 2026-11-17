@@ -1,3 +1,8 @@
+<?php
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+?>
 <ul class="form-field-list css_units">
 
 	<?php
@@ -106,7 +111,7 @@
 	}
 
 	// output
-	echo $this->preferences_grid($unit_cats, 'css-units-grid');
+	echo wp_kses( $this->preferences_grid($unit_cats, 'css-units-grid'), \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 	?>
 </ul>
 

@@ -2,6 +2,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /*
  * Helper
  *
@@ -28,7 +32,7 @@ class Helper {
 			}
 
 			if ($die){
-				wp_die($output);
+				wp_die(wp_kses_post($output)); // debug output only
 			} else {
 				if (Helper::$doDebug !== 'silent'){
 					//echo $output;
@@ -56,11 +60,13 @@ class Helper {
 			$postId = -1;
 			$isBlockAdmin = true;
 		} elseif ($pagenow === 'post.php' && isset($_GET['post'])){
-			$postId = $_GET['post'];
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only context detection from the core post editor URL; nothing saved, value cast to int
+			$postId = intval($_GET["post"]);
 			$isBlockAdmin = true;
 		} elseif ($pagenow === 'site-editor.php'){
 			if (isset($_GET['postId'])){
-				$postId = $_GET['postId'];
+				// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only context detection from the core site editor URL; nothing saved, value sanitized
+				$postId = sanitize_text_field(wp_unslash($_GET["postId"]));
 			} else {
 				$postId = Helper::homePageData()['id'];
 			}
@@ -115,12 +121,15 @@ class Helper {
 
 		$fse = $pagenow === 'site-editor.php';
 		$regular = $pagenow === 'post.php';
-		$post = isset($_GET['post']) ? $_GET['post'] : null;
-		$postId = isset($_GET['postId']) ? $_GET['postId'] : null;
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only context detection from core editor URLs (post.php / site-editor.php); nothing saved, values sanitized
+		$post = isset($_GET["post"]) ? intval($_GET["post"]) : null;
+		$postId = isset($_GET["postId"]) ? sanitize_text_field(wp_unslash($_GET["postId"])) : null;
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		$homePage = Helper::homePageData();
 		$fseFallback = $fse && $postId === null;
 		$fseDirect = $fse && $postId === $homePage['id'];
-		$regularDirect = $regular && $post === $homePage['id'];
+		// The request ID is cast above, so normalize the option value before the strict comparison too.
+		$regularDirect = $regular && $post === (int) $homePage['id'];
 		$frontDirect = !is_admin() && (
 			is_front_page() || ( $homePage['id'] > 0 && is_page($homePage['id']) )
 		);
@@ -128,39 +137,240 @@ class Helper {
 		return $fseFallback || ($orDirectView && ($fseDirect || $regularDirect || $frontDirect));
 	}
 
-	public static function getMicroRoot($wp_content_dir, $wp_content_url){
-		
-		global $blog_id;
-		
-		if (is_multisite()) {
+	// Where Microthemer keeps its files (generated CSS/JS, design packs, caches): a folder named after
+	// the plugin in the uploads directory, which wp_upload_dir() resolves per site on multisite.
+	// Sites that stored files in the old wp-content/micro-themes location keep using it until the
+	// files have been moved (see Admin::maybeMoveStorage) - and for good if moving them failed, so a
+	// failed move never breaks the site.
+	public static function storage(){
 
-			$filename = $wp_content_dir . "/blogs.dir/";
+		$blogId = get_current_blog_id();
 
-			if (file_exists($filename)){
-				if ($blog_id == '1') {
-					$dir = $wp_content_dir . '/blogs.dir/micro-themes/';
-					$url = $wp_content_url . '/blogs.dir/micro-themes/';
-				} else {
-					$dir = $wp_content_dir . '/blogs.dir/' . $blog_id . '/micro-themes/';
-					$url = $wp_content_url . '/blogs.dir/' . $blog_id . '/micro-themes/';
-				}
-			} else {
-				if ($blog_id == '1') {
-					$dir = $wp_content_dir . '/uploads/sites/micro-themes/';
-					$url = $wp_content_url . '/uploads/sites/micro-themes/';
-				} else {
-					$dir = $wp_content_dir . '/uploads/sites/' . $blog_id . '/micro-themes/';
-					$url = $wp_content_url . '/uploads/sites/' . $blog_id . '/micro-themes/';
-				}
+		if (isset(self::$storageCache[$blogId])){
+			return self::$storageCache[$blogId];
+		}
+
+		// Not moved yet, or moved and then a rollback wrote the old folder again: keep
+		// serving it until the move (re)succeeds. A leftover old folder from a delete
+		// that failed is older than the move, so it does not count.
+		if (!self::storageMoved() || self::legacyRewrittenSinceMove()){
+			$legacy = self::legacyStorage();
+			if (is_dir($legacy['dir'])){
+				return self::$storageCache[$blogId] = $legacy;
 			}
-		} else {
-			$dir = $wp_content_dir . '/micro-themes/';
-			$url = $wp_content_url . '/micro-themes/';
+		}
+
+		return self::$storageCache[$blogId] = self::uploadsStorage();
+	}
+
+	public static $storageCache = array();
+
+	// The markup Microthemer's own admin screens are built from: everything its HTML builders emit
+	// (form controls, menus, dialogs, icons, the site preview iframe), for escaping their output
+	// with wp_kses() where it is echoed. No scripts, no inline event handlers.
+	public static function uiAllowedHtml(){
+
+		static $allowed = null;
+
+		if ($allowed !== null){
+			return $allowed;
+		}
+
+		$common = array_fill_keys(array(
+			'class', 'id', 'title', 'style', 'rel', 'role', 'tabindex', 'data-*', 'name', 'value', 'type',
+			'aria-label', 'aria-labelledby', 'aria-describedby', 'aria-modal', 'aria-hidden', 'aria-expanded',
+			'aria-controls', 'aria-haspopup', 'aria-selected', 'aria-pressed', 'aria-checked', 'hidden', 'lang', 'dir',
+			'contenteditable',
+		), true);
+
+		$tags = array(
+			'div' => array(), 'span' => array(), 'p' => array(), 'ul' => array(), 'ol' => array('start' => true),
+			'li' => array(), 'b' => array(), 'strong' => array(), 'i' => array(), 'em' => array(), 'u' => array(),
+			'small' => array(), 'sup' => array(), 'sub' => array(), 'code' => array(), 'pre' => array(),
+			'kbd' => array(), 'br' => array(), 'hr' => array(), 'blockquote' => array(),
+			'h1' => array(), 'h2' => array(), 'h3' => array(), 'h4' => array(), 'h5' => array(), 'h6' => array(),
+			'section' => array(), 'header' => array(), 'footer' => array(), 'nav' => array(), 'article' => array(),
+			'aside' => array(), 'figure' => array(), 'figcaption' => array(), 'details' => array('open' => true),
+			'summary' => array(), 'fieldset' => array(), 'legend' => array(),
+			'table' => array('cellspacing' => true, 'cellpadding' => true), 'thead' => array(), 'tbody' => array(), 'tfoot' => array(), 'tr' => array(),
+			'th' => array('colspan' => true, 'rowspan' => true, 'scope' => true),
+			'td' => array('colspan' => true, 'rowspan' => true), 'caption' => array(),
+			'a' => array('href' => true, 'target' => true, 'download' => true),
+			'img' => array('src' => true, 'alt' => true, 'width' => true, 'height' => true, 'loading' => true),
+			'iframe' => array('src' => true, 'width' => true, 'height' => true, 'frameborder' => true, 'loading' => true, 'allow' => true),
+			'form' => array('action' => true, 'method' => true, 'enctype' => true, 'autocomplete' => true, 'target' => true),
+			'label' => array('for' => true),
+			'button' => array('disabled' => true),
+			'input' => array(
+				'checked' => true, 'disabled' => true, 'readonly' => true, 'placeholder' => true, 'autocomplete' => true,
+				'spellcheck' => true, 'accept' => true, 'multiple' => true, 'min' => true, 'max' => true, 'step' => true,
+				'maxlength' => true, 'size' => true, 'list' => true, 'required' => true, 'pattern' => true,
+			),
+			'textarea' => array(
+				'rows' => true, 'cols' => true, 'placeholder' => true, 'autocomplete' => true, 'spellcheck' => true,
+				'readonly' => true, 'disabled' => true, 'maxlength' => true, 'wrap' => true,
+			),
+			'select' => array('multiple' => true, 'disabled' => true, 'size' => true),
+			'option' => array('selected' => true, 'disabled' => true, 'label' => true),
+			'optgroup' => array('label' => true, 'disabled' => true),
+			'datalist' => array(),
+			// icons
+			'svg' => array('viewbox' => true, 'xmlns' => true, 'width' => true, 'height' => true, 'fill' => true, 'preserveaspectratio' => true, 'focusable' => true),
+			'g' => array('fill' => true, 'transform' => true), 'defs' => array(), 'symbol' => array('viewbox' => true),
+			'use' => array('href' => true, 'xlink:href' => true),
+			'path' => array('d' => true, 'fill' => true, 'stroke' => true, 'stroke-width' => true, 'transform' => true, 'fill-rule' => true, 'clip-rule' => true, 'opacity' => true),
+			'circle' => array('cx' => true, 'cy' => true, 'r' => true, 'fill' => true, 'stroke' => true, 'stroke-width' => true),
+			'rect' => array('x' => true, 'y' => true, 'width' => true, 'height' => true, 'rx' => true, 'ry' => true, 'fill' => true, 'stroke' => true),
+			'line' => array('x1' => true, 'x2' => true, 'y1' => true, 'y2' => true, 'stroke' => true, 'stroke-width' => true),
+			'polygon' => array('points' => true, 'fill' => true, 'stroke' => true),
+			'polyline' => array('points' => true, 'fill' => true, 'stroke' => true),
+			'lineargradient' => array('gradienttransform' => true, 'gradientunits' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true),
+			'stop' => array('offset' => true, 'stop-color' => true, 'stop-opacity' => true),
+		);
+
+		foreach ($tags as $tag => $attributes){
+			$allowed[$tag] = array_merge($common, $attributes);
+		}
+
+		return $allowed;
+	}
+
+	// URL protocols the admin screens use (the site preview starts as about:blank)
+	public static function uiAllowedProtocols(){
+		return array_merge(wp_allowed_protocols(), array('about'));
+	}
+
+	// the uploads folder location, whether or not it is in use yet
+	public static function uploadsStorage(){
+
+		$uploads = wp_upload_dir(null, false);
+
+		return array(
+			'dir' => trailingslashit(wp_normalize_path($uploads['basedir'])) . 'microthemer/',
+			'url' => trailingslashit(set_url_scheme($uploads['baseurl'])) . 'microthemer/',
+			'legacy' => false,
+		);
+	}
+
+	// whether this site's files are in (or have nothing to move to) the uploads folder
+	public static function storageMoved(){
+		return (int) get_option('microthemer_storage_version') >= 2;
+	}
+
+	// The old folder was written again after a completed move (a rollback to a version
+	// that still uses it). A directory's mtime does not change when an existing CSS
+	// file is overwritten, so compare the remaining files with the post-move baseline.
+	public static function legacyRewrittenSinceMove($forceCheck = false){
+
+		if (!self::storageMoved()){
+			return false;
+		}
+
+		$legacy = self::legacyStorage();
+		if (!is_dir($legacy['dir'])){
+			return false;
+		}
+
+		$baseline = get_option('microthemer_legacy_storage_fingerprint');
+		if (is_string($baseline) && $baseline !== ''){
+			// A residual folder can be large. Cache a clean result briefly for page
+			// loads; the admin migration path forces a fresh comparison before moving.
+			$cacheKey = 'microthemer_legacy_storage_checked';
+			$cached = get_transient($cacheKey);
+			if (!$forceCheck && $cached === $baseline){
+				return false;
+			}
+			$current = self::storageFingerprint($legacy['dir']);
+			if ($current === $baseline){
+				if ($cached !== $baseline){
+					set_transient($cacheKey, $baseline, MINUTE_IN_SECONDS);
+				}
+				return false;
+			}
+			delete_transient($cacheKey);
+			return true;
+		}
+
+		// Older moves have no baseline. Check files as well as the directory until
+		// the next successful migration records one.
+		$latestMtime = self::storageLatestMtime($legacy['dir']);
+		$legacyMtime = filemtime($legacy['dir']);
+		if ($legacyMtime === false){
+			return false;
+		}
+
+		$movedAt = (int) get_option('microthemer_storage_moved_at');
+		if ($movedAt){
+			return max($legacyMtime, $latestMtime) > $movedAt;
+		}
+
+		// Moves from before this timestamp existed: compare the two folders.
+		$uploads = self::uploadsStorage();
+		$uploadsMtime = is_dir($uploads['dir']) ? filemtime($uploads['dir']) : false;
+
+		return $uploadsMtime && max($legacyMtime, $latestMtime) > $uploadsMtime;
+	}
+
+	// Fingerprint only matters when the best-effort deletion left a legacy folder.
+	// Hashing contents catches same-size overwrites even within one timestamp tick.
+	public static function storageFingerprint($dir){
+		try {
+			$items = new \RecursiveIteratorIterator(
+				new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+			);
+			$files = array();
+			foreach ($items as $item){
+				if (!$item->isFile()){
+					continue;
+				}
+				$hash = hash_file('sha256', $item->getPathname());
+				if ($hash === false){
+					return null;
+				}
+				$relative = substr(wp_normalize_path($item->getPathname()), strlen(wp_normalize_path($dir)));
+				$files[$relative] = $hash;
+			}
+			ksort($files);
+			return hash('sha256', serialize($files));
+		} catch (\UnexpectedValueException $e){
+			return null;
+		}
+	}
+
+	private static function storageLatestMtime($dir){
+		$latest = 0;
+		try {
+			$items = new \RecursiveIteratorIterator(
+				new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+			);
+			foreach ($items as $item){
+				$latest = max($latest, (int) $item->getMTime());
+			}
+		} catch (\UnexpectedValueException $e){
+			return 0;
+		}
+		return $latest;
+	}
+
+	// The location versions before 7.6 used (wp-content/micro-themes, or blogs.dir / uploads/sites on
+	// multisite). Only read to move existing files to the uploads folder, which is why it relies on
+	// the content directory constant: nothing is ever created here any more.
+	public static function legacyStorage(){
+
+		$dir = untrailingslashit(wp_normalize_path(WP_CONTENT_DIR));
+		$url = untrailingslashit(set_url_scheme(content_url()));
+		$sub = '/micro-themes/';
+
+		if (is_multisite()){
+			$blogId = get_current_blog_id();
+			$sites = file_exists($dir . '/blogs.dir/') ? '/blogs.dir' : '/uploads/sites';
+			$sub = $sites . ($blogId === 1 ? '' : '/' . $blogId) . '/micro-themes/';
 		}
 
 		return array(
-			'dir' => $dir,
-			'url' => $url,
+			'dir' => $dir . $sub,
+			'url' => $url . $sub,
+			'legacy' => true,
 		);
 	}
 
@@ -175,7 +385,7 @@ class Helper {
 
 		// else read the file
 		$map = null;
-		$dir = Helper::getMicroRoot(wp_normalize_path(WP_CONTENT_DIR), content_url())['dir'];
+		$dir = Helper::storage()['dir'];
 		$templateMapFile = $dir . 'mt/cache/themes/'.$themeSlug.'/'.Helper::templateMapName().'.json';
 
 		if (file_exists($templateMapFile)){
@@ -193,8 +403,20 @@ class Helper {
 		return $map;
 	}
 
+	// Whether this request carries live block editor content for a folder logic test: posted by the
+	// block editor with a nonce (see AssetAuth, mt_live_content) and only honoured for administrators.
 	public static function isLiveContentTest(){
-		return isset($_POST['live_post_content']);
+
+		static $verified = null;
+
+		if ($verified === null){
+			$nonce = isset($_POST['live_nonce']) ? sanitize_text_field(wp_unslash($_POST['live_nonce'])) : '';
+			$verified = isset($_POST['live_post_content'])
+				&& current_user_can('manage_options')
+				&& wp_verify_nonce($nonce, 'mt_live_content');
+		}
+
+		return $verified;
 	}
 
 	public static function getFSEPermalink($permalink){
@@ -212,13 +434,18 @@ class Helper {
 	}
 
 	public static function extractUrlParams($themeSlug){
-		$postType = isset($_GET['postType']) ? $_GET['postType'] : null;
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only context
+		// detection from the WordPress-core-generated site editor URL (site-editor.php?postType=...
+		// &postId=...). WP core produces these links so they cannot carry a plugin nonce; nothing
+		// is saved from these values and each one is sanitized.
+		$postType = isset($_GET["postType"]) ? sanitize_key(wp_unslash($_GET["postType"])) : null;
 		$postId = isset($_GET['postId'])
 			? Helper::removeRedundantThemePrefix(
-				Helper::maybeMakeNumber($_GET['postId']), $themeSlug
+				Helper::maybeMakeNumber(sanitize_text_field(wp_unslash($_GET["postId"]))), $themeSlug
 			)
 			: null;
-		$categoryType = isset($_GET['categoryType']) ? $_GET['categoryType'] : null;
+		$categoryType = isset($_GET["categoryType"]) ? sanitize_key(wp_unslash($_GET["categoryType"])) : null;
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		$fseType = Helper::getFSEType($postType, $categoryType);
 
 		return array(

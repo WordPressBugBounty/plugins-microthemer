@@ -1,6 +1,10 @@
 <?php
 // strings for all pages
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 $TvrLang = array(
 
 	'general' => esc_html__('General', 'microthemer'),
@@ -23,8 +27,11 @@ $TvrLang = array(
 	'unsave_single_suggestion' => esc_html__('Un-save suggestion', 'microthemer'),
 	'sampled' => esc_html__('Sampled values', 'microthemer'),
 	'sampled_variables' => esc_html__('Site variables', 'microthemer'),
+	/* translators: %s: property type label */
 	'clear_sampled' => esc_html__("Clear sampled %s values", 'microthemer'),
+	/* translators: %s: variable type label */
 	'clear_sampled_variables' => esc_html__("Clear sampled %s variables", 'microthemer'),
+	/* translators: %s: property type label */
 	'resample' => esc_html__("Resample %s values from the page", 'microthemer'), //
 	'resample_variables' => esc_html__("Resample variables from the page", 'microthemer'),
 
@@ -34,15 +41,13 @@ $TvrLang = array(
 	'inline_animation_short' => esc_html__('Animation fails with display:inline', 'microthemer'),
 	'inline_animation_long' => esc_html__('Microthemer\'s animate.css animations do not always work well when elements have a display value of inline. To fix, go to the Behaviour property group and set the Display property to e.g. inline-block', 'microthemer'),
 
+	/* translators: %s: folder name */
 	'notify_folder_limit_short' => esc_html__('Max selectors per folder reached (%s)', 'microthemer'),
-	'notify_folder_limit_long' => esc_html__('Your last selector was added to an auto-generated folder (%s) because your "%s" folder reached the limit of 40 selectors.', 'microthemer'),
-
-	// Content-publish requires subscription
-	'notify_content_publish' => esc_html__('Amender subscription', 'microthemer'),
-	'notify_content_publish_long' => esc_html__('A subscription is required to publish Amender changes. Prices start from $29 per year', 'microthemer'),
-	'purchase_amender' => esc_html__('Purchase Amender', 'microthemer'),
+	/* translators: 1: auto-generated folder name, 2: original folder name */
+	'notify_folder_limit_long' => esc_html__('Your last selector was added to an auto-generated folder (%1$s) because your "%2$s" folder reached the limit of 40 selectors.', 'microthemer'),
 
 	'learn_more' => esc_html__('Learn more', 'microthemer'),
+	/* translators: %s: average load time in seconds */
 	'slow_styles_tab' => esc_html__('Styles tab slows the browser: %s sec (avg)', 'microthemer'),
 
 	'base_styles' => esc_html__('Starter styles', 'microthemer'),
@@ -60,7 +65,9 @@ $TvrLang = array(
 	'inherited_from' => esc_html__('Inherited from', 'microthemer'),
 	'mt_stylesheet' => esc_html__('(Microthemer Styles)', 'microthemer'),
 	// strings for main script: ../js/tvr-microthemer.js
+	/* translators: %s: element count */
 	'n_els' => esc_html__('Targets %s element', 'microthemer'),
+	/* translators: %s: element count */
 	'n_els_plural' => esc_html__('Targets %s elements', 'microthemer'),
 	'interface' => esc_html__('Microthemer interface', 'microthemer'),
 	'frontend' => esc_html__('Site frontend', 'microthemer'),
@@ -72,9 +79,10 @@ $TvrLang = array(
 	'more' => esc_html__('more', 'microthemer'),
 	'imp_css_folder' => esc_html__('Imported CSS', 'microthemer'),
 	'ai' => esc_html__('AI', 'microthemer'),
-	'imp_css_empty' => esc_html__('Nothing found. Please highlight the code you would like to import.'),
+	'imp_css_empty' => esc_html__('Nothing found. Please highlight the code you would like to import.', 'microthemer'),
 	'already_exists_folder' => esc_html__('A folder with that name already exists. Please enter a unique name.', 'microthemer'),
 	'already_exists_selector' => esc_html__('A selector with that name already exists. Please enter a unique name.', 'microthemer'),
+	/* translators: %s: item type (e.g. folder or selector) */
 	'already_exists_misc' => esc_html__('A %s with that name already exists. Please enter a unique name.', 'microthemer'),
 	'popup_blocked' => esc_html__('Preview window blocked', 'microthemer'),
 	'popup_blocked_long' => esc_html__('tried to load the preview in a new window, as per your "Detach preview" setting in the VIEW menu. But your browser blocked this. Please use the option in your address bar to allow popups on this site, then refresh the page.', 'microthemer'),
@@ -86,7 +94,8 @@ $TvrLang = array(
 	'too_much_css' => esc_html__('The current page loads too much CSS to routinely analyse on this tab.', 'microthemer'),
 	'force_styles_analysis' => esc_html__('Force one-time analysis', 'microthemer'),
 	'too_much_css_2' => esc_html__('Please use the "Computed" tab or browser dev tools instead.', 'microthemer'),
-	'sample_css_confirm' => esc_html__("It may take several seconds to scan for CSS values (%d CSS rules detected). Your browser will be unresponsive during the scan, but the information collected may be useful. OK to proceed?"),
+	/* translators: %d: number of CSS rules detected */
+	'sample_css_confirm' => esc_html__('It may take several seconds to scan for CSS values (%d CSS rules detected). Your browser will be unresponsive during the scan, but the information collected may be useful. OK to proceed?', 'microthemer'),
 
 	//'same_domain' => esc_html__('Domain name mismatch', 'microthemer'),
 	//'same_domain_long' => esc_html__('Microthemer can only load pages that start with your domian name', 'microthemer'),
@@ -110,9 +119,9 @@ $TvrLang = array(
 	'group_disabled' => esc_html__('Group disabled', 'microthemer'),
 	'enable_with_icon' => esc_html__('Click the un/disable icon in the folders and selectors menu to re-enable it.', 'microthemer'),
 	'enter_folder_name' => esc_html__('Please enter a value for the folder name', 'microthemer'),
+	/* translators: %s: item type */
 	'enter_name_misc' => esc_html__('Please enter a value for the %s name', 'microthemer'),
 	'load_after_moving' => esc_html__('load selector after moving', 'microthemer'),
-	'trial_notice' => esc_html__('Please enter a Microthemer license key to unlock the full program! With the free trial you are limited to editing 15 Selectors. And not all style options are available e.g. masks, flexbox, grid, animation, transition, transform', 'microthemer'),
 	'complete_media_fields' => esc_html__('Please complete all media query fields or delete empty ones.', 'microthemer'),
 	'load_style_opt' => esc_html__('Loading style options', 'microthemer'),
 	'load_style_opt_failed' => esc_html__('Options failed to load', 'microthemer'),
@@ -166,7 +175,9 @@ $TvrLang = array(
 	'save_logic_failed' => esc_html__('Saving logic failed', 'microthemer'),
 	'test_logic' => esc_html__('Testing logic', 'microthemer'),
 	'test_logic_failed' => esc_html__('Testing logic failed', 'microthemer'),
+	/* translators: %s: page builder name */
 	'remove_builder_edit_lock' => esc_html__('Removing %s edit lock', 'microthemer'),
+	/* translators: %s: page builder name */
 	'remove_builder_edit_lock_failed' => esc_html__('%s edit lock could not be removed', 'microthemer'),
 	'loading_sass_import' => esc_html__('Fetching Sass import', 'microthemer'),
 	'loading_sass_import_failed' => esc_html__('Sass import failed to load', 'microthemer'),
@@ -179,8 +190,11 @@ $TvrLang = array(
 	'save_fonts_failed' => esc_html__('Font settings failed to save', 'microthemer'),
 	'load_script' => esc_html__('Loading Javascript', 'microthemer'),
 	'load_script_failed' => esc_html__('Script failed to load', 'microthemer'),
+	/* translators: %s: script name */
 	'load_script_failed_p' => esc_html__('The %s failed to load.', 'microthemer'),
+	/* translators: %s: folder name */
 	'delete_folder_confirm' => esc_html__('Are you sure you want to delete your "%s" folder?', 'microthemer'),
+	/* translators: %s: folder name */
 	'clear_folder_confirm' => esc_html__('Are you sure you want to clear your "%s" folder?', 'microthemer'),
 	'reset_settings_confirm' => esc_html__('Are you sure you want to reset all settings?', 'microthemer'),
 	'reset_empty_folders' => esc_html__('Resetting empty folders', 'microthemer'),
@@ -220,9 +234,10 @@ $TvrLang = array(
 	'send_error_failed' => esc_html__('Error sending failed', 'microthemer'),
 	'select_design_pack' => esc_html__('Please select a design pack from the list', 'microthemer'),
 	'choose_import_method' => esc_html__('Please choose an import method (overwrite or merge with your current settings)', 'microthemer'),
+	/* translators: %s: design pack name */
 	'import_settings' => esc_html__('Importing settings (%s)', 'microthemer'),
 	'select_settings_pack' => esc_html__('Please select an existing settings pack or name a new one to export to', 'microthemer'),
-	'enter_selector_name' => __('Please enter a value for the Selector name', 'tvr-microthemer'),
+	'enter_selector_name' => __('Please enter a value for the Selector name', 'microthemer'),
 	'saving_preferences' => esc_html__('Saving preferences', 'microthemer'),
 	'saving_mqs' => esc_html__('Saving media queries', 'microthemer'),
 	'saving_enqjs' => esc_html__('Saving enqueued scripts', 'microthemer'),
@@ -243,7 +258,8 @@ $TvrLang = array(
 	'auto_conversion_performed' => esc_html__('Microthemer performed an auto-conversion of your input', 'microthemer'),
 	'auto_values_rounded' => esc_html__('Note: values in the fields are rounded to 3 decimal places if necessary.', 'microthemer'),
 	'something_wrong' => esc_html__('Something\'s wrong', 'microthemer'),
-	'something_wrong_intro' => esc_html__('%s took more than %s seconds. A JavaScript error may be preventing the action from completing.', 'microthemer'),
+	/* translators: 1: action name, 2: timeout in seconds */
+	'something_wrong_intro' => esc_html__('%1$s took more than %2$s seconds. A JavaScript error may be preventing the action from completing.', 'microthemer'),
 	'js_error_site' => esc_html__('discovered a JavaScript error on your site', 'microthemer'),
 	'something_wrong_discovered' => esc_html__('The following errors were detected:', 'microthemer'),
 	'something_wrong_no_errors' => esc_html__('hasn\'t discovered any yet though.', 'microthemer'),
@@ -258,7 +274,8 @@ $TvrLang = array(
 		'something_wrong_configure' => esc_html__('Plugins that concatenate, minify, or re-order CSS and JavaScript cause problems sometimes. Try playing around with the settings of such plugins.','microthemer'),
 	'something_wrong_other' => wp_kses (
 		sprintf(
-			__('If plugins aren’t the cause, it\'s likely your theme or %s itself. At this stage you might prefer to send us login details for your site via our <a %s>secure contact form</a>. If we can\'t isolate the issue from there we may ask for a backup of your site to test on without interfering with the live version.', 'microthemer'),
+			/* translators: 1: application name, 2: HTML attributes for support form link */
+			__('If plugins aren’t the cause, it\'s likely your theme or %1$s itself. At this stage you might prefer to send us login details for your site via our <a %2$s>secure contact form</a>. If we can\'t isolate the issue from there we may ask for a backup of your site to test on without interfering with the live version.', 'microthemer'),
 			$this->appName,
 			'target="_blank" href="https://themeover.com/support/contact/"'
 		),
@@ -266,7 +283,8 @@ $TvrLang = array(
 	),
 	'something_wrong_priority' => wp_kses (
 		sprintf(
-			__('<b>Note:</b> any bugs or plugin conflicts you <a %s>report</a> get top priority and will be fixed within one or two days.', 'microthemer'),
+			/* translators: %s: HTML attributes for the anchor tag */
+			__('<b>Note:</b> any bugs or plugin conflicts you <a %1$s>report</a> get top priority and will be fixed within one or two days.', 'microthemer'),
 			'target="_blank" href="https://themeover.com/support/contact/"'
 		),
 		array( 'a' => array( 'href' => array(), 'target' => array() ), 'b' => array() )
@@ -293,10 +311,13 @@ $TvrLang = array(
 	'equiv_sels' => esc_html__('Equivalent selectors', 'microthemer'),
 	'choose_suggestion' => esc_html__('Choose suggestion', 'microthemer'),
 	'choose_selector' => esc_html__('Choose selector', 'microthemer'),
+	/* translators: %d: element count */
 	'targets_x_els' => esc_html__('Targets %d element', 'microthemer'),
+	/* translators: %d: element count */
 	'targets_x_els_plural' => esc_html__('Targets %d elements', 'microthemer'),
 	'custom' => esc_html__('Custom', 'microthemer'),
 	'refresh_suggestions' => esc_html__('Refresh suggestions', 'microthemer'),
+	/* translators: %d: set number */
 	'set' => esc_html__('set %d', 'microthemer'),
 
 	// note, if changing key text - must update $this->css_filters = array
@@ -318,11 +339,12 @@ $TvrLang = array(
 	'delete_failed' => esc_html__('Delete failed', 'microthemer'),
 );
 
-
+// strings for extension components (see extFilter())
+$TvrLang = $this->extFilter('js_strings', $TvrLang);
 
 
 // main script
-if ($_GET['page'] == $this->microthemeruipage){
+if (isset($_GET["page"]) and $_GET["page"] == $this->microthemeruipage){
 
 	// we now use TvrLang in the mt-spectrum file so set the handle to tvr_deps when minified
 	// so the var has loaded before the deps.js script

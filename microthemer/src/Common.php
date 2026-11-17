@@ -2,6 +2,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 class Common {
 
 	public static $live_post_content = '';
@@ -397,13 +401,16 @@ class Common {
 		}
 
 		// write to a json file
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Template map in the storage folder (uploads/microthemer); direct FS avoids WP_Filesystem FTP prompts.
 		$write_file = @fopen($templateMapFile, 'w');
 
 		if (!$write_file){
 			return false; // prevent a write error if permissions don't allow this for some reason.
 		}
 
-		fwrite($write_file, json_encode($map));
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- See fopen note above.
+		fwrite($write_file, wp_json_encode($map));
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- See fopen note above.
 		fclose($write_file);
 
 		/*wp_die('<pre>'.print_r([
@@ -414,13 +421,28 @@ class Common {
 
 	}
 
+	// Use the block editor's unsaved content (block markup referencing template parts, patterns and
+	// navigation) when testing folder logic, so the result reflects what is being edited
 	public static function updateLiveTemplateData($micro_root_dir){
 
-		Common::$live_post_content = stripslashes($_POST['live_post_content']);
-
-		if (isset($_POST['live_template'])){
-			Common::$live_template = stripslashes($_POST['live_template']);
+		// nonce and capability checked there
+		if (!Helper::isLiveContentTest()){
+			return;
 		}
+
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- verified in Helper::isLiveContentTest()
+		Common::$live_post_content = isset($_POST['live_post_content'])
+			? wp_kses_post(wp_unslash($_POST['live_post_content']))
+			: '';
+
+		// a template slug or theme template file name, e.g. "single" or "templates/full-width.php"
+		if (isset($_POST['live_template'])){
+			$template = sanitize_text_field(wp_unslash($_POST['live_template']));
+			if (preg_match('#^[A-Za-z0-9_\-./]{1,200}$#', $template) && strpos($template, '..') === false){
+				Common::$live_template = $template;
+			}
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
 
 		if (Helper::$doDebug){
@@ -524,7 +546,7 @@ class Common {
 		$vars = get_defined_vars();
 		foreach($vars as $name=>$var)
 		{
-			echo '<strong>' . $name . '</strong>: ' . strlen(serialize($var)) . '<br />';
+			echo '<strong>' . esc_html($name) . '</strong>: ' . (int) strlen(serialize($var)) . '<br />';
 		}
 		echo '</pre>';
 		//exit();

@@ -10,7 +10,13 @@
  * @license MIT License
  */
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- third-party Matthias Mullie Minify library.
+
 namespace Microthemer\Dependencies\Minify;
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 
 use Microthemer\Dependencies\Minify\Exceptions\IOException;
 use Psr\Cache\CacheItemInterface;
@@ -131,7 +137,7 @@ abstract class Minify
 
             // check if we can read the file
             if (!$this->canImportFile($path)) {
-                throw new IOException('The file "' . $path . '" could not be opened for reading. Check if PHP has enough permissions.');
+                throw new IOException('The file "' . esc_html($path) . '" could not be opened for reading. Check if PHP has enough permissions.');
             }
 
             $this->add($path);
@@ -473,7 +479,7 @@ abstract class Minify
     protected function openFileForWriting($path)
     {
         if ($path === '' || ($handler = @fopen($path, 'w')) === false) {
-            throw new IOException('The file "' . $path . '" could not be opened for writing. Check if PHP has enough permissions.');
+            throw new IOException('The file "' . esc_html($path) . '" could not be opened for writing. Check if PHP has enough permissions.');
         }
 
         return $handler;
@@ -495,7 +501,7 @@ abstract class Minify
             ($result = @fwrite($handler, $content)) === false ||
             ($result < strlen($content))
         ) {
-            throw new IOException('The file "' . $path . '" could not be written to. Check your disk space and file permissions.');
+            throw new IOException('The file "' . esc_html($path) . '" could not be written to. Check your disk space and file permissions.');
         }
     }
 

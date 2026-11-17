@@ -1,8 +1,7 @@
 <?php
 
-// Stop direct call
-if(preg_match('#' . basename(__FILE__) . '#', $_SERVER['PHP_SELF'])) {
-	die('Please do not call this page directly.');
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
 // filter controls
@@ -258,7 +257,7 @@ function tvr_render_form_inputs($name, $section){
 			case 'number':
 			    ?>
                 <p>
-                    <input type="<?php echo $input['type']; ?>" name="<?php echo $name; ?>" value="" placeholder="<?php echo $section['title']; ?>" />
+                    <input type="<?php echo esc_attr($input['type']); ?>" name="<?php echo esc_attr($name); ?>" value="" placeholder="<?php echo esc_attr($section['title']); ?>" />
                 </p>
 				<?php
 				break;
@@ -267,8 +266,8 @@ function tvr_render_form_inputs($name, $section){
 			case 'checkbox':
 				?>
                 <p>
-                    <input type="checkbox" name="<?php echo $name; ?>[<?php echo $value; ?>]"
-                           value="1" data-category="<?php echo $value; ?>" />
+                    <input type="checkbox" name="<?php echo esc_attr($name); ?>[<?php echo esc_attr($value); ?>]"
+                           value="1" data-category="<?php echo esc_attr($value); ?>" />
 
                     <?php
                     // can't use $this in this file
@@ -278,7 +277,7 @@ function tvr_render_form_inputs($name, $section){
                     ));*/
                     ?>
                     <span class="fake-checkbox mtif mtif-tick-box-unchecked" data-action="toggle-category"></span>
-                    <label><?php echo $input['label']; ?></label>
+                    <label><?php echo esc_html($input['label']); ?></label>
                 </p>
 				<?php
 				break;
@@ -287,10 +286,10 @@ function tvr_render_form_inputs($name, $section){
 			case 'select':
 				?>
                 <p>
-                    <select name="<?php echo $name; ?>" class="mt-select">
+                    <select name="<?php echo esc_attr($name); ?>" class="mt-select">
 						<?php
 						foreach($input['options'] as $option){
-							echo '<option value="'.$option['value'].'">'.$option['label'].'</option>';
+							echo '<option value="'.esc_attr($option['value']).'">'.esc_html($option['label']).'</option>';
 						}
 						?>
                     </select>
@@ -306,7 +305,7 @@ require_once('common-inline-assets.php');
 
 ?>
 
-<div id="tvr" class='wrap tvr-wrap tvr-fonts <?php echo $ui_class; ?>'>
+<div id="tvr" class='wrap tvr-wrap tvr-fonts <?php echo esc_attr($ui_class); ?>'>
 	<div id='tvr-fonts'>
 
         <div id="controls">
@@ -325,8 +324,8 @@ require_once('common-inline-assets.php');
             // output filter controls
             foreach($filters['sections'] as $name => $section){
                 ?>
-                <div id="<?php echo $name; ?>-filter" class="font-filter">
-                    <h3><?php echo $section['title']; ?></h3>
+                <div id="<?php echo esc_attr($name); ?>-filter" class="font-filter">
+                    <h3><?php echo esc_html($section['title']); ?></h3>
                     <?php
                     tvr_render_form_inputs($name, $section);
                     ?>
@@ -380,7 +379,7 @@ require_once('common-inline-assets.php');
                     <?php
                     foreach($font_adjustments['sections'] as $name => $section){
 	                    ?>
-                        <div class="font-adjustment <?php echo $name; ?>-adjustment">
+                        <div class="font-adjustment <?php echo esc_attr($name); ?>-adjustment">
 		                    <?php
 		                    tvr_render_form_inputs($name, $section);
 		                    ?>

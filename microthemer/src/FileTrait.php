@@ -4,11 +4,28 @@ namespace Microthemer;
 
 use Microthemer\Dependencies\Minify;
 
+/*
+ * Direct PHP filesystem APIs are used for the storage folder in uploads (typically directly writable).
+ * WP_Filesystem can prompt for FTP credentials and break the AJAX editor; unzip still uses WP_Filesystem.
+ *
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fopen
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fwrite
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fread
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_mkdir
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_rmdir
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_chmod
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_touch
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_is_writable
+ * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_is_writeable
+ * phpcs:disable WordPress.WP.AlternativeFunctions.unlink_unlink
+ * phpcs:disable WordPress.WP.AlternativeFunctions.rename_rename
+ */
 trait FileTrait {
 
 	function setup_micro_themes_dir($activated = false){
 
-		// create micro-themes directory and some subdirectories
+		// create storage folderectory and some subdirectories
 		// the parent directory is created so just need define subdirectories
 		$directories = array(
 			$this->micro_root_dir . 'mt/conditional/draft/',
@@ -19,19 +36,20 @@ trait FileTrait {
 			$this->micro_root_dir . 'mt/cache/tailwind/classes/',
 			$this->micro_root_dir . 'mt/cache/tailwind/styles/',
 			$this->micro_root_dir . 'mt/cache/content/',
-			$this->micro_root_dir . 'Content/',
+			$this->thistmpdir,
 		);
 
 		foreach ($directories as $path){
 
 			if ( !is_dir($path) ) {
 
-				// create micro-themes dirs or log an error
+				// create storage folders or log an error
 				if ( !wp_mkdir_p($path) ) {
 
 					$this->log(
-						esc_html__('/micro-themes create directory error', 'microthemer'),
+						esc_html__('Create folder error', 'microthemer'),
 						'<p>' . sprintf(
+							/* translators: %s: directory path */
 							esc_html__('WordPress was not able to create the directory: %s', 'microthemer'),
 							$this->root_rel($path)
 						) . $this->permissionshelp . '</p>'
@@ -42,8 +60,21 @@ trait FileTrait {
 			}
 		}
 
+		// files only PHP reads (template map, caches, downloads) are kept from direct web access
+		foreach (array(
+			$this->micro_root_dir . 'mt/cache/themes/',
+			$this->micro_root_dir . 'mt/cache/content/',
+			$this->micro_root_dir . 'mt/cache/tailwind/classes/',
+			$this->thistmpdir,
+		) as $private_dir){
+			$this->protect_private_dir($private_dir);
+		}
+
+		// no directory listings
+		$this->write_if_missing($this->micro_root_dir . 'index.html', '');
+
 		/*else {
-			 //micro-themes dir does exist, clean lose pack files that may exist due to past bug
+			 /storage folder does exist, clean lose pack files that may exist due to past bug
 			$this->maybe_clean_micro_root(); // 7.7.2016 - we can remove after a few months.
 		}*/
 
@@ -72,6 +103,26 @@ trait FileTrait {
 
 		// all good
 		return true;
+	}
+
+	// deny web access to a folder (Apache; elsewhere the empty index.html still stops listings)
+	function protect_private_dir($dir){
+		$this->write_if_missing(
+			$dir . '.htaccess',
+			"<IfModule mod_authz_core.c>\n\tRequire all denied\n</IfModule>\n" .
+			"<IfModule !mod_authz_core.c>\n\tDeny from all\n</IfModule>\n"
+		);
+		$this->write_if_missing($dir . 'index.html', '');
+	}
+
+	function write_if_missing($file, $contents){
+		if (!file_exists($file)){
+			$write_file = @fopen($file, 'w');
+			if ($write_file){
+				fwrite($write_file, $contents);
+				fclose($write_file);
+			}
+		}
 	}
 
 	function dir_loop($dir, $result = array()) {
@@ -133,24 +184,14 @@ trait FileTrait {
 		return true;
 	}
 
-	// copy files from Microthemer plugin dir to micro-themes for use when MT is inactive
+	// Copy the assets the frontend loads from the storage folder (event JS, stock images, Amender
+	// front-end dependencies). Never PHP: loading styles while Microthemer is inactive is the
+	// separate Microloader plugin's job, which ships its own loader code.
 	function maybe_copy_to_micro_root($activated){
 
 		$orig_files = array(
 			'/js-min/animation-events.js',
 			'/stock/stock.zip',
-			'/src/autoload.php',
-			'/src/AssetLoad.php',
-			'/src/Logic.php',
-			'/src/Helper.php',
-
-			'/src/FrontAndBackTrait.php',
-			'/src/TimerTrait.php',
-			'/src/Content/AssetLoadContent.php',
-			'/src/Content/HTML.php',
-			'/src/Content/ContentHelper.php',
-
-			'/includes/animation/animation-code.inc.php',
 			'/js-min/amender.zip',
 			'/js-min/npm.zip',
 		);
@@ -158,18 +199,16 @@ trait FileTrait {
 		$new_files = array(
 			'animation-events.js',
 			'stock.zip',
-			'autoload.php',
-			'AssetLoad.php',
-			'Logic.php',
-			'Helper.php',
-			'FrontAndBackTrait.php',
-			'TimerTrait.php',
-			'Content/AssetLoadContent.php',
-			'Content/HTML.php',
-			'Content/ContentHelper.php',
-			'animation-code.inc.php',
 			'mt/js/amender.zip',
 			'mt/js/draft/npm.zip',
+		);
+
+		// unzipped equivalents of the zip archives - preferred when present
+		// (zip files are not permitted in the wp.org build, which ships these assets loose)
+		$loose_dirs = array(
+			'stock.zip' => 'images/stock-min/',
+			'mt/js/amender.zip' => 'js-min/front-deps/amender/',
+			'mt/js/draft/npm.zip' => 'js-min/front-deps/draft/npm/',
 		);
 		$i = 0;
 
@@ -181,6 +220,39 @@ trait FileTrait {
 			$new = $this->micro_root_dir . $newFileName;
 			$i++;
 			$isZipFile = strpos($newFileName, '.zip');
+
+			// copy the unzipped directory if the build ships one instead of a zip
+			if ($isZipFile !== false && isset($loose_dirs[$newFileName])){
+
+				$looseSource = $this->thisplugindir . $loose_dirs[$newFileName];
+
+				if (is_dir($looseSource)){
+
+					if ($activated || !is_dir($this->micro_root_dir . $dirName)){
+
+						$subdir = $newFileName === 'stock.zip' ? '' : $dirName;
+						$allowOverwrite = $newFileName !== 'mt/js/draft/npm.zip';
+
+						if ($this->copyFolder(
+							trailingslashit($looseSource),
+							trailingslashit($this->micro_root_dir . $subdir),
+							false, false, $allowOverwrite
+							) === false){
+							$this->log(
+								esc_html__('Folder not copied', 'microthemer'),
+								'<p>' . sprintf(
+									/* translators: %s: plugin subdirectory name */
+									esc_html__('Plugin folder (%s) could not be copied to the Microthemer storage folder.', 'microthemer'),
+									$loose_dirs[$newFileName]
+								) . '</p>',
+								'error'
+							);
+						}
+					}
+
+					continue;
+				}
+			}
 
 			// amender.zip will not be available if content is not included
 			if (!file_exists($orig)){
@@ -204,8 +276,9 @@ trait FileTrait {
 					$this->log(
 						esc_html__('File not copied', 'microthemer'),
 						'<p>' . sprintf(
+							/* translators: %s: plugin file name */
 							esc_html__('Plugin file (%s) could not be copied to the 
-								/micro-themes directory.', 'microthemer'),
+								Microthemer storage folder.', 'microthemer'),
 							$file
 						) . '</p>',
 						'error'
@@ -283,7 +356,7 @@ trait FileTrait {
 		if (!is_dir($from)) {
 			return false; // bail if no directory to copy
 		} if (!is_dir($to)) {
-			if (!mkdir($to)) {
+			if (!wp_mkdir_p($to)) {
 				return false; // bail if we can't create destination folder
 			};
 		}
@@ -294,7 +367,7 @@ trait FileTrait {
 			if ($ff != "." && $ff != "..") {
 				if (is_dir("$from$ff")) {
 					if ($recursive){
-						$this->copyFolder("$from$ff/", "$to$ff/");
+						$this->copyFolder("$from$ff/", "$to$ff/", $minifyCSS, $minifyJS, $overwrite, $recursive);
 					}
 				} else {
 					if ($overwrite || !file_exists("$to$ff")){
@@ -487,7 +560,10 @@ trait FileTrait {
 		if( !class_exists('PclZip')) {
 			require_once(ABSPATH . 'wp-admin/includes/class-pclzip.php');
 		}
-		// check if the /zip-exports dir is writable first
+		// check if the /zip-exports dir (in the storage folder) is writable first
+		wp_mkdir_p($zip_store);
+		// stop directory listings of the exported zips
+		$this->write_if_missing($zip_store . 'index.html', '');
 		if (is_writable($zip_store)) {
 			$archive = new \PclZip($zip_store.$dir_name.'.zip');
 			// create zip
@@ -505,7 +581,7 @@ trait FileTrait {
 				$this->log(
 					esc_html__('Zip package created', 'microthemer'),
 					'<p>' . esc_html__('Zip package successfully created.', 'microthemer') .
-					'<a href="'.$this->thispluginurl.'zip-exports/'.$dir_name.'.zip">' .
+					'<a href="'.esc_url($this->micro_root_url.'zip-exports/'.$dir_name.'.zip').'">' .
 					esc_html__('Download zip file', 'microthemer') . '</a>
 						</p>',
 					'notice'
@@ -517,7 +593,8 @@ trait FileTrait {
 			$this->log(
 				esc_html__('Zip store error', 'microthemer'),
 				'<p>' . sprintf(
-					esc_html__('The directory %s is not writable.', 'microthemer'),
+					/* translators: %s: directory path */
+				esc_html__('The directory %s is not writable.', 'microthemer'),
 					$this->root_rel($zip_store)
 				) . $this->permissionshelp . '</p>'
 			);
@@ -606,7 +683,9 @@ trait FileTrait {
 		if (!is_dir($dir) && !mkdir($dir, 0775, true)) {
 			$this->log(
 				esc_html__('Directory creation error', 'microthemer'),
-				'<p>' . sprintf(esc_html__('Failed to create directory: %s', 'microthemer'),
+				'<p>' . sprintf(
+					/* translators: %s: directory path */
+					esc_html__('Failed to create directory: %s', 'microthemer'),
 					$this->root_rel($dir)) . '</p>'
 			);
 			return false;
@@ -616,7 +695,17 @@ trait FileTrait {
 			unlink($file);
 		}
 
-		$write_file = fopen($file, 'w');
+		$write_file = @fopen($file, 'w');
+		if ($write_file === false){
+			$this->log(
+				esc_html__('File write error', 'microthemer'),
+				'<p>' . sprintf(
+					/* translators: %s: file path */
+					esc_html__('Writing to %s failed.', 'microthemer'),
+					$this->root_rel($file)) . $this->permissionshelp.'</p>'
+			);
+			return false;
+		}
 		$write_data = &$data; 
 		
 		// perhaps we minify
@@ -625,13 +714,15 @@ trait FileTrait {
 		}
 
 		// if write is unsuccessful for some reason
-		if (false === fwrite($write_file, $write_data)) {
+		if (fwrite($write_file, $write_data) !== strlen($write_data)) {
 			
 			fclose($write_file);
 			
 			$this->log(
 				esc_html__('File write error', 'microthemer'),
-				'<p>' . sprintf(esc_html__('Writing to %s failed.', 'microthemer'),
+				'<p>' . sprintf(
+					/* translators: %s: file path */
+					esc_html__('Writing to %s failed.', 'microthemer'),
 					$this->root_rel($file)) . $this->permissionshelp.'</p>'
 			);
 			
@@ -647,3 +738,4 @@ trait FileTrait {
 
 
 }
+// phpcs:enable

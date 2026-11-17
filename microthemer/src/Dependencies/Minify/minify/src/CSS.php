@@ -12,6 +12,10 @@
 
 namespace Microthemer\Dependencies\Minify;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 use Microthemer\Dependencies\Minify\Exceptions\FileImportException;
 use Microthemer\Dependencies\Minify\PathConverter\Converter;
 use Microthemer\Dependencies\Minify\PathConverter\ConverterInterface;
@@ -215,7 +219,7 @@ class CSS extends Minify
             // check if current file was not imported previously in the same
             // import chain.
             if (in_array($importPath, $parents)) {
-                throw new FileImportException('Failed to import file "' . $importPath . '": circular reference detected.');
+                throw new FileImportException('Failed to import file "' . esc_html($importPath) . '": circular reference detected.');
             }
 
             // grab referenced file & minify it (which may include importing
@@ -742,8 +746,11 @@ class CSS extends Minify
     {
         // PHP only supports $this inside anonymous functions since 5.4
         $minifier = $this;
+        // sebcus - the value may contain quoted strings with ; { or } in them, e.g.
+        // url("data:image/svg+xml;charset=utf8,..."). Match those strings whole, otherwise
+        // the value stops mid-string and the unpaired quote corrupts all CSS after it.
         $this->registerPattern(
-            '/(?<=^|[;}{])\s*(--[^:;{}"\'\s]+)\s*:([^;{}]+)/m',
+            '/(?<=^|[;}{])\s*(--[^:;{}"\'\s]+)\s*:((?:[^;{}"\']+|"(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\')+)/m',
             function ($match) use ($minifier) {
                 $placeholder = '--custom-' . count($minifier->extracted) . ':0';
                 $minifier->extracted[$placeholder] = $match[1] . ':' . trim($match[2]);

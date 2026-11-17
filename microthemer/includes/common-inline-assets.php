@@ -1,11 +1,10 @@
 <?php
 
-// Code that should run on all MT plugin pages
-
-// Stop direct call
-if(preg_match('#' . basename(__FILE__) . '#', $_SERVER['PHP_SELF'])) {
-	die('Please do not call this page directly.');
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
+
+// Code that should run on all MT plugin pages
 
 // inline SVG sprite
 /*echo $this->icon('sprite', array(

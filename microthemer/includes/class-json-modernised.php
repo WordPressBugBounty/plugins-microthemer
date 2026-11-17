@@ -1,5 +1,9 @@
 <?php
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 // Defines for JSON tokens and locations
 define('JSON_BOOL', 1);
 define('JSON_INT', 2);

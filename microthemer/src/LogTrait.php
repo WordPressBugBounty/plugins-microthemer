@@ -2,6 +2,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 trait LogTrait {
 
 	function log($short, $long, $type = 'error', $preset = false, $vars = array()){
@@ -14,6 +18,7 @@ trait LogTrait {
 			} elseif ($preset == 'json-decode'){
 				$this->globalmessage[++$this->ei]['short'] = __('Decode json error', 'microthemer');
 				$this->globalmessage[$this->ei]['type'] = 'error';
+				/* translators: %s: JSON file path */
 				$this->globalmessage[$this->ei]['long'] = '<p>' . sprintf(esc_html__('WordPress was not able to convert %s into a usable format.', 'microthemer'), $this->root_rel($vars['json_file']) ) . '</p>
 <p>JSON Error code: '. $this->json_last_error() . '</p>';
 
@@ -102,6 +107,7 @@ trait LogTrait {
 
 	// Error Reporting methods
 
+	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by microthemer_ajax_actions() via check_ajax_referer('mcth_simple_ajax', '_wpnonce'), which gates this whole call path.
 	function maybeSendReport($post, $manual = false){
 
 		// update the reporting preference (with latest permissions), which gets updated on the client side
@@ -118,26 +124,25 @@ trait LogTrait {
 		$dataPermission    = !empty($permission['data']);
 		$contactPermission = !empty($permission['contact']);
 		$disallowed        = !$manual && !$filePermission && !$dataPermission;
-		$status            = !empty($_POST['status']) ? $_POST['status'] : array();
+		$status            = !empty($_POST["status"]) ? array_map("intval", (array) wp_unslash($_POST["status"])) : array();
 		$fileQuotaReached  = !$manual && !empty($status['fileQuotaReached']);
 		$dataQuotaReached  = !$manual && !empty($status['dataQuotaReached']);
 		$allQuotaReached   = $fileQuotaReached && $dataQuotaReached;
 
 		// bail if error reporting is disabled or quotas have been reached
 		if ($disallowed || $allQuotaReached){
-			return json_decode(array('message' => 'Sending quota reached'));
+			return array('message' => 'Sending quota reached');
 		}
 
 		// minimum information to send
 		$error     = !empty($post['error']) ? $post['error'] : null;
 		$isAIFeedback = !empty($post['isAIFeedback']);
 		$onboard   = !empty($post['onboard']) ? $post['onboard'] : null;
-		$member_id = !empty($this->preferences['subscription']['member_id'])
-			? $this->preferences['subscription']['member_id']
-			: null;
+		// account id, where an extension component provides one
+		$member_id = $this->extFilter('member_id', null);
 		$postLimit = $this->reporting['max'][($manual ? 'manual' : 'auto')];
 		$payload   = array(
-			'pro'           => !empty($this->preferences['buyer_validated']) ? 1 : 0,
+			'pro'           => $this->extendedCSS() ? 1 : 0,
 			'manual'        => $manual ? 1 : 0,
 			'onboard'       => $onboard ? 1 : 0,
 			'partial'       => 0,
@@ -153,8 +158,8 @@ trait LogTrait {
 			'error_message'     => isset($post['error_message']) ? $post['error_message'] : null,
 			'error_key'     => isset($post['error_key']) ? $post['error_key'] : null,
 			'error_stack'     => isset($post['error_stack']) ? $post['error_stack'] : null,
-			'context'       => isset($post['context']) ? json_encode($post['context'], true) : null,
-			//'reporting'     => isset($post['reporting']) ? json_encode($post['reporting'], true) : null, // if we need to debug
+			'context'       => isset($post['context']) ? wp_json_encode($post['context'], true) : null,
+			//'reporting'     => isset($post['reporting']) ? wp_json_encode($post['reporting'], true) : null, // if we need to debug
 			'history'       => $this->getRevisionActionsAsString($onboard),
 
 		);
@@ -195,7 +200,8 @@ trait LogTrait {
 					case 'options_live':
 					case 'preferences':
 						if (!empty($post[$key])){
-							$serialised_data = serialize(json_decode(stripslashes($post[$key]), true ));
+							// already unslashed and checked to be JSON (Schemas::errorReport)
+							$serialised_data = serialize(json_decode($post[$key], true));
 						}
 						break;
 					case 'options':
@@ -221,9 +227,7 @@ trait LogTrait {
 		}
 
 		// Post the payload to Themeover
-		$url = false
-			? 'http://localhost/microthemer/wordpress/report/'
-			: 'https://validate.themeover.com/report/';
+		$url = 'https://validate.themeover.com/report/';
 
 		$response = wp_remote_post($url, array(
 			'method'   => 'POST',
@@ -252,6 +256,7 @@ trait LogTrait {
 			);
 			return json_decode($response['body']);
 		}
+	// phpcs:enable WordPress.Security.NonceVerification
 
 	}
 
@@ -302,13 +307,13 @@ trait LogTrait {
 
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT user_action FROM $table_name order by id desc limit %d",
-				$history_limit
+				"SELECT user_action FROM %i order by id desc limit %d",
+				$table_name, $history_limit
 			),
 			ARRAY_A
 		);
 
-		return $rows ? strip_tags( serialize($rows) ) : null;
+		return $rows ? wp_strip_all_tags( serialize($rows) ) : null;
 	}
 
 }

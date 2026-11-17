@@ -5,6 +5,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 trait FrontAndBackTrait {
 
 	var $appName = 'Microthemer';
@@ -60,35 +64,37 @@ trait FrontAndBackTrait {
 
 		if ($this->hasContentCapability()){
 			$table = $wpdb->prefix . "micro_content";
-			return $wpdb->get_var( "SHOW TABLES LIKE '$table'" ) !== $table;
+			return $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $wpdb->esc_like($table) ) ) !== $table;
 		}
 
 		return false;
 	}
 
-	function hasContentSubscription(){
-		return $this->contentClass && !empty($this->preferences['amender_buyer_validated']);
+	// whether content modifications can be published (set by an extension, see extFilter())
+	function canPublishContent(){
+		return $this->contentClass && apply_filters('microthemer_content_publishing', false);
 	}
 
-	function hasCSSSubscription(){
-		return !empty($this->preferences['buyer_validated']);
+	// whether the extended CSS property groups are active (set by an extension)
+	function extendedCSS(){
+		return (bool) apply_filters('microthemer_extended_css', false);
 	}
 
-	function supportContent($requiresSubscription = false){
+	function supportContent($forPublishing = false){
 		return $this->contentClass
-			&& (!$requiresSubscription || $this->hasContentSubscription());
+			&& (!$forPublishing || $this->canPublishContent());
 	}
 
-	function supportGUICSS($requiresSubscription = false){
+	function supportGUICSS($forExtended = false){
 		return $this->hasCSSCapability()
-		       && (!$requiresSubscription || $this->hasCSSSubscription());
+		       && (!$forExtended || $this->extendedCSS());
 	}
 
 	// Conditionally run a content method
-	function contentMethod($method, $args = array(), $requiresSubscription = false){
+	function contentMethod($method, $args = array(), $forPublishing = false){
 
 		if (!$this->excludeAmender() && $this->contentClass && method_exists($this->contentClass, $method)
-		    && (!$requiresSubscription || $this->hasContentSubscription())){
+		    && (!$forPublishing || $this->canPublishContent())){
 			return call_user_func_array(array(&$this->contentClass, $method), $args);
 		}
 
@@ -96,10 +102,10 @@ trait FrontAndBackTrait {
 	}
 
 	// Conditionally run a CSS method
-	function cssMethod($method, $args = array(), $requiresSubscription = false){
+	function cssMethod($method, $args = array(), $forExtended = false){
 
 		if ($this->cssClass && method_exists($this->cssClass, $method)
-		    && (!$requiresSubscription || $this->hasCSSSubscription())){
+		    && (!$forExtended || $this->extendedCSS())){
 			return call_user_func_array(array(&$this->cssClass, $method), $args);
 		}
 

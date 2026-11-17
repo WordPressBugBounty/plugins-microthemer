@@ -1,8 +1,7 @@
 <?php
 
-// Stop direct call
-if(preg_match('#' . basename(__FILE__) . '#', $_SERVER['PHP_SELF'])) {
-	die('Please do not call this page directly.');
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
 // central store of language strings - in future, have this is sep file and store escaped translates files in DB table rows
@@ -36,8 +35,8 @@ $this->edge_mode = array(
 // define folders (translatable)
 $this->set_default_folders();
 
-// custom code
-$this->custom_code = Microthemer\Common::get_custom_code();
+// custom code (the full CSS/JS editors - absent from builds without the code editors)
+$this->custom_code = $this->canEditCode() ? Microthemer\Common::get_custom_code() : array();
 
 // params to strip
 $this->params_to_strip = Microthemer\Common::params_to_strip();
@@ -223,7 +222,7 @@ $this->aiData = array(
 		'html' => esc_html__('HTML', 'microthemer'),
 		'js' => esc_html__('JS', 'microthemer'),
 	)),
-	'defaultTab' => 'css', //$defaultTab = $this->hasCSSSubscription() ? 'css' : 'html',
+	'defaultTab' => 'css',
 	'actions' => array(
 		// Generate new content for the page CSS / HTML / JS
 		'generate' => array(
@@ -805,9 +804,9 @@ $this->default_preferences = array(
 	"default_amender_event" => 'DOMContentLoaded',
 	"sync_browser_tabs" => 1, // change for Gutenberg
 	"specificity_preference" => 1, // 1 = high, 0 = low
-	"wp55_jquery_version" => 0,
 	"bricks_container_hack" => 0, // no longer necessary since Bricks 1.4
 	"remove_all_bricks_container_hacks" => 0,
+	"pro_data_notice_dismissed" => 0,
 	"insert_custom_field_classes" => 0,
 	"autoload_oxygen" => 0,
 	"autoload_elementor" => 0,
@@ -949,21 +948,6 @@ $this->default_preferences = array(
 
 );
 
-$this->subscription_defaults = array(
-	'member_id' => false,
-	'renewal_check' => false,
-	'eligible_version' => false,
-	'capped_version' => false,
-	'restriction_mode' => false,
-);
-
-$this->subscription_check_defaults = array(
-	'stop_attempts' => false,
-	'max' => 4,
-	'num' => 0,
-	'next_time' => false,
-);
-
 // if installing MT when a supported page builder is active, default to their MQs
 
 if (count($this->elementor_mqs)){
@@ -1019,27 +1003,12 @@ $this->page_class_prefix_options = array(
 $this->default_preferences_dont_reset_or_export = array(
 
 	"original_install" => $this->getAppName(0),
-	"content_addon" => 0,
-	"css_addon" => 0,
-
-	// Subscription contingent
-	"buyer_email" => '',
-	"buyer_validated" => false,
-	'retro_sub_check_done' => false,
-	"subscription" => $this->subscription_defaults,
-	"subscription_checks" => $this->subscription_check_defaults,
-
-	"amender_buyer_email" => '',
-	'amender_buyer_validated' => false,
-	'amender_retro_sub_check_done' => false,
-	"amender_subscription" => $this->subscription_defaults,
-	"amender_subscription_checks" => $this->subscription_check_defaults,
 
 	// Site contingent
 	"version" => $this->version,
 	"previous_version" => '',
 	"reporting" => array(
-		'anonymous_id' => mt_rand(1000000000, mt_getrandmax()),
+		'anonymous_id' => wp_rand(1000000000, mt_getrandmax()),
 		'data' => array(
 			'last_sent' => null,
 			'sends_today' => 0
@@ -1049,9 +1018,10 @@ $this->default_preferences_dont_reset_or_export = array(
 			'sends_today' => 0,
 			'unique_errors' => (object) array()
 		),
+		// opt-in: nothing is sent to Themeover until the user ticks these in the setup dialog
 		'permission' => array(
-			'file' => 1,
-			'data' => 1
+			'file' => 0,
+			'data' => 0
 		)
 	),
 	"clean_uninstall" => 0,
@@ -1179,7 +1149,7 @@ if ($pd_context === 'setup_wp_dependent_vars'){
 	$this->default_preferences = array_merge($this->default_preferences, $default_preferences);
 }
 
-// create micro-themes dir/blank active-styles.css, copy pie if doesn't exist
+// create storage folder/blank active-styles.css, copy pie if doesn't exist
 $this->setup_micro_themes_dir();
 
 // get the file structure - and create micro_root dir if it doesn't exist
@@ -1192,6 +1162,12 @@ $this->getOptions();
 $this->getPropertyOptions();
 
 // get/set the preferences
+// extension components add their preference defaults before the stored preferences are
+// loaded/initialised against the defaults
+$this->default_preferences_dont_reset_or_export = $this->extFilter(
+	'preference_defaults', $this->default_preferences_dont_reset_or_export
+);
+
 $this->getPreferences(true, $pd_context);
 
 
@@ -1547,7 +1523,7 @@ $this->modification = array(
 		__('JavaScript', 'microthemer') => array(
 			'Add a "confirm" prompt when they click this',
 			'Make this link open in a new tab',
-			'Add a countdown timer after this element for '  . date('j M, Y', strtotime('+90 days'))
+			'Add a countdown timer after this element for '  . wp_date('j M, Y', strtotime('+90 days'))
 		),
 
 		/*__('3D Effects', 'microthemer') => array(
@@ -1665,21 +1641,11 @@ $this->menu = array(
 				'icon_name' => 'box-open'
 			),
 
-			// prompt to unlock
-			/*'buyer_validated' => array(
-				'name' => esc_html__('Unlock Microthemer', 'microthemer'),
-				'title' => $this->preferences['buyer_validated'] ?
-					esc_attr__('Validate license using a different license key', 'microthemer') :
-					esc_attr__('Enter your code to unlock Microthemer (see My Downloads on themeover.com)', 'microthemer'),
-				'dialog' => 1,
-				'class' => 'unlock-microthemer',
-				'icon_name' => 'unlock-alt'
-			),*/
-
 			'generated' => array(
 				//'new_set' => 1,
 				'name' => esc_html__('Generated code', 'microthemer'),
-				'title' => sprintf(esc_attr__('View the code %s generates', 'microthemer'), $this->appName),
+				/* translators: %s: application name */
+			'title' => sprintf(esc_attr__('View the code %s generates', 'microthemer'), $this->appName),
 				'dialog' => 1,
 				'class' => 'display-css-code',
 				'icon_name' => 'view-code',
@@ -1740,7 +1706,7 @@ $this->menu = array(
 		'sub' => array(
 			'preview_url' => array(
 				'icon_title' => 'Ctrl + Alt + N',
-				'name' => esc_html__('', 'microthemer'),
+				'name' => '',
 				'title' => esc_html__('Go to a new page', 'microthemer'),
 				'class' => 'switch-preview',
 				'combo_data' => 'custom_paths',
@@ -1782,7 +1748,8 @@ $this->menu = array(
 			'sync_browser_tabs' => array(
 				//'icon_title' => '',
 				'name' => esc_html__('Sync browser tabs', 'microthemer'),
-				'title' => sprintf(esc_attr__("Auto-refresh %s CSS in other browser tabs", 'microthemer'), $this->appName),
+				/* translators: %s: application name */
+			'title' => sprintf(esc_attr__("Auto-refresh %s CSS in other browser tabs", 'microthemer'), $this->appName),
 				'class' => 'sync-browser-tabs',
 				'toggle' => !empty($this->preferences['sync_browser_tabs']),
 				'data-pos' => esc_attr__('Enable synced browser tabs', 'microthemer'),
@@ -2335,6 +2302,14 @@ $this->menu = array(
 
 
 );
+
+// no code editor to switch to or dock in builds without the code editors
+if (!$this->canEditCode()){
+	unset(
+		$this->menu['view']['sub']['show_code_editor'],
+		$this->menu['view']['sub']['advanced_layout_options']['nested']['sub']['dock_editor_left']
+	);
+}
 
 // have a dev menu solely for our testing
 if (TVR_DEV_MODE){

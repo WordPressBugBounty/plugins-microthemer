@@ -2,6 +2,10 @@
 
 namespace Microthemer;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 trait AdminInitTrait {
 
 	var $activation_function_ran;
@@ -20,12 +24,36 @@ trait AdminInitTrait {
 		$this->unq_base = uniqid('mtmq');
 
 		// Setup essential vars
-		$page = isset($_GET['page']) ? $_GET['page'] : false;
+		// Page slugs include ".php" (e.g. tvr-microthemer.php). Do not use
+		// sanitize_key() — it strips dots and would skip initMicrothemerPage().
+		$raw_page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
+		$page = in_array($raw_page, $this->getAllPluginPages(), true) ? $raw_page : false;
 		$this->preferences = get_option($this->preferencesName);
+
+		// files from the pre-7.6 location move to uploads/microthemer (once per site)
+		$this->maybeMoveStorage();
 
 		// setup reference to content class
 		if ($this->hasContentCapability()){
 			$this->contentClass = new Content\AdminContent($this);
+		}
+
+		// components that ship in some builds only; they connect through extFilter()/extAction()
+		foreach (glob(dirname(__FILE__) . '/Extensions/*.php') ?: array() as $extension_file){
+			$extension_class = __NAMESPACE__ . '\Extensions\\' . basename($extension_file, '.php');
+			$this->extensions[] = new $extension_class($this);
+		}
+
+		// AI assistant (AI-enabled builds only — see src/AIPanel.php for why the wp.org
+		// package ships without it)
+		if (file_exists(dirname(__FILE__) . '/AIPanel.php')){
+			$this->aiPanel = new AIPanel($this);
+		}
+
+		// UI driven by the Amender JS module (mt-html.js). Tied to the build rather than the
+		// content capability: the static program data carries its templates
+		if ($this->hasContentDir()){
+			$this->moduleUI = new Content\ModuleUI($this);
 		}
 
 		// Set the app name
@@ -40,8 +68,9 @@ trait AdminInitTrait {
 		$this->hookAjax();
 		$this->hookAdminMenu();
 		$this->hookAdminBarShortcut();
-		$this->hookPluginUpdate();
 		$this->hookActivation();
+		$this->hookOrphanedProDataNotice();
+		$this->hookPublishedCustomCodeCleanup();
 
 		// Load additional functionality on MT admin pages
 		if (in_array($page, $this->getAllPluginPages()) ) {
@@ -102,33 +131,15 @@ trait AdminInitTrait {
 		// loading URL for iframe
 		//$this->placeholderURLs = $this->get_placeholder_urls();
 
-		/* this may need work, ocassionally breaks: http://stackoverflow.com/questions/5441784/why-does-ob-startob-gzhandler-break-this-website
-				 * $this->show_me = 'zlib.output_compression config: ('
-					. ini_get('zlib.output_compression')
-					. ') gzipping HTTP_ACCEPT_ENCODING: (' . $_SERVER['HTTP_ACCEPT_ENCODING']
-					. ') substr_count: ' . substr_count($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip');*/
-		// only microthemer needs custom jQuery and gzipping
-
-		// enable gzipping on UI page if defined
-		if ( $_GET['page'] == basename(__FILE__) and $this->preferences['gzip'] == 1) {
-			if (session_id() === null &&
-			    !empty($_SERVER['HTTP_ACCEPT_ENCODING']) &&
-			    substr_count($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')){
-				ob_start("ob_gzhandler");
-			} else {
-				ob_start();
-			}
-		}
 
 		// add scripts and styles
 		// Not necessary if this is an ajax call. XDEBUG_PROFILE showed add_js was adding sig time.
 		if ( empty($_GET['action']) or $_GET['action'] != 'mtui'){
 
 			add_action('admin_init', array(&$this, 'actionCookieUpdates') );
+			add_action('admin_init', array(&$this, 'verifyPageLinkNonces') );
 			add_action('admin_init', array(&$this, 'add_no_cache_headers'), 1);
 			add_action('admin_enqueue_scripts', array(&$this, 'add_css'), PHP_INT_MAX);
-			add_action('admin_head', array(&$this, 'add_dyn_inline_css'));
-			add_action('admin_head', array(&$this, 'load_icon_font')); // icon font and layout
 			add_action('admin_enqueue_scripts', array(&$this, 'add_js'), PHP_INT_MAX);
 			//add_action( 'wp_body_open', array(&$this, 'add_svg_sprite') );
 
@@ -170,9 +181,7 @@ trait AdminInitTrait {
 	// activation hook for setting initial preferences (so e.g. Microthemer link appears in top toolbar)
 	function hookActivation(){
 
-		// just flag that Microthemer has been activated on code than runs before activation redirect
-		// we can't hook into all WordPress actions prior to the admin redirect
-		register_activation_hook( __FILE__, array(&$this, 'flag_microthemer_activation') );
+		// (the activation hook itself is registered in tvr-microthemer.php, which flags activation)
 
 		// check if Microthemer has been activated and run any code that CAN tap into all WP functionality
 		add_action( 'admin_init', array(&$this, 'check_microthemer_activation_flag') );
@@ -180,6 +189,7 @@ trait AdminInitTrait {
 
 	function actionCookieUpdates(){
 
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only page routing; the only effect is clearing the plugin's own draft-folder cookie for the current user when they open the Microthemer screen
 		if (isset($_GET['page']) && $_GET['page'] === $this->microthemeruipage){
 			if (isset($_COOKIE['microthemer_draft_folder'])){
 				$this->deleteCookie('microthemer_draft_folder');
@@ -188,10 +198,31 @@ trait AdminInitTrait {
 	}
 
 
-	// user's subscription has expired and they are capped at a version
-	function is_capped_version($prefix = ''){
-		return !empty($this->preferences[$prefix . 'buyer_validated']) and !empty($this->preferences[$prefix . 'subscription']['capped_version']);
+	// Links the plugin generates that save state must carry a valid nonce. Checked before admin-header.php
+	// runs, as a wp_die() during page output would leave the page's scripts without their footer data.
+	function verifyPageLinkNonces(){
+
+		$page_links = array(
+			$this->microthemespage => array('packs_page', 'mt_manage_packs'),
+			$this->managesinglepage => array('design_pack', 'mt_manage_packs'),
+			$this->microthemeruipage => array('mt_preview_url', 'mt-preview-nonce'),
+		);
+
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only page routing to decide which nonce the request needs
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- only compared against the known page slugs above
+		$page = isset($_GET['page']) ? $_GET['page'] : '';
+
+		if (!is_string($page) || !isset($page_links[$page]) || !isset($_GET[$page_links[$page][0]])){
+			return;
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		if ( ! isset( $_REQUEST['_wpnonce'] )
+		     || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['_wpnonce'] ) ), $page_links[$page][1] ) ) {
+			wp_die( 'Security check failed', '', array( 'response' => 403 ) );
+		}
 	}
+
 
 	function supportAdminAssets(){
 		$p = $this->preferences;
@@ -225,7 +256,8 @@ trait AdminInitTrait {
 				'admin_notices',
 				function(){
 					echo '<div id="message" class="error"><p><strong>' .
-					     sprintf(esc_html__('Sorry, %s only runs on WordPress version %s or above. Deactivate %s to remove this message.', 'microthemer'), $this->appName, $this->minimum_wordpress, $this->appName) .
+					     /* translators: 1: application name, 2: minimum WordPress version, 3: application name */
+					     sprintf(esc_html__('Sorry, %1$s only runs on WordPress version %2$s or above. Deactivate %3$s to remove this message.', 'microthemer'), esc_html($this->appName), esc_html($this->minimum_wordpress), esc_html($this->appName)) .
 					     '</strong></p></div>';
 				}
 			);
@@ -254,7 +286,8 @@ trait AdminInitTrait {
 				'admin_notices',
 				function() {
 					echo '<div id="message" class="error"><p><strong>' .
-					     sprintf( esc_html__( 'Sorry, %s has a memory requirement of 16MB or higher to run. Your allocated memory is less than this (%sMB). Deactivate %s to remove this message. Or increase your memory limit.', 'microthemer' ), $this->appName, $this->user_memory_limit, $this->appName) .
+					     /* translators: 1: application name, 2: allocated memory in MB, 3: application name */
+					     sprintf( esc_html__( 'Sorry, %1$s has a memory requirement of 16MB or higher to run. Your allocated memory is less than this (%2$sMB). Deactivate %3$s to remove this message. Or increase your memory limit.', 'microthemer' ), esc_html($this->appName), esc_html($this->user_memory_limit), esc_html($this->appName)) .
 					     '</strong></p></div>';
 				}
 			);
@@ -273,6 +306,7 @@ trait AdminInitTrait {
 		$this->current_user_id = get_current_user_id();
 
 		add_menu_page(
+			/* translators: %s: application name */
 			sprintf(__('%s UI', 'microthemer'), $this->appName),
 			$this->appNameFull,
 			'administrator', $this->microthemeruipage, array(&$this,'microthemer_ui_page')
@@ -328,7 +362,7 @@ trait AdminInitTrait {
 			$href.= '&mt_preview_url=' . rawurlencode($front['url'])
 			        . '&mt_item_id=' . rawurlencode($front['postID'])
 			        . '&mt_path_label=' . rawurlencode($front['title'])
-			        .' &_wpnonce=' . wp_create_nonce( 'mt-preview-nonce' );
+			        . '&_wpnonce=' . wp_create_nonce( 'mt-preview-nonce' );
 
 			// not sure how to make a post
 			if ($front['post_status'] === 'auto-draft'){
@@ -345,6 +379,7 @@ trait AdminInitTrait {
 			'href' => $href,
 			'meta' => array(
 				'class' => 'wp-mcr-shortcut',
+				/* translators: %s: application name */
 				'title' => sprintf(__('Jump to the %s interface', 'microthemer'), $this->appName)
 			)
 		);
@@ -396,13 +431,9 @@ trait AdminInitTrait {
 	}
 
 	// When a WP plugin is activated, we can't hook into all WordPress functionality
-	// so the workaround they advise is to flag that activation happened, so when WP
-	// redirects to another admin page, the activation functionality can run on the admin_init hook
+	// so the workaround they advise is to flag that activation happened (tvr-microthemer.php), so when
+	// WP redirects to another admin page, the activation functionality can run on the admin_init hook
 	// https://developer.wordpress.org/reference/functions/register_activation_hook/
-	function flag_microthemer_activation(){
-		add_option('microthemer_activation', '1');
-	}
-
 	function check_microthemer_activation_flag(){
 
 		if ( get_option( 'microthemer_activation' ) == '1' ) {
@@ -437,8 +468,9 @@ trait AdminInitTrait {
 			// if non-english, we need to write to program-data.js in current language
 			// log success of overwrite
 			// (this didn't work properly on some servers, maybe @fopen suppress would work, but this is safer)
+			$locale = $this->locale !== '' ? $this->locale : get_locale();
 			$pref_array = array(
-				'inlineJsProgData' => ( strpos($this->locale, 'en_') === false ) //!$this->write_mt_version_specific_js('../js-min')
+				'inlineJsProgData' => ( strpos($locale, 'en_') === false ) //!$this->write_mt_version_specific_js('../js-min')
 			);
 
 			$this->savePreferences($pref_array);
@@ -449,7 +481,7 @@ trait AdminInitTrait {
 
 			// todo save all lang strings in DB at this point to save CPU later, start with property-options.inc.php
 
-			// ensure micro-themes dir is created animation-events.js and stock.zip extracted
+			// ensure storage folder is created animation-events.js and stock.zip extracted
 			$this->setup_micro_themes_dir(true);
 
 			$this->activation_function_ran = true;
@@ -458,72 +490,283 @@ trait AdminInitTrait {
 
 	}
 
-	// plugin update stuff
-	function hookPluginUpdate(){
-		add_filter( 'site_transient_update_plugins', array( $this, 'site_transient_update_plugins' ) );
-		add_filter( 'plugins_api_result', array( &$this, 'plugins_api_result' ), 99, 3 );
-		add_action( 'in_plugin_update_message-microthemer/' . $this->microthemeruipage,
-			array( &$this, 'plugin_update_message' ), 1, 2
-		);
-	}
+	// Lite-only notice for sites with saved work this edition can't show or apply, which in
+	// practice means the site used Microthemer Pro before it became a separate plugin: until
+	// 7.5.x, wp.org served the edition that Pro unlocked, so the first Lite update from wp.org
+	// replaces Pro on those sites. Not a license check - shared code has no license state - only
+	// the same opaque settings comparison UnavailableSettings does to keep that data safe on save.
+	// Stays on every admin screen until it's dismissed or Pro is installed, as a customer can
+	// easily miss a message that only shows in one place. It's only for sites that have this data.
+	function hookOrphanedProDataNotice(){
 
-	// maybe sets 'Automatic update is unavailable for this plugin'
-	function site_transient_update_plugins($transient){
+		// pro builds have every property - nothing is missing
+		if ($this->hasProPropertyOptions()){
+			return;
+		}
 
-		if ($this->is_capped_version()){
-			global $pagenow;
-			$plugin = 'microthemer/' . $this->microthemeruipage;
-			if ( ('plugins.php' == $pagenow && is_multisite()) or empty($transient->response[$plugin]) ) {
-				return $transient;
+		if (!current_user_can('manage_options')){
+			return;
+		}
+
+		if (!empty($this->preferences['pro_data_notice_dismissed'])){
+			return;
+		}
+
+		if (isset($_GET['mt_dismiss_pro_data_notice'])){
+			check_admin_referer('mt_dismiss_pro_data_notice');
+			$this->savePreferences(array('pro_data_notice_dismissed' => 1));
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- only routes to the notice; the dismiss branch above is nonce-checked
+		$page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
+
+		// Microthemer's own pages hide admin notices, so they get the message in their own log instead
+		if (in_array($page, $this->getAllPluginPages(), true)){
+			$orphaned = $this->cachedOrphanedProData();
+			if ($orphaned){
+				$notice = $this->orphanedProDataNotice($orphaned);
+				$this->log(esc_html($notice['short']), $notice['long'], 'warning');
 			}
-			$transient->response[$plugin]->package = false;
-			$transient->response[$plugin]->upgrade_notice = 'UPDATE UNAVAILABLE. Please renew your subscription to enable updates.';
+			return;
 		}
 
-		return $transient;
+		// the settings scan runs only when notices are actually printed
+		add_action('admin_notices', array($this, 'renderOrphanedProDataNotice'));
 	}
 
-	// maybe removes download button from plugin details popup
-	function plugins_api_result($res, $action, $args){
-		if ($this->is_capped_version()){
-			$res->download_link = false;
+	// orphanedProData() loads the property map and walks all the settings, which is too much for
+	// every admin screen, and the answer only changes as often as Lite's settings are saved
+	function cachedOrphanedProData(){
+
+		$orphaned = get_transient('microthemer_orphaned_pro_data');
+
+		if (!is_array($orphaned)){
+			$orphaned = $this->orphanedProData();
+			set_transient('microthemer_orphaned_pro_data', $orphaned, HOUR_IN_SECONDS);
 		}
-		return $res;
+
+		return $orphaned;
 	}
 
-	// prompts renewal & unlock if version is capped
-	// thanks to Beaver Builder for lighting the way here: https://www.wpbeaverbuilder.com/
-	function plugin_update_message($plugin_data, $response){
-
-		if ( empty( $response->package ) ) {
-
-			$message  = '<span style="display:block;padding:10px 20px;margin:10px 0; background: #d54e21; color: #fff;">';
-			$message .= '<strong>' . __( 'UPDATE UNAVAILABLE!', 'microthemer' ) . '</strong>';
-			$message .= '&nbsp;&nbsp;&nbsp;';
-			$message .= 'Please renew your subscription to enable updates.';
-			$message .= ' ' . sprintf( '<a href="%s" target="_blank" style="color: #fff; text-decoration: underline;">%s </a>', admin_url( '/admin.php?page='.$this->microthemeruipage.'&launch_unlock=1'), __( 'Renew subscription', 'microthemer' ) );
-			$message .= '</span>';
-
-			echo  $message;
+	// Builds without the code editors never output custom code, but a build that had them (Pro,
+	// before the site updated to the wp.org build) may have published some
+	function hookPublishedCustomCodeCleanup(){
+		if ($this->isCSSEditor() && !$this->hasCodeEditors() && current_user_can('manage_options')){
+			// late enough for the program data the asset generation relies on (setup_wp_dependent_vars)
+			add_action('admin_init', array($this, 'clearPublishedCustomCode'), 20);
 		}
 	}
 
-	function installThemeoverAddon($addon){
+	// Stop loading published custom JS immediately. Rebuild published CSS from its own
+	// settings snapshot, never from newer drafts, so switching to Lite cannot leave
+	// Pro code live or accidentally publish work the user has not published.
+	function clearPublishedCustomCode(){
 
-		$key = $addon === 'microthemer' ? 'css_addon' : 'content_addon';
-		$pref_array = array(
-			$key => 1
+		if (!empty($this->preferences['load_js']) || !empty($this->preferences['load_js_published'])){
+			$this->savePreferences(array('load_js' => 0, 'load_js_published' => 0));
+		}
+
+		if (empty($this->options)){
+			$this->getOptions();
+		}
+
+		if (get_option('microthemer_lite_css_cleaned')){
+			return;
+		}
+
+		// A draft may have removed code that remains in the published stylesheet.
+		// The current options alone cannot prove that the published CSS is clean.
+		if (!get_option('microthemer_lite_css_retry')
+			&& array_key_exists('global_stylesheet_required_published', $this->preferences)
+			&& empty($this->preferences['global_stylesheet_required_published'])
+			&& empty($this->preferences['asset_loading_published']['conditional'])){
+			update_option('microthemer_lite_css_cleaned', 1, false);
+			return;
+		}
+
+		$publishedState = $this->publishedCssStateForLiteCleanup();
+		if (!is_array($publishedState)){
+			$this->pausePublishedCssForLite();
+			return;
+		}
+
+		$draftOptions = $this->options;
+		$draftPreferences = $this->preferences;
+		$this->options = $publishedState['settings'];
+		$this->preferences = array_replace($this->preferences, $publishedState['preferences']);
+		$assetsWritten = $this->update_assets('customised', '', array('active' => 1));
+		$publishedPreferences = $this->preferences;
+		$this->options = $draftOptions;
+		if (!$assetsWritten){
+			$this->savePreferences($draftPreferences);
+			$this->pausePublishedCssForLite(true);
+			return;
+		}
+
+		// update_assets saves working preferences as it generates files. Restore the
+		// draft side, copying only the loading flags for the new published assets.
+		$draftPreferences['asset_loading_published'] = $publishedPreferences['asset_loading'];
+		$draftPreferences['global_stylesheet_required_published'] = $publishedPreferences['global_stylesheet_required'];
+		$draftPreferences['num_saves'] = $publishedPreferences['num_saves'];
+		$draftPreferences['load_js_published'] = 0;
+		$draftPreferences['custom_css_published'] = 0;
+		$this->savePreferences($draftPreferences);
+		delete_option('microthemer_lite_css_retry');
+		update_option('microthemer_lite_css_cleaned', 1, false);
+	}
+
+	function publishedCssStateForLiteCleanup(){
+		$published = get_option('microthemer_published_css_snapshot');
+		if (is_array($published) && isset($published['settings'], $published['preferences']['m_queries'])
+			&& is_array($published['settings']) && is_array($published['preferences']['m_queries'])){
+			return $published;
+		}
+		if (empty($this->preferences['num_unpublished_saves'])){
+			return array(
+				'settings' => $this->options,
+				'preferences' => array(
+					'm_queries' => isset($this->preferences['m_queries']) ? $this->preferences['m_queries'] : array(),
+					'allow_scss' => !empty($this->preferences['allow_scss']) ? 1 : 0,
+				),
+			);
+		}
+
+		// Older releases did not save a published snapshot. Revision counts cannot
+		// reconstruct it reliably: some saves skip revisions and other actions add
+		// them. Leave drafts untouched and require an explicit publish instead.
+		return null;
+	}
+
+	function pausePublishedCssForLite($retry = false){
+		// If the old published state cannot be recovered, do not serve a stylesheet
+		// that may contain uneditable code, and leave all draft settings untouched.
+		$this->savePreferences(array(
+			'global_stylesheet_required_published' => 0,
+			'asset_loading_published' => array(),
+			'load_js_published' => 0,
+		));
+		if ($retry){
+			update_option('microthemer_lite_css_retry', 1, false);
+		} else {
+			update_option('microthemer_lite_css_cleaned', 1, false);
+		}
+		$this->log(
+			esc_html__('Published styles are paused', 'microthemer'),
+			'<p>' . ($retry
+				? esc_html__('Microthemer could not write the cleaned stylesheet. Fix the storage folder permissions to retry; your saved work is unchanged.', 'microthemer')
+				: esc_html__('Microthemer could not recover the previous published settings. Publish again to restore styles; your saved work is unchanged.', 'microthemer')) . '</p>',
+			'warning'
+		);
+		$this->cache_global_msg();
+	}
+
+	// what the saved settings use that this build can't show or apply (empty if nothing):
+	// 'styles' - properties/groups the active map lacks (incl. per-selector code),
+	// 'custom_code' - code from the full CSS/JS editors, which this build doesn't output
+	function orphanedProData(){
+
+		if (empty($this->options)){
+			$this->getOptions();
+		}
+		if (empty($this->propertyoptions)){
+			$this->getPropertyOptions();
+		}
+
+		$orphaned = array();
+
+		if (UnavailableSettings::hasAny($this->options, $this->propertyoptions)){
+			$orphaned['styles'] = true;
+		}
+
+		if (!$this->hasCodeEditors()){
+			foreach (array('hand_coded_css', 'js') as $code_key){
+				if (!empty($this->options['non_section'][$code_key]) && trim($this->options['non_section'][$code_key]) !== ''){
+					$orphaned['custom_code'] = true;
+				}
+			}
+		}
+
+		return $orphaned;
+	}
+
+	function renderOrphanedProDataNotice(){
+
+		$orphaned = $this->cachedOrphanedProData();
+		if (!$orphaned){
+			return;
+		}
+
+		$notice = $this->orphanedProDataNotice($orphaned);
+
+		echo '<div class="notice notice-warning"><p><strong>' . esc_html($notice['short']) . '</strong></p>' .
+			wp_kses($notice['long'], array('p' => array(), 'a' => array('href' => true, 'target' => true, 'rel' => true))) .
+			'</div>';
+	}
+
+	// heading and HTML body (already escaped) of the orphaned pro data notice
+	function orphanedProDataNotice($orphaned){
+
+		$current_url = isset($_SERVER['REQUEST_URI'])
+			? esc_url_raw(wp_unslash($_SERVER['REQUEST_URI']))
+			: admin_url('plugins.php');
+
+		$dismiss_url = wp_nonce_url(
+			add_query_arg('mt_dismiss_pro_data_notice', '1', $current_url),
+			'mt_dismiss_pro_data_notice'
 		);
 
-		if ($addon === 'amender'){
-			$pref_array['pg_focus'] = 'html';
+		$link = '<a href="%s" target="_blank" rel="noopener noreferrer">';
+
+		$install = sprintf(
+			/* translators: 1: opening link tag to the themeover.com account page, 2: closing link tag, 3: opening link tag to the themeover.com pricing page, 4: closing link tag */
+			esc_html__('If you have a Microthemer Pro license, %1$sdownload Microthemer Pro from your themeover.com account%2$s and install it in place of this plugin. Pro updates now come from themeover.com rather than WordPress.org. Otherwise, you can read about %3$sMicrothemer Pro%4$s.', 'microthemer'),
+			sprintf($link, esc_url('https://themeover.com/my-account/?contentView=microthemer')),
+			'</a>',
+			sprintf($link, esc_url('https://themeover.com/pricing/?contentView=microthemer')),
+			'</a>'
+		);
+
+		$long = '';
+
+		if (!empty($orphaned['custom_code'])){
+			$long.= '<p>' . esc_html__('This edition of Microthemer does not include the code editors, so the custom CSS and JavaScript you wrote in them is no longer added to your site. It is still saved, and is applied again as soon as Pro is installed.', 'microthemer') . '</p>';
 		}
 
-		$this->savePreferences($pref_array);
+		if (!empty($orphaned['styles'])){
+			$long.= '<p>' . esc_html__('Some of your saved styles use Pro features (such as Grid, Flexbox, Animation or the selector code editor) that this edition of Microthemer does not include. Your settings are safe and will come back as soon as Pro is installed.', 'microthemer') . '</p>';
+		}
 
 		return array(
-			'success' => 1
+			'short' => __('Microthemer Pro is now a separate plugin', 'microthemer'),
+			'long' =>
+				$long .
+				'<p>' . $install . '</p>' .
+				'<p><a href="' . esc_url($dismiss_url) . '">' . esc_html__('Dismiss this notice', 'microthemer') . '</a></p>',
 		);
+	}
+
+	// The preferences/media query/script forms' tvr_preferences array: unslashed (incl. the
+	// interface's own backslash escaping) and sanitized against Schemas::preferencesForm().
+	// Callers are nonce-checked in microthemer_ajax_actions().
+	function posted_preferences_form(){
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput -- unslashed by deep_unescape(), sanitized by the schema below; nonce checked by the caller
+		$raw = isset($_POST['tvr_preferences']) && is_array($_POST['tvr_preferences']) ? $_POST['tvr_preferences'] : array();
+
+		$checked = Request\Schemas::preferencesForm()->sanitize(array(
+			'tvr_preferences' => $this->deep_unescape($raw, 0, 1, 1),
+		));
+		$form = isset($checked['value']['tvr_preferences']) ? $checked['value']['tvr_preferences'] : array();
+
+		// a script entry is only usable with a valid handle
+		if (isset($form['enq_js'])){
+			$form['enq_js'] = array_filter($form['enq_js'], function($script){
+				return !empty($script['display_name']);
+			});
+		}
+
+		return $this->preferencesThisUserCanSave($form);
 	}
 
 	function microthemer_ajax_actions(){
@@ -553,8 +796,8 @@ trait AdminInitTrait {
 
 			// If we're copying the revision from the server to indexedDB
 			if (isset($_GET['copy_revision_locally'])) {
-				$revision_id = !empty($_GET['revision_id']) ? $_GET['revision_id'] : null;
-				$recent_revisions = !empty($_GET['recent_revisions']) ? $_GET['recent_revisions'] : null;
+				$revision_id = !empty($_GET["revision_id"]) ? intval($_GET["revision_id"]) : null;
+				$recent_revisions = !empty($_GET["recent_revisions"]) ? intval($_GET["recent_revisions"]) : null;
 				$this->getRevisionForIndexedDB($revision_id, true, true, $recent_revisions);
 				wp_die();
 			}
@@ -562,30 +805,28 @@ trait AdminInitTrait {
 
 			// if it's a silent save request for updating ui options (e.g. last viewed selector)
 			if (isset($_GET['mt_action']) and $_GET['mt_action'] == 'mt_silent_save_interface') {
-				$savePackage = $this->deep_unescape($_POST['savePackage'], 1, 1, 1);
+				// large JSON settings payload (user-authored CSS/selectors); sanitize_text_field would
+				// corrupt it. Structure is validated by apply_save_package; nonce + capability gated above.
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- unslashed by deep_unescape(), sanitized by Schemas::sanitizeSettings()
+				$savePackage = isset($_POST['savePackage']) ? Request\Schemas::sanitizeSettings($this->deep_unescape($_POST['savePackage'], 1, 1, 1)) : array();
 				/*echo 'show_me from ajax save (before): <pre> ';
 						print_r($savePackage);
 						echo '</pre>';
 						return false;*/
-				$this->apply_save_package($savePackage, $this->options);
-				update_option($this->optionsName, $this->options);
+
+				$this->applySilentSavePackage($savePackage);
 				wp_die();
 			}
 
 			// addon installation
 			if (!empty($_GET['install_tvr_addon'])) {
-				echo json_encode($this->installThemeoverAddon($_GET['install_tvr_addon']));
+				echo wp_json_encode($this->extFilter('install_addon', array('success' => 0), sanitize_key(wp_unslash($_GET["install_tvr_addon"]))));
 				wp_die();
 			}
 
 			// content actions
 			$this->contentMethod('ajaxActions');
-
-			if (isset($_GET['process_ai_prompt'])) {
-				$AI = new AI($this);
-				$AI->sendAIPrompt();
-				wp_die();
-			}
 
 			// $this->get_site_pages();
 			if (isset($_GET['get_site_pages'])) {
@@ -595,38 +836,16 @@ trait AdminInitTrait {
 				add_filter( 'posts_search', array(&$this, 'search_by_title_or_slug'), 10, 2 );
 
 				$searchTerm = isset($_GET['search_term'])
-					? htmlentities($_GET['search_term'])
+					? sanitize_text_field(wp_unslash($_GET["search_term"]))
 					: null;
 
-				echo json_encode($this->get_site_pages($searchTerm));
+				echo wp_json_encode($this->get_site_pages($searchTerm));
 
 				wp_die();
 			}
 
 			// ajax - load selectors and/or selector options
-			/*if ( isset($_GET['mt_action']) and $_GET['mt_action'] == 'tvr_microthemer_ui_load_styles') {
-						//check_admin_referer('tvr_microthemer_ui_load_styles');
-						$section_name = strip_tags($_GET['tvr_load_section']);
-						$css_selector = strip_tags($_GET['tvr_load_selector']);
-						$array = $this->options[$section_name][$css_selector];
-						echo '<div id="tmp-wrap">';
-						echo $this->all_option_groups_html($section_name, $css_selector, $array);
-						echo '</div>';
-						// output pulled data to debug file
-						if ($this->debug_pulled_data){
-							$debug_file = $this->debug_dir . 'debug-pulled-data.txt';
-							$write_file = @fopen($debug_file, 'w');
-							$data = '';
-							$data.= esc_html__('Custom debug output', 'microthemer') . "\n\n";
-							$data.= $this->debug_custom;
-							$data.= "\n\n" . esc_html__('Last pulled data', 'microthemer') . "\n\n";
-							$data.= print_r($this->options[$section_name][$css_selector], true);
-							fwrite($write_file, $data);
-							fclose($write_file);
-						}
-						// kill the program - this action is always requested via ajax. no message necessary
-						wp_die();
-					}*/
+
 
 			// ajax - toggle draft mode
 			if (isset($_GET['draft_mode'])) {
@@ -648,14 +867,14 @@ trait AdminInitTrait {
 			}
 
 			if (isset($_GET['mt_publish_settings'])) {
-				echo $this->publishSettings();
-				wp_die();
+				$this->jsonResponse($this->publishSettings());
 			}
 
 			// selname_code_synced
 			if (isset($_GET['load_sass_import'])) {
 
-				$path = htmlentities(rawurldecode($_GET['load_sass_import']));
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- unslashed and sanitized on this same line; rawurldecode() sits in between only so percent-encoded characters survive, which the sniff cannot follow
+				$path = sanitize_text_field(rawurldecode(wp_unslash($_GET["load_sass_import"])));
 				$imports = $this->get_sass_import_paths('@import "'.$path.'";', '');
 				$content = false;
 
@@ -672,7 +891,7 @@ trait AdminInitTrait {
 					'content' => $content
 				);
 
-				echo json_encode($response);
+				echo wp_json_encode($response);
 				wp_die();
 			}
 
@@ -734,7 +953,8 @@ trait AdminInitTrait {
 
 			// mt_color_variables_css
 			if (isset($_POST['mt_color_variables_css'])) {
-				$pref_array['mt_color_variables_css'] = strip_tags($_POST['mt_color_variables_css']);
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- user-authored CSS; sanitize_text_field would corrupt it. Tags stripped, nonce + capability gated.
+				$pref_array['mt_color_variables_css'] = wp_strip_all_tags(wp_unslash($_POST['mt_color_variables_css']));
 				$this->savePreferences($pref_array);
 				wp_die();
 			}
@@ -776,7 +996,8 @@ trait AdminInitTrait {
 
 			// ajax - update preview url after page navigation
 			if (isset($_GET['mt_preview_url'])) {
-				$this->maybe_set_preview_url();
+				// this request context carries the mcth_simple_ajax nonce (verified above too)
+				$this->maybe_set_preview_url('mcth_simple_ajax');
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
 			}
@@ -784,14 +1005,16 @@ trait AdminInitTrait {
 			// ajax - update preview url after page navigation
 			if (isset($_GET['import_css_url'])) {
 				// update view_import_stylesheets list with possible new stylesheet
-				$this->update_css_import_urls(strip_tags(rawurldecode($_GET['import_css_url'])));
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- unslashed and sanitized on this same line; rawurldecode() sits in between only so percent-encoded characters survive, which the sniff cannot follow
+				$this->update_css_import_urls(sanitize_text_field(rawurldecode(wp_unslash($_GET["import_css_url"]))));
 				wp_die();
 			}
 
 			// code editor focus
 			if (isset($_GET['show_code_editor'])) {
 				$pref_array = array();
-				$pref_array['show_code_editor'] = intval($_GET['show_code_editor']);
+				// stays off in builds without the code editors
+				$pref_array['show_code_editor'] = $this->canEditCode() ? intval($_GET['show_code_editor']) : 0;
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -883,7 +1106,7 @@ trait AdminInitTrait {
 			/* if (isset($_GET['sidebar_size'])) {
 						 $pref_array = array();
 						 $pref_array['sidebar_size'] = intval($_GET['sidebar_size']);
-						 $pref_array['sidebar_size_category'] = htmlentities($_GET['sidebar_size']);
+						 $pref_array["sidebar_size_category"] = sanitize_text_field(wp_unslash($_GET["sidebar_size"]));
 						 $this->savePreferences($pref_array);
 						 // kill the program - this action is always requested via ajax. no message necessary
 						 wp_die();
@@ -891,10 +1114,13 @@ trait AdminInitTrait {
 
 			// save new MT layout
 			if (isset($_GET['update_mt_layout'])) {
-				$data = json_decode( stripslashes($_POST['tvr_serialized_data']), true );
-				$this->savePreferences(array(
-					'layout' => $data
-				));
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- raw JSON string; unslashed, decoded and sanitized by Schemas::layout()
+				$raw_json = isset($_POST['tvr_serialized_data']) && is_string($_POST['tvr_serialized_data']) ? $_POST['tvr_serialized_data'] : '';
+				$checked = Request\Schemas::layout()->sanitizeJson(Request\Schemas::wrapJson($raw_json, 'config'));
+				// malformed JSON has no 'config', and must not replace the stored layout with nothing
+				if (isset($checked['value']['config'])) {
+					$this->savePreferences(array('layout' => $checked['value']['config']));
+				}
 				wp_die();
 			}
 
@@ -917,7 +1143,8 @@ trait AdminInitTrait {
 			// dock editor left
 			if (isset($_GET['dock_editor_left'])) {
 				$pref_array = array();
-				$pref_array['dock_editor_left'] = intval($_GET['dock_editor_left']);
+				// stays off in builds without the code editors
+				$pref_array['dock_editor_left'] = $this->canEditCode() ? intval($_GET['dock_editor_left']) : 0;
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -944,13 +1171,31 @@ trait AdminInitTrait {
 			// update multiple preferences in one go
 			if (isset($_GET['save_multiple_preferences']) && isset($_POST['pref_array'])) {
 
-				$pref_array = array();
+				// Preference keys are dynamic, so this is a wildcard map rather than a named schema.
+				// Values are genuinely mixed: plain scalars (ai_priority), user-authored strings that
+				// must not be mangled (mt_rich_text_code holds CSS/JSON — sanitize_text_field would
+				// corrupt it), and opaque nested arrays (m_queries, whitelisted_domains, my_props).
+				// 'mixed' keeps every value byte-identical, key order included, while still applying the
+				// depth, node-count, item-count and null-byte limits the hand-rolled loop had none of.
+				// Losslessness matters here beyond convenience: savePreferences() feeds my_props to
+				// UnavailableSettings::preserve_my_props(), which compares stored keys against the active
+				// property map — mangle a key and lite silently drops a pro-only preference.
+				//
+				// 'allInt' is the stricter mode the JS has always advertised
+				// (MTsave.save_multiple_preferences(pref_array, 1)) and the server previously ignored.
+				// In that mode every value must be a scalar number; arrays are rejected outright.
+				$all_int = !empty($_POST['allInt']) && $_POST['allInt'] !== 'false';
 
-				foreach($_POST['pref_array'] as $key => $value){
-					$pref_array[$key] = is_numeric($value) ? floatval($value) : $value;
-				}
+				$schema = Request\Schemas::preferences($all_int);
 
-				$this->savePreferences($pref_array);
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- sanitized by the schema above
+				$sanitized = $schema->sanitize(wp_unslash(array('pref_array' => $_POST['pref_array'])));
+
+				$pref_array = isset($sanitized['value']['pref_array'])
+					? $sanitized['value']['pref_array']
+					: array();
+
+				$this->savePreferences($this->preferencesThisUserCanSave($pref_array));
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
 			}
@@ -958,12 +1203,14 @@ trait AdminInitTrait {
 			// if it's an email error report request
 			elseif (isset($_GET['send_error_report'])){
 
-				$manual = (bool) intval($_POST['manual']);
+				$manual = !empty($_POST['manual']) && (bool) intval($_POST['manual']);
 
-				$response = $this->maybeSendReport($_POST, $manual);
+				// only the report fields, each typed (Schemas::errorReport)
+				$report = Request\Schemas::errorReport()->sanitize(wp_unslash($_POST));
+				$response = $this->maybeSendReport($report['value'], $manual);
 
 				if ($manual || TVR_DEV_MODE){
-					echo json_encode(array(
+					echo wp_json_encode(array(
 						//'html'=> '<div id="microthemer-notice">'. $this->display_log() . '</div>',
 						'response' => $response,
 						'success' => !!$response
@@ -1012,7 +1259,7 @@ trait AdminInitTrait {
 			// active MQ tab
 			if (isset($_GET['manual_recompile_all_css'])) {
 				$pref_array = array();
-				$pref_array['manual_recompile_all_css'] = htmlentities($_GET['manual_recompile_all_css']);
+				$pref_array['manual_recompile_all_css'] = sanitize_text_field(wp_unslash($_GET['manual_recompile_all_css']));
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -1038,7 +1285,7 @@ trait AdminInitTrait {
 			// active MQ tab
 			if (isset($_GET['mq_device_focus'])) {
 				$pref_array = array();
-				$pref_array['mq_device_focus'] = htmlentities($_GET['mq_device_focus']);
+				$pref_array['mq_device_focus'] = sanitize_text_field(wp_unslash($_GET['mq_device_focus']));
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -1056,7 +1303,7 @@ trait AdminInitTrait {
 			// active CSS tab
 			if (isset($_GET['css_focus'])) {
 				$pref_array = array();
-				$pref_array['css_focus'] = htmlentities($_GET['css_focus']);
+				$pref_array['css_focus'] = sanitize_text_field(wp_unslash($_GET['css_focus']));
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -1064,7 +1311,16 @@ trait AdminInitTrait {
 
 			// update_default_unit
 			if (isset($_GET['update_default_unit'])) {
-				$data = json_decode( stripslashes($_POST['tvr_serialized_data']), true );
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- raw JSON string; unslashed, decoded and sanitized by Schemas::defaultUnit()
+				$raw_json = isset($_POST['tvr_serialized_data']) && is_string($_POST['tvr_serialized_data']) ? $_POST['tvr_serialized_data'] : '';
+				$checked = Request\Schemas::defaultUnit()->sanitizeJson($raw_json);
+				$data = $checked['value'];
+
+				// group/prop become array indexes, so refuse the write if either was invalid
+				if (!empty($checked['errors']) || empty($data['group']) || empty($data['prop'])) {
+					wp_die('Invalid default unit payload');
+				}
+
 				$this->preferences['my_props'][$data['group']]['pg_props'][$data['prop']]['default_unit'] = $data['unit'];
 				$pref_array['my_props'] = $this->preferences['my_props'];
 				$this->savePreferences($pref_array);
@@ -1074,11 +1330,12 @@ trait AdminInitTrait {
 
 			// MT may update custom paths array via JS (e.g. path clear) and then post full array to replace current
 			if (isset($_GET['update_custom_paths'])) {
-				$pref_array['custom_paths'] = json_decode(
-					stripslashes($_POST['tvr_serialized_data']),
-					true
-				);
-				$this->savePreferences($pref_array);
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- raw JSON string; unslashed, decoded and sanitized by Schemas::customPaths()
+				$raw_json = isset($_POST['tvr_serialized_data']) && is_string($_POST['tvr_serialized_data']) ? $_POST['tvr_serialized_data'] : '';
+				$checked = Request\Schemas::customPaths()->sanitizeJson(Request\Schemas::wrapJson($raw_json, 'list'));
+				if (isset($checked['value']['list'])) {
+					$this->savePreferences(array('custom_paths' => $checked['value']['list']));
+				}
 				wp_die();
 			}
 
@@ -1090,8 +1347,12 @@ trait AdminInitTrait {
 
 			// update_recent_custom_prefixes
 			if (isset($_GET['update_recent_custom_prefixes'])) {
-				$pref_array['recent_custom_prefixes'] = json_decode( stripslashes($_POST['tvr_serialized_data']), true );
-				$this->savePreferences($pref_array);
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- raw JSON string; unslashed, decoded and sanitized by Schemas::recentCustomPrefixes()
+				$raw_json = isset($_POST['tvr_serialized_data']) && is_string($_POST['tvr_serialized_data']) ? $_POST['tvr_serialized_data'] : '';
+				$checked = Request\Schemas::recentCustomPrefixes()->sanitizeJson(Request\Schemas::wrapJson($raw_json, 'list'));
+				if (isset($checked['value']['list'])) {
+					$this->savePreferences(array('recent_custom_prefixes' => $checked['value']['list']));
+				}
 				wp_die();
 			}
 
@@ -1099,25 +1360,23 @@ trait AdminInitTrait {
 			if (isset($_GET['update_sug_values'])) {
 
 				$pref_array = array();
-				$root_cat = $_GET['update_sug_values'];
+				$root_cat = sanitize_text_field(wp_unslash($_GET["update_sug_values"]));
 
-				// tap into WordPress native JSON functions
-				/*if( !class_exists('Moxiecode_JSON') ) {
-							require_once($this->thisplugindir . 'includes/class-json.php');
-						}
-
-						$json_object = new Moxiecode_JSON();*/
-
-				$data = json_decode( stripslashes($_POST['tvr_serialized_data']), true );
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- raw JSON string; unslashed, decoded and sanitized by Schemas::sugValues()
+				$raw_json = isset($_POST['tvr_serialized_data']) && is_string($_POST['tvr_serialized_data']) ? $_POST['tvr_serialized_data'] : '';
+				$checked = Request\Schemas::sugValues()->sanitizeJson($raw_json);
+				$data = $checked['value'];
 
 				// if we're setting suggested values for all properties
 				if ($root_cat == 'all'){
-					$this->preferences['my_props']['sug_values'] = $data['sug_values'];
-					$this->preferences['my_props']['sug_variables'] = $data['sug_variables'];
+					$this->preferences['my_props']['sug_values'] = isset($data['sug_values']) ? $data['sug_values'] : array();
+					$this->preferences['my_props']['sug_variables'] = isset($data['sug_variables']) ? $data['sug_variables'] : array();
 				}  elseif ($root_cat == 'synced_set') {
 					// a set of fields in one go e.g. padding
-					$this->preferences['my_props']['sug_values'] =
-						array_merge($this->preferences['my_props']['sug_values'], $data['synced_set']);
+					$this->preferences['my_props']['sug_values'] = array_merge(
+						$this->preferences['my_props']['sug_values'],
+						isset($data['synced_set']) ? $data['synced_set'] : array()
+					);
 				} else {
 					// just setting suggestions for a type of property e.g. site_colors
 
@@ -1145,19 +1404,16 @@ trait AdminInitTrait {
 			// save google/typekit fonts config
 			if (isset($_GET['save_font_config'])) {
 
-				// tap into WordPress native JSON functions
-				/*if( !class_exists('Moxiecode_JSON') ) {
-							require_once($this->thisplugindir . 'includes/class-json.php');
-						}
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- raw JSON string; unslashed, decoded and sanitized by Schemas::fontConfig()
+				$raw_json = isset($_POST['tvr_serialized_data']) && is_string($_POST['tvr_serialized_data']) ? $_POST['tvr_serialized_data'] : '';
+				$checked = Request\Schemas::fontConfig()->sanitizeJson(Request\Schemas::wrapJson($raw_json, 'config'));
+				if (isset($checked['value']['config'])) {
+					$pref_array = array();
+					$key = $_GET['save_font_config'] == 'google' ? 'google' : 'typekit';
+					$pref_array['font_config'][$key] = $checked['value']['config'];
 
-						$json_object = new Moxiecode_JSON();*/
-
-				$data = json_decode( stripslashes($_POST['tvr_serialized_data']), true );
-				$pref_array = array();
-				$key = $_GET['save_font_config'] == 'google' ? 'google' : 'typekit';
-				$pref_array['font_config'][$key] = $data;
-
-				$this->savePreferences($pref_array);
+					$this->savePreferences($pref_array);
+				}
 
 				//echo '<pre>posted array: '.print_r($data, true).'</pre>';
 
@@ -1168,7 +1424,7 @@ trait AdminInitTrait {
 			// active property group
 			if (isset($_GET['pg_focus'])) {
 				$pref_array = array();
-				$pref_array['pg_focus'] = htmlentities($_GET['pg_focus']);
+				$pref_array['pg_focus'] = sanitize_text_field(wp_unslash($_GET['pg_focus']));
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -1186,7 +1442,7 @@ trait AdminInitTrait {
 			// remember selector wizard tab
 			if (isset($_GET['adv_wizard_tab'])) {
 				$pref_array = array();
-				$pref_array['adv_wizard_tab'] = htmlentities($_GET['adv_wizard_tab']);
+				$pref_array['adv_wizard_tab'] = sanitize_text_field(wp_unslash($_GET['adv_wizard_tab']));
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -1195,7 +1451,7 @@ trait AdminInitTrait {
 			// remember the program settings tab
 			if (isset($_GET['program_settings_tab'])) {
 				$pref_array = array();
-				$pref_array['program_settings_tab'] = htmlentities($_GET['program_settings_tab']);
+				$pref_array['program_settings_tab'] = sanitize_text_field(wp_unslash($_GET['program_settings_tab']));
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -1204,7 +1460,7 @@ trait AdminInitTrait {
 			// remember selector wizard tab
 			if (isset($_GET['grid_focus'])) {
 				$pref_array = array();
-				$pref_array['grid_focus'] = htmlentities($_GET['grid_focus']);
+				$pref_array['grid_focus'] = sanitize_text_field(wp_unslash($_GET['grid_focus']));
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -1213,7 +1469,7 @@ trait AdminInitTrait {
 			// remember transform tab
 			if (isset($_GET['transform_focus'])) {
 				$pref_array = array();
-				$pref_array['transform_focus'] = htmlentities($_GET['transform_focus']);
+				$pref_array['transform_focus'] = sanitize_text_field(wp_unslash($_GET['transform_focus']));
 				$this->savePreferences($pref_array);
 				// kill the program - this action is always requested via ajax. no message necessary
 				wp_die();
@@ -1222,7 +1478,7 @@ trait AdminInitTrait {
 			// last viewed selector
 			/*if (isset($_GET['last_viewed_selector'])) {
 						$pref_array = array();
-						$pref_array['last_viewed_selector'] = htmlentities($_GET['last_viewed_selector']);
+						$pref_array['last_viewed_selector'] = sanitize_text_field(wp_unslash($_GET['last_viewed_selector']));
 						$this->savePreferences($pref_array);
 						// kill the program - this action is always requested via ajax. no message necessary
 						wp_die();
@@ -1233,23 +1489,28 @@ trait AdminInitTrait {
 			    $_GET['mt_action'] == 'tvr_download_pack') {
 				if (!empty($_GET['dir_name'])) {
 					// first of all, copy any images from the media library
-					$pack = $_GET['dir_name'];
+					$pack = sanitize_file_name(wp_unslash($_GET["dir_name"]));
 					$dir = $this->micro_root_dir . $pack;
 					$json_config_file = $dir . '/config.json';
 					if ($library_images = $this->get_linked_library_images($json_config_file)){
 						foreach($library_images as $key => $path){
-							// strip site_url rather than home_url in this case coz using with ABSPATH
 							$root_rel_path = $this->root_rel($path, false, true, true);
-							$basename = basename($root_rel_path);
-							$orig = rtrim(ABSPATH,"/"). $root_rel_path;
+							// the media library file (false if the image isn't stored on this site)
+							$orig = $this->local_path_from_url($path);
+							// name the copy after the file actually being copied (not the URL text, which can
+							// carry a query string), and only copy images
+							$basename = $orig ? basename($orig) : basename(preg_replace('/[#?].*$/', '', $root_rel_path));
+							if ($orig && !in_array($this->get_extension($orig), array('jpg', 'jpeg', 'gif', 'png', 'svg', 'webp', 'avif', 'ico'), true)) {
+								$orig = false;
+							}
 							$img_paths[] = $new = $dir . '/' . $basename;
 							$replacements[$path] = $this->root_rel(
 								$this->micro_root_url . $pack . '/' . $basename, false, true
 							);
-							if (!copy($orig, $new)){
+							if (!$orig || !copy($orig, $new)){
 								$this->log(
 									esc_html__('Library image not downloaded', 'microthemer'),
-									'<p>' . sprintf(esc_html__('%s could not be copied to the zip download file', 'microthemer'), $root_rel_path) . '</p>',
+									'<p>' . sprintf(/* translators: %s: image file path */ esc_html__('%s could not be copied to the zip download file', 'microthemer'), $root_rel_path) . '</p>',
 									'warning'
 								);
 								$download_status = 0;
@@ -1267,7 +1528,7 @@ trait AdminInitTrait {
 						$this->create_zip(
 							$this->micro_root_dir,
 							$pack,
-							$this->thisplugindir.'zip-exports/')
+							$this->micro_root_dir.'zip-exports/')
 					){
 						$download_status = 1;
 					} else {
@@ -1283,36 +1544,36 @@ trait AdminInitTrait {
 					$this->write_file($json_config_file, $orig_json_data);
 					// delete images
 					foreach ($img_paths as $key => $path){
-						if (!unlink($path)){
+						if ( ! wp_delete_file( $path ) ){
 							$this->log(
 								esc_html__('Temporary image could not be deleted.', 'microthemer'),
-								'<p>' . sprintf( esc_html__('%s was temporarily copied to your theme pack before download but could not be deleted after the download operation finished.', 'microthemer'), $this->root_rel($root_rel_path) ) . '</p>',
+								'<p>' . sprintf( /* translators: %s: image file path */ esc_html__('%s was temporarily copied to your theme pack before download but could not be deleted after the download operation finished.', 'microthemer'), $this->root_rel($root_rel_path) ) . '</p>',
 								'warning'
 							);
 						}
 					}
 				}
-				echo '
+				echo wp_kses( '
 							<div id="microthemer-notice">'
 				     . $this->display_log() . '
-								<span id="download-status" rel="'.$download_status.'"></span>
-							</div>';
+								<span id="download-status" rel="'.esc_attr($download_status).'"></span>
+							</div>', \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 				wp_die();
 			}
 
 			// delete pack
 			if (!empty($_GET['mt_action']) and
 			    $_GET['mt_action'] == 'tvr_delete_micro_theme') {
-				if (!empty($_GET['dir_name']) and $this->tvr_delete_micro_theme($_GET['dir_name'])){
+				if (!empty($_GET['dir_name']) and $this->tvr_delete_micro_theme(sanitize_file_name(wp_unslash($_GET["dir_name"])))){
 					$delete_status = 1;
 				} else {
 					$delete_status = 0;
 				}
-				echo '
+				echo wp_kses( '
 							<div id="microthemer-notice">'
 				     . $this->display_log() . '
-								<span id="delete-status" rel="'.$delete_status.'"></span>
-							</div>';
+								<span id="delete-status" rel="'.esc_attr($delete_status).'"></span>
+							</div>', \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 				wp_die();
 			}
 
@@ -1320,12 +1581,13 @@ trait AdminInitTrait {
 			if (!empty($_GET['mt_action']) and
 			    $_GET['mt_action'] == 'tvr_get_remote_css') {
 				$config['allowed_ext'] = array('css');
-				$r = $this->get_safe_url(rawurldecode($_GET['url']), $config);
-				echo '
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- unslashed then sanitized with esc_url_raw() on this line; rawurldecode() sits in between only so percent-encoded characters survive, which the sniff cannot follow
+				$r = $this->get_safe_url(esc_url_raw(rawurldecode(wp_unslash($_GET["url"]))), $config);
+				echo wp_kses( '
 							<div id="microthemer-notice">'
 				     . $this->display_log() . '
-								<div id="remote-css">'.(!empty($r['content']) ? $r['content'] : 0).'</div>
-							</div>';
+								<div id="remote-css">'.(!empty($r['content']) ? esc_html($r['content']) : 0).'</div>
+							</div>', \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() );
 				wp_die();
 			}
 
@@ -1336,8 +1598,35 @@ trait AdminInitTrait {
 				if (!empty($_POST['stylesheet_import_json'])){
 
 					$context = esc_attr__('Raw CSS', 'microthemer');
-					$json_str = stripslashes($_POST['stylesheet_import_json']);
-					$p = $_POST['tvr_preferences'];
+
+					// validate the import payload (size caps, JSON well-formedness, depth/node
+					// bounds, null bytes) via the schema before decoding and sanitizing it below
+					// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- raw JSON string; validated by Schemas::packImport(), then decoded and sanitized by Schemas::sanitizeSettings()
+					$raw_json = isset($_POST['stylesheet_import_json']) && is_string($_POST['stylesheet_import_json']) ? $_POST['stylesheet_import_json'] : '';
+					$checked = Request\Schemas::packImport()->sanitizeJson(Request\Schemas::wrapJson($raw_json, 'pack'));
+					if (!empty($checked['errors'])) {
+						$this->log(
+							esc_html__('Import failed', 'microthemer'),
+							'<p>' . esc_html__('The import data was not valid JSON or exceeded size limits.', 'microthemer') . '</p>',
+							'error'
+						);
+						$this->cache_global_msg();
+						wp_die('Invalid import payload');
+					}
+					// sanitize the decoded settings, then work with them re-encoded the way the
+					// interface encodes JSON (unescaped slashes/unicode), so the image path keys
+					// posted below still match exactly
+					$json_str = wp_json_encode(
+						Request\Schemas::sanitizeSettings(json_decode(wp_unslash($raw_json), true)),
+						JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+					);
+
+					// import preferences posted with the form (checkboxes/flags)
+					$p_checked = Request\Schemas::preferencesForm()->sanitize(array(
+						// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- unslashed here, sanitized by Schemas::preferencesForm()
+						'tvr_preferences' => isset($_POST['tvr_preferences']) && is_array($_POST['tvr_preferences']) ? wp_unslash($_POST['tvr_preferences']) : array(),
+					));
+					$p = isset($p_checked['value']['tvr_preferences']) ? $p_checked['value']['tvr_preferences'] : array();
 
 					// checkbox values must be explicitly evaluated
 					$p['css_imp_only_selected'] = !empty($p['css_imp_only_selected']) ? 1 : 0;
@@ -1346,14 +1635,22 @@ trait AdminInitTrait {
 					// https://premium.wpmudev.org/blog/download-remote-images-into-wordpress/
 					if (!empty($_POST['get_remote_images'])){
 
-						$r_images = explode('|', $_POST['get_remote_images']);
+						// Each entry is "pathInData,fullUrl" joined by "|". esc_url_raw on the
+						// composite before splitting empties entries (relative path + https URL).
+						// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- each half sanitized below after split. Nonce + capability gated.
+						$r_images = explode("|", wp_unslash($_POST["get_remote_images"]));
 						$do_copy = false;
 						$remote_images = array();
 						$all_r = array();
 						foreach ($r_images as $i => $both){
-							$tmp = explode(',', $both);
-							$path_in_data = $tmp[0];
-							$full_url = $tmp[1];
+							$tmp = explode(',', $both, 2);
+							// This is an exact CSS/JSON replacement key, not a filesystem path.
+							// sanitize_text_field() strips valid URL-encoded segments such as "%20", preventing a match.
+							$path_in_data = isset($tmp[0]) ? $tmp[0] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- derived from the nonce/capability-gated composite above; used only as a JSON string-replacement key
+							$full_url = isset($tmp[1]) ? esc_url_raw($tmp[1]) : '';
+							if ($path_in_data === '' || $full_url === ''){
+								continue;
+							}
 							// save to temp dir first
 							$r = $this->get_safe_url($full_url, array(
 								'allowed_ext' => array('jpg', 'jpeg', 'gif', 'png', 'svg'),
@@ -1381,25 +1678,35 @@ trait AdminInitTrait {
 							$json_str = $updated_json_str ? $updated_json_str : $json_str;
 						}
 
+						// downloaded files are only needed until they're in the media library
+						foreach ($remote_images as $tmp_image){
+							if (is_file($tmp_image)){
+								wp_delete_file($tmp_image);
+							}
+						}
+
 					}
 
 					// load the json file
 					$this->load_json_file(false, 'custom', $context, $json_str);
 
 					// save the import preferences
-					$this->savePreferences($p);
+					$this->savePreferences($this->preferencesThisUserCanSave($p));
 				}
 
 				// if importing an MT design pack
 				else {
 
 
-					$theme_name = sanitize_file_name(sanitize_title(htmlentities($_POST['import_from_pack_name'])));
+					// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- unslashed then sanitized with sanitize_title() + sanitize_file_name() on this line; htmlentities() sits in between, which the sniff cannot follow
+					$theme_name = sanitize_file_name(sanitize_title(htmlentities(wp_unslash($_POST['import_from_pack_name']))));
 
 
 					$json_file = $this->micro_root_dir . $theme_name . '/config.json';
 
-					$context = $_POST['tvr_import_method'];
+					// Radio values are translated UI strings ("Merge"/"Overwrite"), not machine keys.
+					// sanitize_key() would lowercase them and break the Merge comparison.
+					$context = sanitize_text_field(wp_unslash($_POST["tvr_import_method"]));
 
 					// import any background images that may need moving to the media library and update json
 					$this->import_pack_images_to_library($json_file, $theme_name);
@@ -1460,7 +1767,7 @@ trait AdminInitTrait {
 
 			// if it's a restore revision request
 			if(isset($_GET['mt_action']) and $_GET['mt_action'] == 'restore_rev'){
-				$rev_key = $_GET['tvr_rev'];
+				$rev_key = intval($_GET["tvr_rev"]);
 				if ($this->restoreRevision($rev_key)) {
 					$item = esc_html__('Previous settings restored', 'microthemer');
 					$this->log(
@@ -1493,7 +1800,7 @@ trait AdminInitTrait {
 
 			// if it's a get revision ajax request
 			elseif(isset($_GET['mt_action']) and $_GET['mt_action'] == 'get_revisions'){
-				echo '<div id="tmp-wrap">' . $this->getRevisions() . '</div>'; // outputs table
+				echo wp_kses( '<div id="tmp-wrap">' . $this->getRevisions() . '</div>', \Microthemer\Helper::uiAllowedHtml(), \Microthemer\Helper::uiAllowedProtocols() ); // outputs table
 				wp_die();
 			}
 
@@ -1505,28 +1812,33 @@ trait AdminInitTrait {
 
 				$orig_media_queries = $this->preferences['m_queries'];
 
-				// remove backslashes from $_POST
-				$_POST = $this->deep_unescape($_POST, 0, 1, 1);
+				// unslash (incl. the interface's own backslash escaping), then sanitize every field
+				// against the schema: media queries are typed per field, the rest are text
+				$form = $this->posted_preferences_form();
+
 				// get the initial scale and default width for the "All Devices" tab
-				$pref_array['initial_scale'] = $_POST['tvr_preferences']['initial_scale'];
-				$pref_array['all_devices_default_width'] = $_POST['tvr_preferences']['all_devices_default_width'];
+				$pref_array["initial_scale"] = isset($form['initial_scale']) ? floatval($form['initial_scale']) : 1;
+				// May be blank (full width) or e.g. "480px" — do not intval() ('' → 0, strips units).
+				$pref_array["all_devices_default_width"] = isset($form['all_devices_default_width'])
+					? $form['all_devices_default_width']
+					: '';
 				// reset default media queries if all empty
 				$action = '';
-				if (empty($_POST['tvr_preferences']['m_queries'])) {
+				if (empty($form['m_queries'])) {
 					$pref_array['m_queries'] = $this->default_mqs;
 					$action = 'reset';
 				} else {
-					$pref_array['m_queries'] = $_POST['tvr_preferences']['m_queries'];
+					$pref_array['m_queries'] = $form['m_queries'];
 					$action = 'update';
 				}
 
-				// are we merging/overwriting with a new media query set
-				if (!empty($_POST['tvr_preferences']['load_mq_set'])){
+				// are we merging/overwriting with a new media query set (one of the known sets)
+				$new_set = !empty($form['load_mq_set']) ? $form['load_mq_set'] : '';
+				if ($new_set !== '' && isset($this->mq_sets[$new_set])){
 					//print_r($this->mq_sets);
 					$action = 'load_set';
-					$new_set = $_POST['tvr_preferences']['load_mq_set'];
 					$new_mq_set = $this->mq_sets[$new_set];
-					$pref_array['overwrite_existing_mqs'] = $_POST['tvr_preferences']['overwrite_existing_mqs'];
+					$pref_array["overwrite_existing_mqs"] = !empty($form['overwrite_existing_mqs']) ? 1 : 0;
 					if (!empty($pref_array['overwrite_existing_mqs'])){
 						$pref_array['m_queries'] = $new_mq_set;
 						$load_action = esc_html__('replaced', 'microthemer');
@@ -1566,7 +1878,7 @@ trait AdminInitTrait {
 						case 'load_set':
 							$this->log(
 								esc_html__('Media query set loaded', 'microthemer'),
-								'<p>' . sprintf( esc_html__('A new media query set %s your existing media queries: %s', 'microthemer'), $load_action, htmlentities($_POST['tvr_preferences']['load_mq_set']) ) . '</p>',
+								'<p>' . sprintf( /* translators: 1: load action (merged/replaced), 2: media query set name */ esc_html__('A new media query set %1$s your existing media queries: %2$s', 'microthemer'), $load_action, esc_html($new_set) ) . '</p>',
 								'notice'
 							);
 							break;
@@ -1593,9 +1905,9 @@ trait AdminInitTrait {
 
 			// update the enqueued JS files
 			if (isset($_POST['mt_enqueue_js_submit'])){
-				// remove backslashes from $_POST
-				$_POST = $this->deep_unescape($_POST, 0, 1, 1);
-				$pref_array['enq_js'] = $_POST['tvr_preferences']['enq_js'];
+				// script handles WordPress registers, validated per field (see Schemas::enqueuedScriptMap)
+				$form = $this->posted_preferences_form();
+				$pref_array["enq_js"] = isset($form['enq_js']) ? $form['enq_js'] : array();
 				$pref_array['num_saves'] = ++$this->preferences['num_saves'];
 
 				if (empty($this->preferences['auto_publish_mode'])){
@@ -1642,6 +1954,7 @@ trait AdminInitTrait {
 			// save the conditional logic configuration
 			/*if (isset($_GET['update_asset_loading'])) {
 				$pref_array['asset_loading'] = json_decode(
+					// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- JSON payload (may contain user-authored CSS/JS); structure enforced by json_decode, request nonce + capability gated
 					stripslashes($_POST['tvr_serialized_data']),
 					true
 				);
@@ -1655,13 +1968,18 @@ trait AdminInitTrait {
 			$filter_types = array('page_specific', 'pseudo_classes', 'pseudo_elements');
 			foreach ($filter_types as $type){
 				if (isset($_GET[$type])) {
-					$pref_sub_key = $_GET['pref_sub_key'];
+					// Keys include CSS pseudos like ":hover" / "::before" — do not use sanitize_key().
+					$pref_sub_key = sanitize_text_field(wp_unslash($_GET["pref_sub_key"]));
 					//$value = $_GET['pref_sub_key'] === 'custom-prefix' ? $_GET[$type] : intval($_GET[$type]);
 					$this->preferences[$type][$pref_sub_key] = intval($_GET[$type]);
 					$pref_array[$type] = $this->preferences[$type];
 
 					if (isset($_GET['extraValue'])){
-						$pref_array[$pref_sub_key.'-extraValue'] = $_GET['extraValue'];
+						// This is user-authored CSS selector syntax. sanitize_text_field() can strip
+						// valid percent-encoded attribute values and silently change the selector,
+						// so only what can't belong in a selector is removed (Schemas::cssFragment)
+						// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized by Schemas::cssFragment()
+						$pref_array[$pref_sub_key.'-extraValue'] = Request\Schemas::cssFragment(wp_unslash($_GET['extraValue']));
 					}
 
 					$this->savePreferences( $pref_array );
@@ -1678,6 +1996,7 @@ trait AdminInitTrait {
 
 	}
 
+	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by microthemer_ajax_actions() via check_ajax_referer('mcth_simple_ajax', '_wpnonce'), which gates this whole call path.
 	function updateDraftFolderCookie(){
 
 		$key = 'microthemer_draft_folder';
@@ -1685,13 +2004,17 @@ trait AdminInitTrait {
 		if (isset($_GET['delete_value'])){
 			$this->deleteCookie($key);
 		} else {
-			$this->pluginCookie(
-				$key,
-				stripslashes($_POST['tvr_serialized_data'])
-			);
+			// the folder's slug and logic, sanitized; the cookie stores them re-encoded
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- raw JSON string; unslashed, decoded and sanitized by Schemas::draftFolderCookie()
+			$raw_json = isset($_POST['tvr_serialized_data']) && is_string($_POST['tvr_serialized_data']) ? $_POST['tvr_serialized_data'] : '';
+			$checked = Request\Schemas::draftFolderCookie()->sanitizeJson($raw_json);
+			if (empty($checked['errors'])) {
+				$this->pluginCookie($key, wp_json_encode($checked['value']));
+			}
 		}
 
 		wp_die();
+	// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 }

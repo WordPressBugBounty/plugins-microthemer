@@ -118,11 +118,18 @@ trait FrontAndBackTrait {
 
 	/* Integrations */
 
+	// Builder query strings only count for users who can edit: the builders themselves only load
+	// for them, and a visitor adding ?fl_builder must not switch off Microthemer's styles or
+	// Amender changes (which may hide content).
 	function isBricksUi(){
-		return isset($_GET['bricks']) && $_GET['bricks'] === 'run';
+		return isset($_GET['bricks']) && $_GET['bricks'] === 'run' && current_user_can('edit_posts');
 	}
 
 	function isBuilder() {
+
+		if (!current_user_can('edit_posts')){
+			return false;
+		}
 
 		foreach (array(
 			array('bricks', 'run'),

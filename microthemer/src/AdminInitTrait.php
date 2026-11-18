@@ -132,12 +132,14 @@ trait AdminInitTrait {
 		//$this->placeholderURLs = $this->get_placeholder_urls();
 
 
+		// links that save something (e.g. ?design_pack=) need their nonce, whatever else is in the URL
+		add_action('admin_init', array(&$this, 'verifyPageLinkNonces') );
+
 		// add scripts and styles
 		// Not necessary if this is an ajax call. XDEBUG_PROFILE showed add_js was adding sig time.
 		if ( empty($_GET['action']) or $_GET['action'] != 'mtui'){
 
 			add_action('admin_init', array(&$this, 'actionCookieUpdates') );
-			add_action('admin_init', array(&$this, 'verifyPageLinkNonces') );
 			add_action('admin_init', array(&$this, 'add_no_cache_headers'), 1);
 			add_action('admin_enqueue_scripts', array(&$this, 'add_css'), PHP_INT_MAX);
 			add_action('admin_enqueue_scripts', array(&$this, 'add_js'), PHP_INT_MAX);
@@ -201,6 +203,12 @@ trait AdminInitTrait {
 	// Links the plugin generates that save state must carry a valid nonce. Checked before admin-header.php
 	// runs, as a wp_die() during page output would leave the page's scripts without their footer data.
 	function verifyPageLinkNonces(){
+
+		// admin-ajax requests (e.g. the editor saving its preview URL with page= and mt_preview_url)
+		// are checked by the AJAX handlers with the mcth_simple_ajax nonce
+		if (wp_doing_ajax()){
+			return;
+		}
 
 		$page_links = array(
 			$this->microthemespage => array('packs_page', 'mt_manage_packs'),
@@ -569,6 +577,26 @@ trait AdminInitTrait {
 		if (!is_array($this->preferences) || !$this->preferences){
 			return;
 		}
+
+		// This runs on every admin request until it succeeds (and some plugins, e.g. InfiniteWP's
+		// client, fire admin_init on every request), so an error here must not lock people out.
+		// Restore the draft state it may have swapped out, then pause published CSS as when the
+		// published state can't be recovered.
+		$draftOptions = $this->options;
+		$draftPreferences = $this->preferences;
+		try {
+			$this->cleanUpPublishedCodeForLite();
+		} catch (\Throwable $e) {
+			$this->options = $draftOptions;
+			$this->preferences = $draftPreferences;
+			if (function_exists('error_log')){
+				error_log('Microthemer: Lite published CSS cleanup failed: ' . $e->getMessage());
+			}
+			$this->pausePublishedCssForLite();
+		}
+	}
+
+	function cleanUpPublishedCodeForLite(){
 
 		if (!empty($this->preferences['load_js']) || !empty($this->preferences['load_js_published'])){
 			$this->savePreferences(array('load_js' => 0, 'load_js_published' => 0));
@@ -1492,9 +1520,10 @@ trait AdminInitTrait {
 			// download pack
 			if (!empty($_GET['mt_action']) and
 			    $_GET['mt_action'] == 'tvr_download_pack') {
-				if (!empty($_GET['dir_name'])) {
+				$pack = !empty($_GET['dir_name']) ? sanitize_file_name(wp_unslash($_GET["dir_name"])) : '';
+				$library_images = false;
+				if ($this->isPackFolder($pack)) {
 					// first of all, copy any images from the media library
-					$pack = sanitize_file_name(wp_unslash($_GET["dir_name"]));
 					$dir = $this->micro_root_dir . $pack;
 					$json_config_file = $dir . '/config.json';
 					if ($library_images = $this->get_linked_library_images($json_config_file)){
@@ -1569,7 +1598,8 @@ trait AdminInitTrait {
 			// delete pack
 			if (!empty($_GET['mt_action']) and
 			    $_GET['mt_action'] == 'tvr_delete_micro_theme') {
-				if (!empty($_GET['dir_name']) and $this->tvr_delete_micro_theme(sanitize_file_name(wp_unslash($_GET["dir_name"])))){
+				$pack = !empty($_GET['dir_name']) ? sanitize_file_name(wp_unslash($_GET["dir_name"])) : '';
+				if ($this->isPackFolder($pack) and $this->tvr_delete_micro_theme($pack)){
 					$delete_status = 1;
 				} else {
 					$delete_status = 0;
@@ -1999,6 +2029,27 @@ trait AdminInitTrait {
 
 		}
 
+	}
+
+	// Whether a (sanitized) name is a design pack folder in the storage folder. The storage folder
+	// also holds Microthemer's own folders (cache, exports), and an empty name is the storage
+	// folder itself: neither may be zipped to the public exports folder or deleted as a pack.
+	function isPackFolder($pack){
+
+		if (!is_string($pack) || $pack === '' || $pack[0] === '.' || strpbrk($pack, '/\\') !== false){
+			return false;
+		}
+
+		if ($this->isReservedStorageFolder($pack)){
+			return false;
+		}
+
+		return is_dir($this->micro_root_dir . $pack);
+	}
+
+	// Microthemer's own folders in the storage folder (also left out of the design pack list)
+	function isReservedStorageFolder($name){
+		return in_array(strtolower((string) $name), array('mt', 'stock', 'content', 'zip-exports', 'tmp', 'sass', 'scss'), true);
 	}
 
 	// phpcs:disable WordPress.Security.NonceVerification -- nonce verified by microthemer_ajax_actions() via check_ajax_referer('mcth_simple_ajax', '_wpnonce'), which gates this whole call path.

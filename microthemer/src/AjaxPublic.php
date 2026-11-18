@@ -42,10 +42,27 @@ class AjaxPublic {
 			exit;
 		}
 
-		global $wpdb;
-
 		// already sanitized and capped at 50 (Schemas::lazyContent)
-		$lazy_ids = array_values($request['lazy_ids']);
+		$response = $this->lazyContentResponse(
+			array_values($request['lazy_ids']), $this->requestedLazyState($request)
+		);
+
+		// Send the JSON response
+		echo wp_json_encode($response);
+		exit;
+
+	}
+
+	// Visitors only get content stored by a published render. Draft content (from an
+	// administrator's preview) is only served to users who can see drafts (see tvr-microthemer.php)
+	function requestedLazyState($request){
+		return isset($request['published']) && (int) $request['published'] === 0
+		       && current_user_can('manage_options') ? 0 : 1;
+	}
+
+	function lazyContentResponse($lazy_ids, $published){
+
+		global $wpdb;
 
 		// Prepare the query to fetch the lazy content based on the provided IDs
 		$placeholders = implode(', ', array_fill(0, count($lazy_ids), '%s'));
@@ -54,9 +71,9 @@ class AjaxPublic {
 		$results = $wpdb->get_results(
 			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- dynamic IN (%s,...) list for lazy content slugs.
 			$wpdb->prepare(
-				"SELECT slug, content FROM {$wpdb->prefix}micro_content 
-                     WHERE type = 'lazy' AND slug IN ($placeholders)",
-				...$lazy_ids
+				"SELECT slug, content FROM {$wpdb->prefix}micro_content
+                     WHERE type = 'lazy' AND published = %d AND slug IN ($placeholders)",
+				...array_merge(array((int) $published), $lazy_ids)
 			)
 			// phpcs:enable
 		);
@@ -68,9 +85,6 @@ class AjaxPublic {
 			$response['store'][$row->slug] = json_decode($row->content);
 		}
 
-		// Send the JSON response
-		echo wp_json_encode($response);
-		exit;
-
+		return $response;
 	}
 }

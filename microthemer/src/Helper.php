@@ -47,6 +47,74 @@ class Helper {
 		return preg_replace('~<(?=/|\z)~', '\\\\3c ', $css);
 	}
 
+	// The name of a page's Tailwind cache file (mt/cache/tailwind/{classes,styles}), built the way
+	// AdminContent names the files it writes. The id can come from the URL (?tag=a,b is left raw by
+	// WordPress), so it must not be able to name a file outside the cache folder.
+	public static function tailwindCacheName($type, $id){
+		return $type === null || $type === '' ? '' : sanitize_title($type . '-' . $id);
+	}
+
+	// The Google Fonts stylesheet URL is built by the editor and saved with the settings (and in
+	// design packs), then loaded on every page, so it may only point at Google Fonts.
+	public static function isGoogleFontsUrl($url){
+		return is_string($url)
+		       && preg_match('#^(https:)?//fonts\.googleapis\.com/css2?\?[^\s"\'<>\\\\]*$#i', $url) === 1;
+	}
+
+	// The comment and opening line of a media query block in the generated stylesheets. The label
+	// and query come from the media query form, preference imports and design packs, so the label
+	// can't close its comment and the query can't hold braces or semicolons (a rule of its own).
+	public static function mediaQueryOpening($label, $query){
+		$label = str_replace('*/', '* /', Request\Schemas::stripControlChars((string) $label));
+		$query = Request\Schemas::cssFragment($query);
+		return "\n/*( $label )*/\n$query {\n";
+	}
+
+	// The active_events setting (a JSON string from the editor, or its decoded array) as an array that
+	// is safe to hand to animation-events.js: every string loses tags, and the selectors (code, target)
+	// lose any "<", so jQuery can never build elements from them. JSON escapes such as < are
+	// decoded first, so they can't slip past.
+	public static function sanitizeActiveEvents($events){
+		if (is_string($events)){
+			$events = json_decode($events, true);
+		}
+		if (!is_array($events)){
+			return array();
+		}
+		$clean = array();
+		foreach ($events as $eventKey => $list){
+			if (!is_array($list)){
+				continue;
+			}
+			$eventKey = Request\Schemas::stripTags((string) $eventKey);
+			foreach ($list as $event){
+				if (!is_array($event)){
+					continue;
+				}
+				array_walk_recursive($event, function (&$value, $key){
+					if (is_string($value)){
+						$value = Request\Schemas::stripTags($value);
+						if ($key === 'code' || $key === 'target'){
+							$value = str_replace('<', '', $value);
+						}
+					}
+				});
+				$clean[$eventKey][] = $event;
+			}
+		}
+		return $clean;
+	}
+
+	// Unserialize the plugin's stored data (revisions, snippets, settings). Only plain stdClass
+	// objects are rebuilt: any other class comes back as __PHP_Incomplete_Class, so stored data
+	// can't trigger PHP object injection. Values that aren't serialized are returned unchanged.
+	public static function unserializeData($data){
+		if (!is_string($data) || (function_exists('is_serialized') && !is_serialized($data))){
+			return $data;
+		}
+		return unserialize($data, array('allowed_classes' => array('stdClass'))); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- classes restricted to stdClass
+	}
+
 	public static function debug($message, $data = false, $die = false){
 
 		if (Helper::$doDebug){

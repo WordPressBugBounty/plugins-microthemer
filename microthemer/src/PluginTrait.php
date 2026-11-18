@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 trait PluginTrait {
 
-	var $version = '7.5.5.9';
+	var $version = '7.5.6.0';
 	var $db_chg_in_ver = '7.5.2.8';
 	var $minimum_wordpress = '5.6';
 	var $preferencesName = 'preferences_themer_loader';
@@ -95,7 +95,15 @@ trait PluginTrait {
 
 		if ($value) {
 			$this->deleteCookie($key);
-			return setcookie($key, $value, $expiration, '/', COOKIE_DOMAIN);
+			// only PHP reads it, and only on this site's own pages
+			return setcookie($key, $value, array(
+				'expires' => $expiration,
+				'path' => '/',
+				'domain' => COOKIE_DOMAIN,
+				'secure' => is_ssl(),
+				'httponly' => true,
+				'samesite' => 'Lax',
+			));
 		}
 
 		return isset($_COOKIE[$key]) ? sanitize_text_field(wp_unslash($_COOKIE[$key])) : false;

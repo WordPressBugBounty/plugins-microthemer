@@ -63,6 +63,47 @@ class Schemas
     }
 
     /**
+     * Whole preference arrays from the setup screen's import and from a revision restore. They hold
+     * every kind of preference, including code, so values are kept as they are, apart from the
+     * structured preferences that reach the front end (media queries, enqueued scripts), which get
+     * the same per-field checks as the forms. (A schema over the whole array would cap its size.)
+     */
+    public static function sanitizeImportedPreferences(array $prefs): array
+    {
+        $structured = array_intersect_key($prefs, ['m_queries' => 1, 'enq_js' => 1]);
+        if (!$structured) {
+            return $prefs;
+        }
+
+        $checked = (new Schema([
+            'prefs' => [
+                'type' => 'array',
+                'schema' => [
+                    'm_queries' => self::mediaQueryMap(),
+                    'enq_js' => self::enqueuedScriptMap(),
+                ],
+            ],
+        ]))->sanitize(['prefs' => $structured]);
+
+        foreach (array_keys($structured) as $key) {
+            if (isset($checked['value']['prefs'][$key])) {
+                $prefs[$key] = $checked['value']['prefs'][$key];
+            } else {
+                unset($prefs[$key]);
+            }
+        }
+
+        // a script whose handle failed its check is dropped, as the preferences form does
+        if (isset($prefs['enq_js']) && is_array($prefs['enq_js'])) {
+            $prefs['enq_js'] = array_filter($prefs['enq_js'], static function ($script) {
+                return is_array($script) && !empty($script['display_name']);
+            });
+        }
+
+        return $prefs;
+    }
+
+    /**
      * A value this build does not interpret: arrays are kept opaquely (depth/size bounded,
      * null-byte scrubbed by Schema), scalars are kept verbatim apart from null-byte scrubbing.
      * Used for user-authored CSS values/config where sanitize_text_field() would corrupt real
@@ -200,6 +241,9 @@ class Schemas
      * Remove HTML tags/comments and control characters.
      * A "<" only starts a tag when a real tag name follows (optional attributes, then ">"),
      * so CSS and JS comparisons such as (400px < width) or i < items stay intact.
+     * Browsers also open a tag for <img/src=…> or an unclosed <img src=x onerror=…, so any "<" that
+     * is still followed by a letter, "/", "!" or "?" gets a space after it: "(400px<width)" becomes
+     * "(400px< width)", which means the same in CSS and JS but can never start an HTML tag.
      */
     public static function stripTags(string $value): string
     {
@@ -208,6 +252,7 @@ class Schemas
             '',
             $value
         );
+        $value = preg_replace('#<(?=[a-z/!?])#i', '< ', (string) $value);
         return self::stripControlChars((string) $value);
     }
 
@@ -354,6 +399,8 @@ class Schemas
                 'maxItems' => 50,
                 'items' => ['type' => 'text', 'maxLength' => 100],
             ],
+            // 0 asks for draft content, which AjaxPublic only serves to administrators
+            'published' => ['type' => 'int'],
         ]);
     }
 

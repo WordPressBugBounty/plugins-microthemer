@@ -6,7 +6,7 @@ Tags: css, customize, visual editor, google fonts, responsive
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.3
-Stable tag: 7.5.5.9
+Stable tag: 7.5.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -96,6 +96,27 @@ Themeover: [Terms of Use](https://themeover.com/terms/), [Privacy Policy](https:
 5. Start customizing the appearance of your site.
 
 == Changelog ==
+
+= 7.5.6.0 (Nov 18th, 2026) =
+
+# Changes (Microthemer & Amender)
+* Security fixes.
+* The license key field no longer shows the saved key, only its last four characters. Leave the field empty and save to check the saved key again.
+* On multisite networks, the review notice for network admins now also lists sub-sites that have custom CSS.
+
+# Changes (Amender)
+* Lazy-loaded content is now shown straight away, without lazy loading, for logged-in users and on pages whose URL has a query string (apart from tracking parameters such as utm_source).
+* A find and replace on HTML markup no longer matches across attribute values that contain quotes, angle brackets or URLs. Those values are replaced on their own.
+
+# Bugs Fixed (Microthemer)
+* Deleting a design pack on the Manage Design Packs page now removes it from the list straight away. Before, a JavaScript error left it there until the page was reloaded.
+* The design pack list no longer shows Microthemer's own export folder as a pack.
+
+# Bugs Fixed (Amender)
+* Amender no longer changes RSS feeds, sitemaps or other responses that aren't HTML pages.
+
+# Bugs Fixed (Microthemer Lite)
+* Fixed a critical error after updating to 7.5.5.9 that could stop the WordPress admin from loading on sites with settings from Microthemer Pro or older versions (and, with plugins such as InfiniteWP, every page including the login page).
 
 = 7.5.5.9 (Nov 17th, 2026) =
 

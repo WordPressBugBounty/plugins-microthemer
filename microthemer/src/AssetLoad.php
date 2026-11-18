@@ -19,7 +19,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 		use FrontAndBackTrait;
 
-		var $pluginVersion = '7.5.5.9';
+		var $pluginVersion = '7.5.6.0';
 		protected $isBlockEditorScreen;
 		var $logicSettings = array();
 		public $context = 'load';
@@ -227,7 +227,10 @@ if (!class_exists('\Microthemer\AssetLoad')){
 						? $p['g_url'].$p['gfont_subset']
 						: $p['g_url']);
 
-				$this->enqueueOrAdd($add, 'microthemer_g_font', $google_url);
+				// the URL comes from saved settings: only ever load Google Fonts with it
+				if (Helper::isGoogleFontsUrl($google_url)){
+					$this->enqueueOrAdd($add, 'microthemer_g_font', $google_url);
+				}
 			}
 		}
 
@@ -723,7 +726,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 				$h = 'mt_animation_events';
 				wp_register_script($h, $this->rootUrl.'animation-events.js?'.$this->mtv, array('jquery'));
 				wp_enqueue_script($h);
-				wp_localize_script( $h, 'MT_Events_Data', json_decode($p['active_events'], true) );
+				wp_localize_script( $h, 'MT_Events_Data', Helper::sanitizeActiveEvents($p['active_events']) );
 			}
 		}
 

@@ -70,8 +70,11 @@ $data.= 'TvrMT.data.dyn.builder_breakpoints = ' . wp_json_encode(
 	)
 ) . ';' . "\n\n";
 
-// full preferences (can replace the above)
-$data.= 'TvrMT.data.dyn.pref = ' . wp_json_encode($this->preferences) . ';' . "\n\n";
+// full preferences (can replace the above), apart from ones the page has no use for that a user
+// shouldn't see, e.g. licence keys a super admin entered for this site (see Extensions\Licensing)
+$data.= 'TvrMT.data.dyn.pref = ' . wp_json_encode(
+	array_diff_key($this->preferences, array_flip($this->extFilter('private_preferences', array())))
+) . ';' . "\n\n";
 
 // layout presets depend on whether the AI panel is available (build and preference), so they can't go in the static program data
 $data.= 'TvrMT.data.dyn.suggested_screen_layouts = ' . wp_json_encode($this->suggested_screen_layouts) . ';' . "\n\n";

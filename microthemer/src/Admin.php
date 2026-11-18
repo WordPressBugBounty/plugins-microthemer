@@ -956,11 +956,8 @@ class Admin {
 			// this must be loaded in head so we can extend it
 			//array('h' => 'tvr_ace_html', 'f' => 'lib/ace4/ace/mode-html.js'),
 
-			// conditionally load emmet in build version as it's quite big - come back to this
-			//array('h' => 'tvr_emmet', 'f' => 'lib/emmet/emmet.js'),
-			//array('h' => 'tvr_ace_emmet', 'f' => 'lib/ace4/ace/ext-emmet.js'),
-
-			//array('h' => 'tvr_gsap', 'f' => 'lib/gsap/gsap.min.js'), // not in use yet
+			// Emmet isn't bundled (it's big). Idea: let users add it as a CDN script package and
+			// enable Ace's ext-emmet when it's present.
 			/*array('h' => 'tvr_widget', 'f' => '../src/js/mt-widget.js'),
 					array('h' => 'tvr_transform', 'f' => '../src/js/mt-transform.js'),*/
 			// the grid editor's library (builds with the grid property group, bundled into js-min/mt-grid.js)
@@ -4417,7 +4414,7 @@ class Admin {
 
         // if revision has preferences, restore those
 		if (!empty($rev->preferences)){
-			$preferences = unserialize($rev->preferences, array('allowed_classes' => array('stdClass')));
+			$preferences = Helper::unserializeData($rev->preferences);
 			if (is_array($preferences)){
 				$this->savePreferences($this->preferencesThisUserCanSave($preferences));
 			}
@@ -4431,7 +4428,7 @@ class Admin {
 
 		// restore to options DB field - unless this is purely a revisions history
         if (!empty($rev->settings)){
-	        $rev->settings = unserialize($rev->settings);
+	        $rev->settings = Helper::unserializeData($rev->settings);
 	        // add css units, mq keys (extra tabs) etc to settings display correctly
 	        $filtered_json = $this->filter_incoming_data('restore', $rev->settings);
 	        $stored_options = $this->options;
@@ -5785,9 +5782,10 @@ class Admin {
 
 		// storage, media library, themes and plugins (anything else is fetched over HTTP)
 		$uploads = wp_upload_dir(null, false);
+		$uploads_dir = untrailingslashit(wp_normalize_path($uploads['basedir']));
 		$url_bases = array(
 			untrailingslashit($this->micro_root_url) => untrailingslashit(wp_normalize_path($this->micro_root_dir)),
-			untrailingslashit($uploads['baseurl']) => untrailingslashit(wp_normalize_path($uploads['basedir'])),
+			untrailingslashit($uploads['baseurl']) => $uploads_dir,
 			untrailingslashit(get_theme_root_uri()) => untrailingslashit(wp_normalize_path(get_theme_root())),
 			untrailingslashit(plugins_url()) => $this->plugins_dir(),
 		);
@@ -5811,6 +5809,11 @@ class Admin {
 			$rel = wp_normalize_path(rawurldecode($rel));
 			if ($rel === '' || preg_match('/(^|\/)\.\.(\/|$)/', $rel)) {
 				continue;
+			}
+			// on a network the main site's uploads folder also holds the other sites' uploads, which
+			// must be fetched over HTTP like any other site's files (so the server's deny rules apply)
+			if ($dir_base === $uploads_dir && is_multisite() && preg_match('#^(sites|blogs\.dir)(/|$)#i', $rel)) {
+				return false;
 			}
 			return $dir_base . '/' . $rel;
 		}

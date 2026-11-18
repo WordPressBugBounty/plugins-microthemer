@@ -5,7 +5,7 @@ Plugin URI: https://themeover.com/microthemer
 Text Domain: microthemer
 Domain Path: /languages
 Description: Microthemer is a powerful AI & visual CSS editor that cares about site performance.
-Version: 7.5.5.9
+Version: 7.5.6.0
 Author: Themeover
 Author URI: https://themeover.com
 License: GPLv2 or later
@@ -45,8 +45,11 @@ if (!function_exists('initiateMicrothemer')){
 				new \Microthemer\Admin();
 			}
 
-			// Public ajax
-			new \Microthemer\AjaxPublic();
+			// Public ajax: serves Amender's lazy content, so only builds that include Amender
+			// (a Lite site downgraded from Pro would otherwise keep serving the stored rows)
+			if (is_dir(dirname(__FILE__) . '/src/Content')){
+				new \Microthemer\AjaxPublic();
+			}
 
 		}
 

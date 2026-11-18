@@ -2,8 +2,6 @@
 
 namespace Microthemer;
 
-use Microthemer\Dependencies\Minify;
-
 /*
  * Direct PHP filesystem APIs are used for the storage folder in uploads (typically directly writable).
  * WP_Filesystem can prompt for FTP credentials and break the AJAX editor; unzip still uses WP_Filesystem.
@@ -376,7 +374,7 @@ trait FileTrait {
 						$ext = $this->get_extension($ff);
 						$doMinify = $ext === 'css' && $minifyCSS || $ext === 'js' && $minifyJS;
 						if ($doMinify){
-							$this->minify("$from$ff", $ext, "$to$ff");
+							$this->minify(file_get_contents("$from$ff"), $ext, "$to$ff");
 						} else {
 							copy("$from$ff", "$to$ff");
 						}
@@ -651,17 +649,22 @@ trait FileTrait {
 			require_once $path . '/path-converter/src/Converter.php';
 		}
 
+		if (!class_exists('Microthemer\MinifyDataCSS', false)){
+			require_once dirname(__FILE__) . '/MinifyData.php';
+		}
+
 	}
 
+	// $data is always code, never a file path (see MinifyData.php)
 	function minify($data = null, $type = 'css', $file = false){
 
 		$this->maybeLoadMinify();
 
 		// setup minifier for CSS or JavaScript
 		if ($type === 'css'){
-			$minifier = new Minify\CSS($data);
+			$minifier = new MinifyDataCSS($data);
 		} else {
-			$minifier = new Minify\JS($data);
+			$minifier = new MinifyDataJS($data);
 		}
 
 		// return minified data or write directly to a file

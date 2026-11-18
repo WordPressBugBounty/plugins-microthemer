@@ -13,7 +13,7 @@ function mt_destroy_dir($dir) {
         if ($file == '.' || $file == '..') continue;
         if (!mt_destroy_dir($dir . DIRECTORY_SEPARATOR . $file)) {
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- uninstall recursive cleanup when a path is not writable.
-            chmod($dir . DIRECTORY_SEPARATOR . $file, 0777);
+            chmod($dir . DIRECTORY_SEPARATOR . $file, is_dir($dir . DIRECTORY_SEPARATOR . $file) ? 0755 : 0644);
             if (!mt_destroy_dir($dir . DIRECTORY_SEPARATOR . $file)) return false;
         };
     }

@@ -491,9 +491,8 @@ trait PackTrait {
 	function get_design_packs($packs){
 		$count = 0;
 		$valid_packs = array();
-		$exclude = array('sass', 'scss', 'tmp');
 		foreach($packs as $name => $item){
-			if (is_array($item) && !in_array($name, $exclude)){
+			if (is_array($item) && !$this->isReservedStorageFolder($name)){
 				++$count;
 				$valid_packs[$name] = $item;
 			}

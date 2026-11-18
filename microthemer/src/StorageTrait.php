@@ -317,7 +317,7 @@ trait StorageTrait {
 				if (empty($serialized)){
 					continue;
 				}
-				$data = maybe_unserialize($serialized);
+				$data = Helper::unserializeData($serialized);
 				$updated = $this->replaceInData($data, $replacements);
 				if ($updated !== $data){
 					$update[$column] = maybe_serialize($updated);

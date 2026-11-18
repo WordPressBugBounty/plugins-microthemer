@@ -244,7 +244,8 @@ class Common {
 			// fallback to g_url if user has yet to save settings since g_url_with_subsets was added
 			: (!empty($p['gfont_subset']) ? $p['g_url'].$p['gfont_subset'] : $p['g_url']);
 
-		if (!empty($google_url)){
+		// the URL comes from saved settings: only ever load Google Fonts with it
+		if (Helper::isGoogleFontsUrl($google_url)){
 			Common::mt_enqueue_or_add(!empty($p['stylesheet_order']), 'microthemer_g_font', $google_url);
 		}
 

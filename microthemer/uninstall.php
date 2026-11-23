@@ -22,7 +22,10 @@ function mt_destroy_dir($dir) {
 }
 
 // storage folder locations (current and pre-7.6) - see Helper::storage
-require_once __DIR__ . '/src/Helper.php';
+// (Microloader, if active, has loaded its copy of the class already)
+if (!class_exists('Microthemer\Helper', false)){
+    require_once __DIR__ . '/src/Helper.php';
+}
 
 // Run the cleanup code when the site asked for a clean uninstall.
 // On multisite, uninstall.php runs once, so each site is checked on its own.
@@ -61,8 +64,10 @@ function mt_clean_uninstall_current_site(){
     $wpdb->query($wpdb->prepare('DROP TABLE IF EXISTS %i', $wpdb->prefix . 'micro_content'));
     delete_option('microthemer_storage_version');
     delete_option('microthemer_storage_moved_at');
+    delete_option('microthemer_storage_repair');
     delete_option('microthemer_legacy_storage_fingerprint');
     delete_transient('microthemer_legacy_storage_checked');
+    delete_transient('microthemer_storage_repair_wait');
     delete_transient('microthemer_orphaned_pro_data');
     delete_option('microthemer_storage_move_error');
     delete_option('microthemer_storage_moving');

@@ -251,11 +251,12 @@ class Helper {
 		// Not moved yet, or moved and then a rollback wrote the old folder again: keep
 		// serving it until the move (re)succeeds. A leftover old folder from a delete
 		// that failed is older than the move, so it does not count.
-		if (!self::storageMoved() || self::legacyRewrittenSinceMove()){
-			$legacy = self::legacyStorage();
-			if (is_dir($legacy['dir'])){
-				return self::$storageCache[$blogId] = $legacy;
-			}
+		// "Wrote" means newer CSS/JS assets: anything else turning up there (an index.php, what's
+		// left of an unfinished delete) must never leave the site without styles.
+		$legacy = self::legacyStorage();
+		if (is_dir($legacy['dir']) &&
+		    (!self::storageMoved() || (self::legacyHasNewerAssets() && self::legacyRewrittenSinceMove()))){
+			return self::$storageCache[$blogId] = $legacy;
 		}
 
 		return self::$storageCache[$blogId] = self::uploadsStorage();
@@ -365,7 +366,7 @@ class Helper {
 		}
 
 		$legacy = self::legacyStorage();
-		if (!is_dir($legacy['dir'])){
+		if (!is_dir($legacy['dir']) || !self::hasMovableFiles($legacy['dir'])){
 			return false;
 		}
 
@@ -379,6 +380,9 @@ class Helper {
 				return false;
 			}
 			$current = self::storageFingerprint($legacy['dir']);
+			if ($current === null && $baseline === 'unreadable'){
+				return self::legacyHasNewerAssets(); // can't compare contents
+			}
 			if ($current === $baseline){
 				if ($cached !== $baseline){
 					set_transient($cacheKey, $baseline, MINUTE_IN_SECONDS);
@@ -409,6 +413,91 @@ class Helper {
 		return $uploadsMtime && max($legacyMtime, $latestMtime) > $uploadsMtime;
 	}
 
+	// Whether the old folder has CSS/JS that was written after the move and after the copy in uploads.
+	// This runs on page loads while an old folder remains, so it only looks at those few files.
+	public static function legacyHasNewerAssets(){
+
+		$from = self::legacyStorage()['dir'];
+		$to = self::uploadsStorage()['dir'];
+		$movedAt = (int) get_option('microthemer_storage_moved_at');
+
+		$files = array();
+		foreach (array('draft', 'active') as $type){
+			foreach (array('-styles.css', '-styles.scss', '-scripts.js') as $suffix){
+				$files[] = $type . $suffix;
+			}
+			$subDir = 'mt/conditional/' . $type . '/';
+			if (is_dir($from . $subDir) && is_readable($from . $subDir)){
+				foreach (scandir($from . $subDir) ?: array() as $name){
+					$files[] = $subDir . $name;
+				}
+			}
+		}
+
+		foreach ($files as $file){
+			if (!self::isGeneratedAsset($file) || !is_file($from . $file)){
+				continue;
+			}
+			$mtime = filemtime($from . $file);
+			if ($movedAt && $mtime <= $movedAt){
+				continue;
+			}
+			if (!is_file($to . $file) || $mtime > filemtime($to . $file)){
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	// a file in the storage folder that saving or publishing writes
+	public static function isGeneratedAsset($rel){
+		return (bool) preg_match(
+			'#^(?:(?:draft|active)-(?:styles\.s?css|scripts\.js)|mt/conditional/(?:draft|active)/[^/]+\.css)$#', $rel
+		);
+	}
+
+	public static function samePath($a, $b){
+		$a = realpath($a);
+		$b = realpath($b);
+		return $a && $b && $a === $b;
+	}
+
+	public static function pathContains($parent, $child){
+		$parent = realpath($parent);
+		$child = realpath($child);
+		return $parent && $child && strpos($child, rtrim($parent, '/\\') . DIRECTORY_SEPARATOR) === 0;
+	}
+
+	// a symlink, or a Windows junction (which is_link() doesn't see)
+	public static function isLinkedDir($dir){
+		$dir = rtrim($dir, '/\\');
+		if (is_link($dir)){
+			return true;
+		}
+		$real = realpath($dir);
+		$parent = realpath(dirname($dir));
+		return $real && $parent && strcasecmp($real, rtrim($parent, '/\\') . DIRECTORY_SEPARATOR . basename($dir)) !== 0;
+	}
+
+	// PHP never moves, and Pro keeps Microloader's code in the old folder: a folder with nothing
+	// else in it has nothing to migrate.
+	private static function hasMovableFiles($dir){
+		try {
+			$items = new \RecursiveIteratorIterator(
+				new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+			);
+			foreach ($items as $item){
+				if ($item->isFile() && strtolower($item->getExtension()) !== 'php'){
+					return true;
+				}
+			}
+		} catch (\UnexpectedValueException $e){
+			return true; // can't tell
+		}
+		return false;
+	}
+
 	// Fingerprint only matters when the best-effort deletion left a legacy folder.
 	// Hashing contents catches same-size overwrites even within one timestamp tick.
 	public static function storageFingerprint($dir){
@@ -418,7 +507,7 @@ class Helper {
 			);
 			$files = array();
 			foreach ($items as $item){
-				if (!$item->isFile()){
+				if (!$item->isFile() || strtolower($item->getExtension()) === 'php'){
 					continue;
 				}
 				$hash = hash_file('sha256', $item->getPathname());
@@ -452,22 +541,29 @@ class Helper {
 
 	// The location versions before 7.6 used (wp-content/micro-themes, or blogs.dir / uploads/sites on
 	// multisite). Only read to move existing files to the uploads folder, which is why it relies on
-	// the content directory constant: nothing is ever created here any more.
+	// the content directory constant: no storage files are ever created here any more.
 	public static function legacyStorage(){
 
 		$dir = untrailingslashit(wp_normalize_path(WP_CONTENT_DIR));
 		$url = untrailingslashit(set_url_scheme(content_url()));
 		$sub = '/micro-themes/';
+		$aliases = array();
 
 		if (is_multisite()){
 			$blogId = get_current_blog_id();
 			$sites = file_exists($dir . '/blogs.dir/') ? '/blogs.dir' : '/uploads/sites';
 			$sub = $sites . ($blogId === 1 ? '' : '/' . $blogId) . '/micro-themes/';
+
+			// a subdirectory site serves the same files at /site/wp-content/ and at the network's /wp-content/
+			if ($blogId !== 1){
+				$aliases[] = untrailingslashit(set_url_scheme(network_site_url(basename($dir)))) . $sub;
+			}
 		}
 
 		return array(
 			'dir' => $dir . $sub,
 			'url' => $url . $sub,
+			'aliases' => $aliases,
 			'legacy' => true,
 		);
 	}

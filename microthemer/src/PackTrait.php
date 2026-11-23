@@ -438,6 +438,9 @@ trait PackTrait {
 		// pack data comes from a file that may not be trusted: sanitize it like the raw CSS import does
 		$json_array = Request\Schemas::sanitizeSettings($json_array);
 
+		// packs from before storage moved to uploads
+		$json_array = $this->updateOldStorageReferences($json_array);
+
 		// older exports included the whole preferences option. Replacing it wholesale from a file would let
 		// an imported pack overwrite any preference (e.g. theme_in_focus), so just discard it
 		unset($json_array['non_section']['exported_preferences']);

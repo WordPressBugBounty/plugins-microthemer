@@ -14,6 +14,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  * folder stays in use (Helper::storage) until the move has fully succeeded, so a failure never
  * breaks the site: an admin notice explains it and offers to try again.
  *
+ * The rules that keep it safe:
+ * - the old folder is only served again if a rollback wrote newer assets there (Helper::storage)
+ * - moving again never replaces a newer file with an older one
+ * - only what was copied is deleted: not PHP of the site's own, not what's behind a link
+ * - sites moved by a version whose move missed some references are repaired once
+ *
  * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_mkdir
  * phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_rmdir
  * phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
@@ -25,6 +31,15 @@ trait StorageTrait {
 	// text files that can hold the folder's own URL or path (generated CSS/JS, design pack data)
 	var $storage_text_extensions = array('css', 'scss', 'js', 'json', 'txt');
 
+	// bump when already moved sites need their stored references looking at again
+	var $storage_repair_version = 1;
+
+	// the PHP that versions before 7.5.5.2 copied into the folder. Any other PHP there is the site's own.
+	var $storage_loader_files = array(
+		'autoload.php', 'AssetLoad.php', 'Logic.php', 'Helper.php', 'FrontAndBackTrait.php', 'TimerTrait.php',
+		'Content/AssetLoadContent.php', 'Content/HTML.php', 'Content/ContentHelper.php', 'animation-code.inc.php',
+	);
+
 	function maybeMoveStorage(){
 
 		if (is_network_admin()){
@@ -35,6 +50,13 @@ trait StorageTrait {
 		// so put the stored URLs back before anything reads them. The old folder is still in use.
 		if (get_option('microthemer_storage_rewrite_pending') && !$this->storageMoveLockIsFresh()){
 			$this->restoreRewriteSnapshot();
+
+			// it was repairing, or moving again after a rollback: the files are in uploads already
+			if (Helper::storageMoved()){
+				set_transient('microthemer_storage_repair_wait', 1, HOUR_IN_SECONDS);
+				return;
+			}
+
 			update_option(
 				'microthemer_storage_move_error',
 				__('The move was interrupted and has been undone. Your site is still using the old folder.', 'microthemer'),
@@ -52,9 +74,14 @@ trait StorageTrait {
 		$forceLegacyCheck = empty($this->preferences['version'])
 			|| $this->preferences['version'] != $this->version
 			|| isset($_GET['mt_retry_storage_move']);
-		$rewriteLegacy = Helper::storageMoved() && Helper::legacyRewrittenSinceMove($forceLegacyCheck);
+		$alreadyMoved = Helper::storageMoved();
+		$rewriteLegacy = $alreadyMoved
+			&& is_dir($legacy['dir'])
+			&& !Helper::samePath($legacy['dir'], Helper::uploadsStorage()['dir']) // linked to each other
+			&& Helper::legacyRewrittenSinceMove($forceLegacyCheck);
 
-		if (Helper::storageMoved() && !$rewriteLegacy){
+		if ($alreadyMoved && !$rewriteLegacy){
+			$this->maybeRepairStorageReferences($legacy);
 			return;
 		}
 
@@ -77,11 +104,13 @@ trait StorageTrait {
 			return;
 		}
 
-		$error = $this->moveStorage($legacy, Helper::uploadsStorage());
+		$to = Helper::uploadsStorage();
+		$started = time();
 
-		$this->releaseStorageMoveLock();
+		$error = $this->moveStorage($legacy, $to, $alreadyMoved);
 
 		if ($error){
+			$this->releaseStorageMoveLock();
 			update_option('microthemer_storage_move_error', $error, false);
 			$this->hookStorageMoveNotice();
 			return;
@@ -89,8 +118,17 @@ trait StorageTrait {
 
 		$this->storageMoved();
 
-		// best effort: the files are already in use from their new location
-		$this->deleteStorageFolder($legacy['dir']);
+		// A save during the move wrote to the old folder. Fetch those files before deleting it.
+		// If that fails, the old folder is kept.
+		if (!$this->copyStorageFiles($legacy['dir'], $to['dir'], $alreadyMoved, $started) &&
+		    !$this->rewriteStorageFiles($to['dir'], new StorageReferences($legacy, $to), get_option($this->optionsName), $alreadyMoved)){
+
+			// best effort: the files are already in use from their new location
+			$this->deleteStorageFolder($legacy['dir'], $to['dir']);
+		}
+
+		$this->releaseStorageMoveLock();
+
 		if (is_dir($legacy['dir'])){
 			$fingerprint = Helper::storageFingerprint($legacy['dir']);
 			// An unreadable residual folder must not silently rely on timestamps.
@@ -104,8 +142,66 @@ trait StorageTrait {
 		delete_option('microthemer_storage_move_error');
 		update_option('microthemer_storage_version', 2);
 		update_option('microthemer_storage_moved_at', time());
+		update_option('microthemer_storage_repair', $this->storage_repair_version);
 		Helper::$storageCache = array();
 		$this->setStoragePaths();
+		$this->reloadPreferences();
+	}
+
+	// preferences are read before the move, and saving a stale copy would bring the old URLs back
+	function reloadPreferences(){
+		if (!empty($this->preferencesName)){
+			$this->preferences = get_option($this->preferencesName);
+		}
+	}
+
+	// Sites moved by 7.5.5.2 - 7.5.6.0 can have references that move missed
+	function maybeRepairStorageReferences($legacy){
+
+		if ((int) get_option('microthemer_storage_repair') >= $this->storage_repair_version ||
+		    get_transient('microthemer_storage_repair_wait') ||
+		    !$this->acquireStorageMoveLock()){
+			return;
+		}
+
+		$to = Helper::uploadsStorage();
+		$references = new StorageReferences($legacy, $to);
+		$error = is_dir($to['dir'])
+			? $this->rewriteStorageFiles($to['dir'], $references, get_option($this->optionsName), true)
+			: '';
+		$error = $error ? $error : $this->rewriteStoredReferences($references, true);
+
+		if ($error){
+			set_transient('microthemer_storage_repair_wait', 1, HOUR_IN_SECONDS);
+		} else {
+
+			update_option('microthemer_storage_repair', $this->storage_repair_version);
+
+			// repaired files keep their URLs, so browsers and CDNs need a new cache parameter
+			foreach (array($this->preferencesName, 'microthemer_autoload_preferences') as $name){
+				$preferences = get_option($name);
+				if (is_array($preferences) && isset($preferences['num_saves'])){
+					$preferences['num_saves']++;
+					update_option($name, $preferences);
+				}
+			}
+			$this->reloadPreferences();
+		}
+
+		$this->releaseStorageMoveLock();
+	}
+
+	// Settings from an editor tab that was open during the move, or from a pack exported before it
+	function updateOldStorageReferences($data){
+
+		$to = Helper::uploadsStorage();
+		if (Helper::storage()['dir'] !== $to['dir']){
+			return $data; // the old folder is still in use
+		}
+
+		$references = new StorageReferences(Helper::legacyStorage(), $to);
+
+		return $references->replaceInData($data);
 	}
 
 	// true when this request holds the lock, or nobody does
@@ -144,61 +240,57 @@ trait StorageTrait {
 	}
 
 	// copy, verify, then point every stored reference at the new location (returns an error or '')
-	function moveStorage($from, $to){
+	function moveStorage($from, $to, $alreadyMoved = false){
 
 		if (!wp_mkdir_p($to['dir'])){
 			/* translators: %s: folder path */
 			return sprintf(__('The folder %s could not be created.', 'microthemer'), $this->display_path($to['dir']));
 		}
 
-		$error = $this->copyStorageFiles($from['dir'], $to['dir']);
+		// linked to each other: nothing to copy, but the URLs still change
+		if (!Helper::samePath($from['dir'], $to['dir'])){
+
+			if (Helper::pathContains($from['dir'], $to['dir'])){
+				/* translators: %s: folder path */
+				return sprintf(__('The folder %s is inside the old folder.', 'microthemer'), $this->display_path($to['dir']));
+			}
+
+			$error = $this->copyStorageFiles($from['dir'], $to['dir'], $alreadyMoved);
+			if ($error){
+				return $error;
+			}
+		}
+
+		$references = new StorageReferences($from, $to);
+
+		$error = $this->rewriteStorageFiles($to['dir'], $references, get_option($this->optionsName), $alreadyMoved);
 		if ($error){
 			return $error;
 		}
 
-		$replacements = $this->storageReplacements($from, $to);
-
-		$error = $this->rewriteStorageFiles($to['dir'], $replacements);
-		if ($error){
-			return $error;
-		}
-
-		$error = $this->rewriteStoredReferences($replacements);
-		if ($error){
-			return $error;
-		}
-
-		return '';
+		return $this->rewriteStoredReferences($references, $alreadyMoved);
 	}
 
-	// copy everything except PHP (earlier versions copied loader code here, which no longer runs
-	// from this folder), checking each file arrived intact
-	function copyStorageFiles($from, $to){
+	/**
+	 * Copy everything except PHP, which never goes in uploads, checking each file arrived intact.
+	 *
+	 * @param bool $alreadyMoved the new folder is in use, so only take what is newer in the old one
+	 * @param int  $since        only take files changed since this time
+	 */
+	function copyStorageFiles($from, $to, $alreadyMoved = false, $since = 0){
 
-		$error = $this->eachStorageItem($from, \RecursiveIteratorIterator::SELF_FIRST, function ($item) use ($from, $to) {
-
-			$rel = substr(wp_normalize_path($item->getPathname()), strlen(wp_normalize_path($from)));
-			$target = $to . $rel;
-
-			if ($item->isDir()){
-				if (!is_dir($target) && !wp_mkdir_p($target)){
-					/* translators: %s: folder path */
-					return sprintf(__('The folder %s could not be created.', 'microthemer'), $this->display_path($target));
-				}
-				return '';
-			}
-
-			if (strtolower($item->getExtension()) === 'php'){
-				return '';
-			}
-
-			if (!copy($item->getPathname(), $target) || filesize($target) !== $item->getSize()){
-				/* translators: %s: file path */
-				return sprintf(__('The file %s could not be copied.', 'microthemer'), $this->display_path($item->getPathname()));
-			}
-
+		if (Helper::samePath($from, $to)){
 			return '';
-		});
+		}
+
+		$movedAt = $alreadyMoved ? (int) get_option('microthemer_storage_moved_at') : 0;
+
+		try {
+			$error = $this->copyStorageFolder($from, $to, '', array(), $alreadyMoved, $movedAt, $since);
+		} catch (\UnexpectedValueException $e){
+			/* translators: %s: folder path */
+			return sprintf(__('A folder inside %s could not be read.', 'microthemer'), $this->display_path($from));
+		}
 
 		if ($error){
 			return $error;
@@ -212,46 +304,72 @@ trait StorageTrait {
 		return '';
 	}
 
-	// old URL/path => new, most specific first
-	function storageReplacements($from, $to){
+	// recursion rather than an iterator, as linked folders have to be followed, without looping
+	function copyStorageFolder($from, $to, $rel, $parents, $alreadyMoved, $movedAt, $since){
 
-		$replacements = array();
+		$source = rtrim($from, '/\\') . '/' . $rel;
+		$items = new \FilesystemIterator($source, \FilesystemIterator::SKIP_DOTS);
 
-		// full URLs, whichever scheme they were saved with
-		foreach (array('http://', 'https://') as $scheme){
-			$replacements[preg_replace('#^https?://#i', $scheme, $from['url'])] = $to['url'];
+		$real = realpath($source);
+		if ($real && (in_array($real, $parents, true) || Helper::pathContains($real, $to) || Helper::samePath($real, $to))){
+			return ''; // a link back to a parent, or to where the files are going
 		}
+		$parents[] = $real;
 
-		// root-relative URLs, when both locations are on the same host
-		$fromParts = wp_parse_url($from['url']);
-		$toParts = wp_parse_url($to['url']);
-		if (!empty($fromParts['host']) && !empty($toParts['host']) &&
-		    strtolower($fromParts['host']) === strtolower($toParts['host'])){
-			$replacements[$fromParts['path']] = $toParts['path'];
-		}
+		foreach ($items as $item){
 
-		// file paths (stored in some preferences), with either kind of slash
-		$replacements[$from['dir']] = $to['dir'];
-		$replacements[str_replace('/', '\\', $from['dir'])] = str_replace('/', '\\', $to['dir']);
+			$itemRel = $rel . $item->getFilename();
+			$target = $to . $itemRel;
 
-		// design-pack config.json is written with wp_json_encode, which escapes slashes (\/).
-		// Built separately: escaping an already-escaped URL still finds "/" and would loop.
-		$escaped = array();
-		foreach ($replacements as $old => $new){
-			$oldEscaped = str_replace('/', '\\/', $old);
-			if ($oldEscaped !== (string) $old){
-				$escaped[$oldEscaped] = str_replace('/', '\\/', $new);
+			if ($item->isDir()){
+
+				if (!is_dir($target) && !wp_mkdir_p($target)){
+					/* translators: %s: folder path */
+					return sprintf(__('The folder %s could not be created.', 'microthemer'), $this->display_path($target));
+				}
+
+				$error = $this->copyStorageFolder($from, $to, $itemRel . '/', $parents, $alreadyMoved, $movedAt, $since);
+				if ($error){
+					return $error;
+				}
+				continue;
+			}
+
+			if (strtolower($item->getExtension()) === 'php' || !$item->isFile()){
+				continue; // PHP, or a link to nothing
+			}
+
+			$mtime = $item->getMTime();
+			if ($since && $mtime < $since){
+				continue;
+			}
+
+			if ($alreadyMoved){
+				if (is_file($target) && $mtime < filemtime($target)){
+					continue; // a stale leftover
+				}
+				if (!is_file($target) && $movedAt && $mtime <= $movedAt && Helper::isGeneratedAsset($itemRel)){
+					continue; // removed on purpose since the move
+				}
+			}
+
+			if (!copy($item->getPathname(), $target) || filesize($target) !== $item->getSize()){
+				/* translators: %s: file path */
+				return sprintf(__('The file %s could not be copied.', 'microthemer'), $this->display_path($item->getPathname()));
 			}
 		}
 
-		return $replacements + $escaped;
+		return '';
 	}
 
-	function rewriteStorageFiles($dir, $replacements){
+	function rewriteStorageFiles($dir, $references, $settings = array(), $alreadyMoved = false){
 
-		return $this->eachStorageItem($dir, \RecursiveIteratorIterator::LEAVES_ONLY, function ($file) use ($replacements) {
+		$root = rtrim(str_replace('\\', '/', $dir), '/') . '/';
 
-			if (!in_array(strtolower($file->getExtension()), $this->storage_text_extensions, true)){
+		return $this->eachStorageItem($dir, \RecursiveIteratorIterator::LEAVES_ONLY, function ($file) use ($root, $references, $settings, $alreadyMoved) {
+
+			$extension = strtolower($file->getExtension());
+			if (!$file->isFile() || !in_array($extension, $this->storage_text_extensions, true)){
 				return '';
 			}
 
@@ -262,7 +380,14 @@ trait StorageTrait {
 				return sprintf(__('The file %s could not be read.', 'microthemer'), $this->display_path($path));
 			}
 
-			$updated = str_replace(array_keys($replacements), array_values($replacements), $contents);
+			$updated = $contents;
+			$rel = substr(str_replace('\\', '/', $path), strlen($root));
+			$subDir = $this->relativeUrlBase($rel, $extension, $settings);
+			if ($subDir !== null){
+				$updated = $references->fixRelative($updated, $subDir, $alreadyMoved);
+			}
+			$updated = $references->replace($updated);
+
 			if ($updated !== $contents && file_put_contents($path, $updated) === false){
 				/* translators: %s: file path */
 				return sprintf(__('The file %s could not be updated.', 'microthemer'), $this->display_path($path));
@@ -272,32 +397,90 @@ trait StorageTrait {
 		});
 	}
 
-	// settings, preferences and revisions can all hold URLs of files in the folder (e.g. design
-	// pack images, generated stylesheets)
-	function rewriteStoredReferences($replacements){
+	// the folder a file's relative url()s are resolved from, or null if it isn't the storage folder
+	function relativeUrlBase($rel, $extension, $settings){
 
-		global $wpdb;
+		// a pack's settings end up in the global stylesheet
+		if ($extension === 'json'){
+			return basename($rel) === 'config.json' ? '' : null;
+		}
+
+		if ($extension !== 'css' && $extension !== 'scss'){
+			return null; // in JS they're relative to the page
+		}
+
+		if (preg_match('#^mt/conditional/(?:draft|active)/(.+)\.css$#', $rel, $match)){
+			$logic = isset($settings[$match[1]]['this']['logic']) ? $settings[$match[1]]['this']['logic'] : null;
+
+			return StorageReferences::folderSubDir($logic) === null ? null : dirname($rel) . '/';
+		}
+
+		return strpos($rel, '/') === false ? '' : dirname($rel) . '/';
+	}
+
+	// settings, preferences, revisions and Amender's content can all hold URLs of files in the folder
+	// (e.g. design pack images, generated stylesheets)
+	function rewriteStoredReferences($references, $alreadyMoved = false){
 
 		$options = array($this->optionsName, $this->preferencesName, 'microthemer_autoload_preferences', 'microthemer_published_css_snapshot');
-		$snapshot = array();
-		foreach ($options as $option){
-			$snapshot[$option] = get_option($option, null);
-		}
-		// So a timeout mid-loop can be undone on the next request. The old folder stays in use
-		// until storageMoved(), which only runs after this returns no error.
-		update_option('microthemer_storage_rewrite_snapshot', $snapshot, false);
-		update_option('microthemer_storage_rewrite_pending', 1, false);
+		$snapshot = $updated = $written = array();
 
 		foreach ($options as $option){
-			if ($snapshot[$option] !== null){
-				update_option($option, $this->replaceInData($snapshot[$option], $replacements));
+
+			$value = $snapshot[$option] = get_option($option, null);
+			if ($value === null){
+				continue;
+			}
+
+			if ($option === $this->optionsName){
+				$value = $references->fixRelativeInSettings($value, $alreadyMoved);
+			} elseif ($option === 'microthemer_published_css_snapshot' && isset($value['settings'])){
+				$value['settings'] = $references->fixRelativeInSettings($value['settings'], $alreadyMoved);
+			}
+
+			$updated[$option] = $references->replaceInData($value);
+			$written[$option] = md5(serialize($updated[$option]));
+		}
+
+		// So a timeout mid-loop can be undone on the next request. The old folder stays in use
+		// until storageMoved(), which only runs after this returns no error.
+		// The hashes show whether anyone has saved since (see restoreRewriteSnapshot).
+		update_option('microthemer_storage_rewrite_snapshot', $snapshot, false);
+		update_option('microthemer_storage_rewrite_pending', $written ? $written : 1, false);
+
+		foreach ($updated as $option => $value){
+			if (serialize($value) !== serialize($snapshot[$option])){
+				update_option($option, $value);
 			}
 		}
 
-		$table = $wpdb->prefix . 'micro_revisions';
+		$error = $this->rewriteRevisions($references, $alreadyMoved);
+		$error = $error ? $error : $this->rewriteContentTable($references, $alreadyMoved);
+
+		if ($error){
+			// Live settings go back to the old URLs. Rows already written point at the new folder,
+			// which has the files. A retry rewrites any row that still has the old URL.
+			$this->restoreRewriteSnapshot();
+			return $error;
+		}
+
+		$this->clearRewriteSnapshot();
+
+		return '';
+	}
+
+	function storageTableExists($table){
+		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- one-off migration of the plugin's own table
-		if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table))) !== $table){
-			$this->clearRewriteSnapshot();
+		return $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table))) === $table;
+	}
+
+	function rewriteRevisions($references, $alreadyMoved){
+
+		global $wpdb;
+
+		$table = $wpdb->prefix . 'micro_revisions';
+		if (!$this->storageTableExists($table)){
 			return '';
 		}
 
@@ -306,20 +489,25 @@ trait StorageTrait {
 
 		foreach ($ids as $id){
 
+			// All columns, as tables from older versions don't have every one until they're upgraded.
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- one-off migration of the plugin's own table
-			$row = $wpdb->get_row($wpdb->prepare('SELECT settings, preferences FROM %i WHERE id = %d', $table, $id), ARRAY_A);
+			$row = $wpdb->get_row($wpdb->prepare('SELECT * FROM %i WHERE id = %d', $table, $id), ARRAY_A);
 			if (!$row){
 				continue;
 			}
 
 			$update = array();
-			foreach ($row as $column => $serialized){
-				if (empty($serialized)){
+			foreach (array('settings', 'preferences', 'snippets') as $column){
+				if (empty($row[$column])){
 					continue;
 				}
-				$data = Helper::unserializeData($serialized);
-				$updated = $this->replaceInData($data, $replacements);
-				if ($updated !== $data){
+				$data = Helper::unserializeData($row[$column]);
+				if ($data === false || $data === null){
+					continue;
+				}
+				$updated = $column === 'settings' ? $references->fixRelativeInSettings($data, $alreadyMoved) : $data;
+				$updated = $references->replaceInData($updated);
+				if (serialize($updated) !== serialize($data)){
 					$update[$column] = maybe_serialize($updated);
 				}
 			}
@@ -328,16 +516,56 @@ trait StorageTrait {
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- one-off migration of the plugin's own table
 				$saved = $wpdb->update($table, $update, array('id' => $id));
 				if ($saved === false){
-					// Live settings go back to the old URLs. Revision rows already written point at
-					// the new folder; a retry rewrites any row that still has the old URL.
-					$this->restoreRewriteSnapshot();
 					/* translators: %s: database table name */
 					return sprintf(__('A row in %s could not be updated.', 'microthemer'), $table);
 				}
 			}
 		}
 
-		$this->clearRewriteSnapshot();
+		return '';
+	}
+
+	// Amender's snippets and HTML changes, draft and published
+	function rewriteContentTable($references, $alreadyMoved){
+
+		global $wpdb;
+
+		$table = $wpdb->prefix . 'micro_content';
+		if (!$this->storageTableExists($table)){
+			return '';
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- one-off migration of the plugin's own table
+		$rows = $wpdb->get_results($wpdb->prepare('SELECT * FROM %i', $table), ARRAY_A);
+
+		foreach ((array) $rows as $row){
+
+			$update = array();
+			foreach (array('content', 'meta') as $column){
+				if (empty($row[$column])){
+					continue;
+				}
+				$value = $row[$column];
+				if ($column === 'content' && isset($row['aspect']) && $row['aspect'] === 'css'){
+					$value = $references->fixRelative($value, '', $alreadyMoved);
+				}
+				$value = $references->replace($value);
+				if ($value !== $row[$column]){
+					$update[$column] = $value;
+				}
+			}
+
+			if (!$update){
+				continue;
+			}
+
+			$where = array('slug' => $row['slug'], 'type' => $row['type'], 'published' => $row['published']);
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- one-off migration of the plugin's own table
+			if ($wpdb->update($table, $update, $where) === false){
+				/* translators: %s: database table name */
+				return sprintf(__('A row in %s could not be updated.', 'microthemer'), $table);
+			}
+		}
 
 		return '';
 	}
@@ -345,8 +573,18 @@ trait StorageTrait {
 	function restoreRewriteSnapshot(){
 
 		$snapshot = get_option('microthemer_storage_rewrite_snapshot', null);
+		$written = get_option('microthemer_storage_rewrite_pending');
 		if (is_array($snapshot)){
 			foreach ($snapshot as $option => $value){
+
+				// saved since the move was interrupted: that is newer than the snapshot
+				if (is_array($written) && isset($written[$option])){
+					$current = md5(serialize(get_option($option, null)));
+					if ($current !== $written[$option] && $current !== md5(serialize($value))){
+						continue;
+					}
+				}
+
 				if ($value === null){
 					delete_option($option);
 				} else {
@@ -356,6 +594,7 @@ trait StorageTrait {
 		}
 
 		$this->clearRewriteSnapshot();
+		$this->reloadPreferences();
 	}
 
 	function clearRewriteSnapshot(){
@@ -363,36 +602,34 @@ trait StorageTrait {
 		delete_option('microthemer_storage_rewrite_snapshot');
 	}
 
-	function replaceInData($data, $replacements){
+	function deleteStorageFolder($dir, $keep = ''){
 
-		if (is_string($data)){
-			return str_replace(array_keys($replacements), array_values($replacements), $data);
-		}
-
-		if (is_array($data)){
-			foreach ($data as $key => $value){
-				$data[$key] = $this->replaceInData($value, $replacements);
-			}
-		}
-
-		elseif (is_object($data)){
-			foreach (get_object_vars($data) as $key => $value){
-				$data->$key = $this->replaceInData($value, $replacements);
-			}
-		}
-
-		return $data;
-	}
-
-	function deleteStorageFolder($dir){
-
-		if (!is_dir($dir)){
+		// never empty the folder that's in use, or what a link points to
+		if (!is_dir($dir) || Helper::isLinkedDir($dir) ||
+		    ($keep && (Helper::samePath($dir, $keep) || Helper::pathContains($dir, $keep)))){
 			return;
 		}
 
-		$this->eachStorageItem($dir, \RecursiveIteratorIterator::CHILD_FIRST, function ($item) {
+		$root = rtrim(str_replace('\\', '/', $dir), '/') . '/';
+
+		$this->eachStorageItem($dir, \RecursiveIteratorIterator::CHILD_FIRST, function ($item) use ($root) {
+
+			$path = $item->getPathname();
+			$rel = substr(str_replace('\\', '/', $path), strlen($root));
+
+			if ($item->isFile() && strtolower($item->getExtension()) === 'php'
+			    && !in_array($rel, $this->storage_loader_files, true)){
+				return ''; // the site's own code, which wasn't copied
+			}
+
+			if ($item->isLink()){
+				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best effort clean-up of the old folder (removes the link only)
+				@unlink($path) || @rmdir($path);
+				return '';
+			}
+
 			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best effort clean-up of the old folder
-			$item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+			$item->isDir() ? @rmdir($path) : @unlink($path);
 			return '';
 		});
 

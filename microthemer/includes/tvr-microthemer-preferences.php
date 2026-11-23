@@ -294,6 +294,7 @@ $preference_tabs[] = esc_html__('Legacy', 'microthemer');
 		<div id="functions-php">
 			<div class="heading"><?php echo esc_html__('Deactivating keeps your changes', 'microthemer'); ?></div>
 			<p class="instruction-text"><?php /* translators: 1: application name, 2: application name */ echo sprintf(esc_html__('Deactivating or uninstalling %1$s never deletes your work unless you set the above option to Yes. Your styles stop loading while %2$s is inactive, and load again as soon as it is reactivated.', 'microthemer'), esc_html($this->appName), esc_html($this->appName)); ?></p>
+			<?php $this->extAction('inactive_loading_info'); ?>
 		</div>
 	</div>
 

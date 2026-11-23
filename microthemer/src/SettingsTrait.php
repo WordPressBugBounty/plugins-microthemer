@@ -123,6 +123,13 @@ trait SettingsTrait {
 			return false;
 		}
 
+		// a tab that was open when storage moved still has the old URLs
+		foreach (array('tvr_mcth', 'snippet_cache') as $key){
+			if (!empty($this->serialised_post[$key])){
+				$this->serialised_post[$key] = $this->updateOldStorageReferences($this->serialised_post[$key]);
+			}
+		}
+
 		// strange Kinsta error prompted this but might have been a fleeting issue
 		$partial = !empty($this->serialised_post['partial_data'])
 			? $this->serialised_post['partial_data']

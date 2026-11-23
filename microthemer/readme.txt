@@ -6,7 +6,7 @@ Tags: css, customize, visual editor, google fonts, responsive
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.3
-Stable tag: 7.5.6.0
+Stable tag: 7.5.6.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -96,6 +96,16 @@ Themeover: [Terms of Use](https://themeover.com/terms/), [Privacy Policy](https:
 5. Start customizing the appearance of your site.
 
 == Changelog ==
+
+= 7.5.6.1 (Nov 22nd, 2026) =
+
+# Bugs Fixed (Microthemer)
+* Disabling a folder or selector shows in the preview again, including in the block editor and admin area previews.
+* Publishing straight after a change no longer leaves that change out of the live site. If your live styles are out of date after updating, publish again and clear your page and CDN caches.
+* Browser tab syncing works again when a change affects which stylesheets load.
+
+# Bugs Fixed (Microthemer & Amender)
+* Fixed several problems with moving files to uploads/microthemer, including broken relative image and font URLs. Sites that have already moved are repaired automatically. Clear your page and CDN caches if styles are missing after updating.
 
 = 7.5.6.0 (Nov 18th, 2026) =
 

@@ -19,7 +19,7 @@ if (!class_exists('\Microthemer\AssetLoad')){
 
 		use FrontAndBackTrait;
 
-		var $pluginVersion = '7.5.6.1';
+		var $pluginVersion = '7.5.6.2';
 		protected $isBlockEditorScreen;
 		var $logicSettings = array();
 		public $context = 'load';

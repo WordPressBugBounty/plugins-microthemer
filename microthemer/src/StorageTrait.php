@@ -109,6 +109,10 @@ trait StorageTrait {
 
 		$error = $this->moveStorage($legacy, $to, $alreadyMoved);
 
+		if ($error && $this->storageMoveLockLost){
+			return;
+		}
+
 		if ($error){
 			$this->releaseStorageMoveLock();
 			update_option('microthemer_storage_move_error', $error, false);
@@ -213,7 +217,9 @@ trait StorageTrait {
 	function acquireStorageMoveLock(){
 
 		$now = time();
+		$this->storageMoveLockLost = false;
 		if (add_option('microthemer_storage_moving', $now, '', false)){
+			$this->storageMoveLockHeld = $now;
 			return true;
 		}
 
@@ -223,20 +229,60 @@ trait StorageTrait {
 		}
 
 		// the previous attempt died and left the lock; only one request may take it over
+		if ($this->swapStorageMoveLock($started, $now)){
+			$this->storageMoveLockHeld = $now;
+			return true;
+		}
+
+		return false;
+	}
+
+	// the lock's value while this request holds it
+	var $storageMoveLockHeld = 0;
+
+	// another request took the lock over, so the move's state is that request's to undo or finish
+	var $storageMoveLockLost = false;
+
+	// compare-and-swap, so a lock another request has taken is never overwritten
+	function swapStorageMoveLock($from, $to){
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- compare-and-swap on the plugin's own lock option
 		$took = $wpdb->query($wpdb->prepare(
 			"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s",
-			(string) $now,
+			(string) $to,
 			'microthemer_storage_moving',
-			(string) $started
+			(string) $from
 		));
-
+		wp_cache_delete('microthemer_storage_moving', 'options');
 		return (bool) $took;
 	}
 
+	// A big folder or table can take longer than the lock's five minutes, so the loops call this
+	// to keep it fresh (another request would otherwise take over mid-move). Returns an error if
+	// another request already has, so this one stops instead of mixing its writes with that one's.
+	function keepStorageMoveLock(){
+
+		$now = time();
+		if (!$this->storageMoveLockHeld || $now - $this->storageMoveLockHeld < 30){
+			return '';
+		}
+
+		if ($this->swapStorageMoveLock($this->storageMoveLockHeld, $now)){
+			$this->storageMoveLockHeld = $now;
+			return '';
+		}
+
+		$this->storageMoveLockHeld = 0;
+		$this->storageMoveLockLost = true;
+		return __('The move took too long and another request took it over.', 'microthemer');
+	}
+
+	// a lock another request took over is that request's to release
 	function releaseStorageMoveLock(){
-		delete_option('microthemer_storage_moving');
+		if ($this->storageMoveLockHeld){
+			delete_option('microthemer_storage_moving');
+		}
+		$this->storageMoveLockHeld = 0;
 	}
 
 	// copy, verify, then point every stored reference at the new location (returns an error or '')
@@ -317,6 +363,11 @@ trait StorageTrait {
 		$parents[] = $real;
 
 		foreach ($items as $item){
+
+			$error = $this->keepStorageMoveLock();
+			if ($error){
+				return $error;
+			}
 
 			$itemRel = $rel . $item->getFilename();
 			$target = $to . $itemRel;
@@ -460,7 +511,9 @@ trait StorageTrait {
 		if ($error){
 			// Live settings go back to the old URLs. Rows already written point at the new folder,
 			// which has the files. A retry rewrites any row that still has the old URL.
-			$this->restoreRewriteSnapshot();
+			if (!$this->storageMoveLockLost){
+				$this->restoreRewriteSnapshot();
+			}
 			return $error;
 		}
 
@@ -488,6 +541,11 @@ trait StorageTrait {
 		$ids = $wpdb->get_col($wpdb->prepare('SELECT id FROM %i', $table));
 
 		foreach ($ids as $id){
+
+			$error = $this->keepStorageMoveLock();
+			if ($error){
+				return $error;
+			}
 
 			// All columns, as tables from older versions don't have every one until they're upgraded.
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- one-off migration of the plugin's own table
@@ -539,6 +597,11 @@ trait StorageTrait {
 		$rows = $wpdb->get_results($wpdb->prepare('SELECT * FROM %i', $table), ARRAY_A);
 
 		foreach ((array) $rows as $row){
+
+			$error = $this->keepStorageMoveLock();
+			if ($error){
+				return $error;
+			}
 
 			$update = array();
 			foreach (array('content', 'meta') as $column){
@@ -652,7 +715,8 @@ trait StorageTrait {
 			);
 
 			foreach ($items as $item){
-				$error = $callback($item);
+				$error = $this->keepStorageMoveLock();
+				$error = $error ? $error : $callback($item);
 				if ($error){
 					return $error;
 				}

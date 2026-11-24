@@ -7,7 +7,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 // Recursively delete a directory and it's contents
 function mt_destroy_dir($dir) {
     if (!is_dir($dir) || is_link($dir)) {
-        return wp_delete_file($dir);
+        return \Microthemer\Helper::deleteFile($dir);
     }
     foreach (scandir($dir) as $file) {
         if ($file == '.' || $file == '..') continue;
@@ -76,6 +76,7 @@ function mt_clean_uninstall_current_site(){
     delete_option('microthemer_published_css_snapshot');
     delete_option('microthemer_lite_css_cleaned');
     delete_option('microthemer_lite_css_retry');
+    delete_option('microthemer_microloader_signature');
     foreach (array(\Microthemer\Helper::uploadsStorage(), \Microthemer\Helper::legacyStorage()) as $storage){
         if (is_dir($storage['dir'])){
             mt_destroy_dir(untrailingslashit($storage['dir']));

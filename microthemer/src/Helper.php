@@ -376,12 +376,17 @@ class Helper {
 			// loads; the admin migration path forces a fresh comparison before moving.
 			$cacheKey = 'microthemer_legacy_storage_checked';
 			$cached = get_transient($cacheKey);
+			// An unreadable folder can't be compared by content, so newer assets are the
+			// only sign of a rewrite. Cache that too, or every request walks and hashes it.
 			if (!$forceCheck && $cached === $baseline){
-				return false;
+				return $baseline === 'unreadable' ? self::legacyHasNewerAssets() : false;
 			}
 			$current = self::storageFingerprint($legacy['dir']);
 			if ($current === null && $baseline === 'unreadable'){
-				return self::legacyHasNewerAssets(); // can't compare contents
+				if ($cached !== $baseline){
+					set_transient($cacheKey, $baseline, MINUTE_IN_SECONDS);
+				}
+				return self::legacyHasNewerAssets();
 			}
 			if ($current === $baseline){
 				if ($cached !== $baseline){
@@ -457,6 +462,14 @@ class Helper {
 		);
 	}
 
+	// wp_delete_file() only returns whether it worked from WordPress 6.7 (null before),
+	// so check the file has gone instead
+	public static function deleteFile($path){
+		wp_delete_file($path);
+		clearstatcache(true, $path);
+		return !file_exists($path) && !is_link($path);
+	}
+
 	public static function samePath($a, $b){
 		$a = realpath($a);
 		$b = realpath($b);
@@ -510,7 +523,8 @@ class Helper {
 				if (!$item->isFile() || strtolower($item->getExtension()) === 'php'){
 					continue;
 				}
-				$hash = hash_file('sha256', $item->getPathname());
+				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- an unreadable file is an expected result (null), not a warning to log
+				$hash = @hash_file('sha256', $item->getPathname());
 				if ($hash === false){
 					return null;
 				}

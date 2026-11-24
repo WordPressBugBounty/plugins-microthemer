@@ -1578,7 +1578,7 @@ trait AdminInitTrait {
 					$this->write_file($json_config_file, $orig_json_data);
 					// delete images
 					foreach ($img_paths as $key => $path){
-						if ( ! wp_delete_file( $path ) ){
+						if ( ! Helper::deleteFile( $path ) ){
 							$this->log(
 								esc_html__('Temporary image could not be deleted.', 'microthemer'),
 								'<p>' . sprintf( /* translators: %s: image file path */ esc_html__('%s was temporarily copied to your theme pack before download but could not be deleted after the download operation finished.', 'microthemer'), $this->root_rel($root_rel_path) ) . '</p>',

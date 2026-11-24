@@ -6,7 +6,7 @@ Tags: css, customize, visual editor, google fonts, responsive
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.3
-Stable tag: 7.5.6.1
+Stable tag: 7.5.6.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -96,6 +96,16 @@ Themeover: [Terms of Use](https://themeover.com/terms/), [Privacy Policy](https:
 5. Start customizing the appearance of your site.
 
 == Changelog ==
+
+= 7.5.6.2 (Nov 23rd, 2026) =
+
+# Bugs Fixed (Microthemer)
+* Publish no longer stops responding when an earlier save never finishes. After a minute without progress it shows a message, and the next click works again.
+* An error while saving no longer blocks later saves and publishes until the page is reloaded.
+* Clean uninstall now removes all of Microthemer's files on WordPress 6.5 and 6.6, where it could stop after the first file.
+* Admin pages no longer re-check a leftover pre-7.6 folder that can't be fully read on every load.
+* A very slow move of your files to uploads/microthemer can no longer be started a second time while the first is still running.
+* Clicking a line in the HTML pane selects that element again, instead of showing an error.
 
 = 7.5.6.1 (Nov 22nd, 2026) =
 

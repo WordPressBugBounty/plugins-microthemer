@@ -156,6 +156,7 @@ $TvrLang = array(
 	'settings_published_long_amender' => esc_html__('Your Amender changes are live.', 'microthemer'),
 	'settings_published_long_p2' => esc_html__('Remember to clear your cache if you use a caching plugin.', 'microthemer'),
 	'publish_failed' => esc_html__('Publish failed', 'microthemer'),
+	'publish_wait_timeout' => esc_html__('Nothing was published, because an earlier save or Sass compile did not finish. Reload the page to check your latest changes were saved, then publish again.', 'microthemer'),
 	//'draft_mode' => esc_html__('draft mode', 'microthemer'),
 	'draft_enabled' => esc_html__('draft mode enabled', 'microthemer'),
 	'draft_disabled' => esc_html__('draft mode disabled (changes published)', 'microthemer'),

@@ -8875,10 +8875,6 @@ class Admin {
             
             <textarea id="mt-logic-expressions" name="logic[expr]" spellcheck="false"></textarea>
             
-            <!--<label>Label (optional)</label>
-            
-            <input id="logic-label" type="text" name="logic[label]" autocomplete="off" />-->
-            
             <label class="conditional-folder-only">Load CSS</label>
             
             <div class="mt-asset-loading-options conditional-folder-only">

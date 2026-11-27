@@ -6,7 +6,7 @@ Tags: css, customize, visual editor, google fonts, responsive
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.3
-Stable tag: 7.5.6.2
+Stable tag: 7.5.6.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -96,6 +96,17 @@ Themeover: [Terms of Use](https://themeover.com/terms/), [Privacy Policy](https:
 5. Start customizing the appearance of your site.
 
 == Changelog ==
+
+= 7.5.6.4 (Nov 27th, 2026) =
+
+# Changes (Microthemer)
+* Fixed edits to a selector's code that has no matching field in the visual editor, such as CSS variables, not being saved. After a refresh, the old value came back.
+
+= 7.5.6.3 (Nov 25th, 2026) =
+
+# Changes (Microthemer)
+* Fixed the Edit folder dialog showing stray HTML comment markers and an unused label field.
+* Updated development dependencies to address Dependabot security alerts.
 
 = 7.5.6.2 (Nov 23rd, 2026) =
 

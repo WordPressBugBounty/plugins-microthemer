@@ -406,6 +406,9 @@ class UnavailableSettings {
 
 		// Unknown groups cannot be recompiled without their definitions. Retain
 		// their already-compiled AST so edits to visible groups can still combine it.
+		// non_gui isn't a group: it holds the selector's own hand-written CSS (e.g. variables),
+		// which every build round-trips, so the incoming copy always wins. Keeping the stored
+		// one undid every edit to it.
 		$stored_rules = self::array_path($stored, array('ast', 'rules'));
 		if (is_array($stored_rules)) {
 			$incoming_rules = self::array_path($incoming, array('ast', 'rules'));
@@ -413,7 +416,7 @@ class UnavailableSettings {
 			$merged_rules = array();
 
 			foreach ($stored_rules as $group => $rules) {
-				if (!isset($property_options[$group])) {
+				if (!isset($property_options[$group]) && $group !== 'non_gui') {
 					$merged_rules[$group] = $rules;
 				} elseif (array_key_exists($group, $incoming_rules)) {
 					$merged_rules[$group] = $incoming_rules[$group];
